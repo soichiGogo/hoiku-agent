@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# venv / tooling
+.venv/
+venv/
+.uv/
+.python-version
+
+# 環境変数・秘密（コミット禁止）
+.env
+.env.*
+!.env.example
+*-key.json
+*-credentials.json
+service-account*.json
+application_default_credentials.json
+
+# GCP / ADK ローカル成果物
+.adk/
+*.sqlite
+*.db
+
+# テスト・キャッシュ
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 実データ（個人情報を含みうる保育書類は絶対にコミットしない）
+knowledge/保育所保育指針/*
+!knowledge/保育所保育指針/.gitkeep
+data/
+samples/private/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
