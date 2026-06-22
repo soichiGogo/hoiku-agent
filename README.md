@@ -56,7 +56,3 @@ gcloud auth application-default login
 adk run src/hoiku_agent      # CLI 対話
 adk web                      # ブラウザ UI
 ```
-
-## 開発の進め方
-
-main 直コミット禁止・作業はブランチ・取り込みは PR（チーム横断ルールに従う）。本リポジトリ初期化時のブートストラップコミットのみ main。
