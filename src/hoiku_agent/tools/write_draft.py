@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
-from ..harness import write_draft as _write_draft
+# 実体モジュールを直接参照する（harness パッケージ __init__ 経由だと
+# harness.pipeline → agents → tools → ここ の循環 import に巻き込まれるため）。
+from ..harness.draft import write_draft as _write_draft
 from ..schemas import DiaryEntry
 
 

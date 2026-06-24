@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
-from ..harness import validate_fields as _validate_fields
+# 実体モジュールを直接参照する（harness パッケージ __init__ 経由だと
+# harness.pipeline → agents → tools → ここ の循環 import に巻き込まれるため）。
+from ..harness.schema_check import validate_fields as _validate_fields
 from ..schemas import DiaryEntry
 
 
