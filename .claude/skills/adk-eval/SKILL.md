@@ -10,7 +10,7 @@ argument-hint: "[evalset名 または all]"
 
 ## 手順
 
-1. 対象を決める（引数 $0。未指定 or `all` なら `eval/cases/*.evalset.json` すべて）。
+1. 対象を決める（引数 $ARGUMENTS。未指定 or `all` なら `eval/cases/*.evalset.json` すべて）。
    ケースが無ければ「未整備」と報告して終了（架空児データのみ・PII禁止＝§14）。
 2. `adk eval src/hoiku_agent eval/cases/<name>.evalset.json`（複数可）を実行する。
    ※ `adk eval` の正確な引数・evalset JSON 構造は公式 docs で要確認（未決＝§18）。

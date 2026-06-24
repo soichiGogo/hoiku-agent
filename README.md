@@ -64,5 +64,5 @@ gcloud auth application-default login
 
 # ローカル実行（ADK CLI）
 adk run src/hoiku_agent      # CLI 対話
-adk web                      # ブラウザ UI
+adk web src                  # ブラウザ UI（agents dir = src/。root で叩くと dropdown に出ない）
 ```

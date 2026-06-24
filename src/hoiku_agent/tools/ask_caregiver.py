@@ -26,5 +26,7 @@ def ask_caregiver(question: str, choices: list[str] | None = None) -> str:
     Returns:
         保育士の回答。
     """
-    # TODO: ADK 同期ツールで対話ターンの回答を受け取り state["caregiver_answer"] に格納する。
-    raise NotImplementedError("TODO(設計): HITL 同期ツールの実装（§6）")
+    # TODO(設計): ADK 同期ツールで対話ターンの回答を受け取り state["caregiver_answer"] に格納する。
+    # v0 は他スタブと同様に無害なプレースホルダを返し、稼働中パイプラインを落とさない
+    # （root_agent に配線済みのため raise すると adk run/web が落ちる）。
+    return "（保育士の回答待ち：HITL 未配線。設計コンテキスト §6 で実装する）"

@@ -19,7 +19,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from .domain import TenNoSugata, ThreeViewpoint
+from .domain import FiveDomains, TenNoSugata, ThreeViewpoint
 from .enums import AgeBand
 
 
@@ -85,8 +85,8 @@ class IndividualNote(BaseModel):
 
     child_id: str
     observed_state: str  # 当日の観察＝子どもの姿
-    # 0–2 は ThreeViewpoint をタグ要件とする（3–5 は FiveDomains。分岐は validate_fields）
-    tags: list[TenNoSugata | ThreeViewpoint] = Field(default_factory=list)
+    # タグ要件は年齢で分岐（0–2＝ThreeViewpoint / 3–5＝FiveDomains）。分岐の強制は validate_fields。
+    tags: list[TenNoSugata | ThreeViewpoint | FiveDomains] = Field(default_factory=list)
 
 
 class DiaryEvaluation(BaseModel):

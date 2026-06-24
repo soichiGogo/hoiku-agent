@@ -13,7 +13,7 @@ ADK の root_agent（`src/hoiku_agent/agent.py`）を起動する。**agents dir
 
 1. 依存が未導入なら `uv sync`（初回のみ）。`.env` 未作成なら `cp .env.example .env` して GCP 設定を記入し、
    `gcloud auth application-default login` 済みか確認する。
-2. 起動モード（引数 $0、未指定なら cli）:
+2. 起動モード（引数 $ARGUMENTS、未指定なら cli）:
    - `cli` → `adk run src/hoiku_agent`（CLI 対話）
    - `web` → `src/` を agents dir として `adk web src`（ブラウザ UI。dropdown で hoiku_agent を選ぶ）
 3. 二階（改善エージェント improver）は root_agent とは**別エントリ・手動起動**。このスキルは一階

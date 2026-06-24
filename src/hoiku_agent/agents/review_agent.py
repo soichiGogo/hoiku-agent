@@ -13,7 +13,7 @@ from __future__ import annotations
 from google.adk.agents import LlmAgent
 
 from ..config import settings
-from ..tools import read_policy, search_guideline
+from ..tools import read_policy, search_guideline, search_records
 from .prompts import REVIEW_INSTRUCTION
 
 
@@ -23,6 +23,7 @@ def build_review_agent() -> LlmAgent:
         name="reviewer",
         model=settings.gemini_model,
         instruction=REVIEW_INSTRUCTION,
-        tools=[read_policy, search_guideline],
+        # search_records は前月連続性の照合に使う（§7 の観点を実際に検証できるように）
+        tools=[read_policy, search_guideline, search_records],
         output_key="review",  # 指摘結果を state["review"] に格納
     )

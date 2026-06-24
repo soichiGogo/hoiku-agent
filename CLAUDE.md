@@ -15,7 +15,7 @@
 # 開発コマンド（推測しないこと）
 
 - 依存: `uv sync`（uv 推奨。`pip install -e ".[dev]"` でも可）
-- ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web`（ブラウザ UI）。
+- ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（ブラウザ UI。agents dir＝`src/`）。
 - テスト: `pytest`（`testpaths=tests`, `pythonpath=src` は pyproject 済み）。harness の決定ロジックは
   `tests/test_harness/` で LLM 非依存に回る。品質回帰は `pytest tests/test_eval.py`（層B）。
 - lint: `ruff check .` / `ruff format .`（line-length=100, target=py311）
