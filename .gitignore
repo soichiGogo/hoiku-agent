@@ -43,3 +43,9 @@ samples/private/
 .DS_Store
 .vscode/
 .idea/
+.obsidian/
+
+# Claude Code（チーム共有は .claude/settings.json のみコミット。個人/ローカルは除外）
+.claude/settings.local.json
+.claude/agent-memory-local/
+CLAUDE.local.md
