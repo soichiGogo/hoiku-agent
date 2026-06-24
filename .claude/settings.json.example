@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "_comment": "レビュー用テンプレート。内容を確認のうえ `cp .claude/settings.json.example .claude/settings.json` で有効化する（権限付与は人が判断するため active な settings.json は自動生成しない）。チーム共有は settings.json をコミット、個人上書きは settings.local.json（gitignore 済み）。可逆・ローカルなコマンドは allow、外向き/不可逆/課金（push・PR・deploy・gcloud）は ask に置く方針（グローバル CLAUDE.md と整合）。",
+  "permissions": {
+    "allow": [
+      "Bash(uv sync)",
+      "Bash(pytest:*)",
+      "Bash(ruff check:*)",
+      "Bash(ruff format:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(adk run:*)",
+      "Bash(adk web:*)",
+      "Bash(adk api_server:*)",
+      "Bash(adk eval:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git restore:*)",
+      "Bash(git switch:*)",
+      "Bash(git commit:*)"
+    ],
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(adk deploy:*)",
+      "Bash(gcloud:*)"
+    ],
+    "deny": []
+  }
+}

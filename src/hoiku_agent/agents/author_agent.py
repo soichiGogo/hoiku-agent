@@ -1,12 +1,11 @@
-"""作成AI（中身の決定＝エージェント層）。
+"""作成AI（中身の決定＝agentic 層・責務②）。
 
-プロダクト方針 §2/§3：書類作成に足りない情報を自分で判断し、
-- 不足は保育士に問い合わせる（質問生成）
-- 必要な情報源（指針・過去資料・園のルール）を自分で取りに行く（Agentic RAG）
-- 文書作成指針（育つ勘所）に沿って中身を埋める
+設計コンテキスト §6：作成AI＝**単一 LlmAgent**。gather → act → verify は instruction の手順＋
+ADK の tool-use ループ（モデルがツールを呼ばなくなるまでの自然な反復）で表現する。
+**LoopAgent では包まない**（多層化回避＝§4 と整合）。不足検知 → ask_caregiver → 再起案の反復は
+この tool-calling ループ内で完結させる。収集・質問生成・起案を別エージェントに分けない。
 
-"型"（書式・必須項目の充足）は上位のワークフロー層（workflow/）が保証するので、
-ここは「中身」に集中する。
+"型"（必須項目の充足・整形）は harness が保証するので、ここは「中身」に集中する。
 """
 
 from __future__ import annotations
@@ -14,28 +13,30 @@ from __future__ import annotations
 from google.adk.agents import LlmAgent
 
 from ..config import settings
-from ..tools import load_writing_guideline, search_guideline
-
-AUTHOR_INSTRUCTION = """\
-あなたは保育士の書類作成を補助するアシスタントです。最終的な応答主体は保育士であり、
-あなたは「保育士が編集・確定する下書き」を作ります。
-
-手順:
-1. 与えられた書類要件（DocumentSpec）と過去資料・雛形を確認する。
-2. 書類を埋めるのに足りない情報があれば、推測で埋めず保育士に簡潔に質問する。
-   - 質問は「実装の可否を分ける重要な点」に絞り、保育士の負荷を上げない。
-3. `search_guideline` で保育所保育指針・10の姿など根拠を取りに行く。
-4. `load_writing_guideline` の文書作成指針（現場の勘所）に必ず沿う。
-   例: 個人名は書かない等の園ルールを守る。
-5. 各記述がどの「ねらい」「10の姿」に対応するかを意識して下書きを作る。
-"""
+from ..tools import (
+    ask_caregiver,
+    get_child_memory,
+    read_policy,
+    search_guideline,
+    search_records,
+    validate_fields,
+)
+from .prompts import AUTHOR_INSTRUCTION
 
 
 def build_author_agent() -> LlmAgent:
+    """作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。"""
     return LlmAgent(
         name="author",
         model=settings.gemini_model,
         instruction=AUTHOR_INSTRUCTION,
-        tools=[search_guideline, load_writing_guideline],
+        tools=[
+            search_records,
+            search_guideline,
+            read_policy,
+            get_child_memory,
+            ask_caregiver,
+            validate_fields,  # 生成途中の自己点検（最終確定は harness）
+        ],
         output_key="draft",  # 生成した下書きを state["draft"] に格納
     )
