@@ -8,10 +8,11 @@ import pytest
 
 
 def test_schemas_import():
-    from hoiku_agent.schemas import DocumentSpec, DocumentType
+    from hoiku_agent.schemas import AgeBand, DocumentSpec, DocumentType
 
-    spec = DocumentSpec(doc_type=DocumentType.保育日誌)
+    spec = DocumentSpec(doc_type=DocumentType.保育日誌, age_band=AgeBand.零から二歳)
     assert spec.doc_type == DocumentType.保育日誌
+    assert spec.age_band is AgeBand.零から二歳
 
 
 def test_root_agent_builds():
