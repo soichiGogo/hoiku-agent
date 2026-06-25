@@ -54,3 +54,32 @@ def test_search_guideline_degrades_without_corpus(monkeypatch):
     out = search_guideline("3歳 言葉 ねらい")
     assert len(out) == 1
     assert "RAG未接続" in out[0]["source"]
+
+
+_VALID_DRAFT_JSON = """\
+```json
+{
+  "date": "2026-06-25",
+  "age_band": "0-2",
+  "weather": "晴れ",
+  "attendance": [{"child_id": "架空児A", "present": true}],
+  "practice_record": "砂遊び",
+  "individual_notes": [
+    {"child_id": "架空児A", "observed_state": "砂の感触を確かめた", "tags": ["身近なものと関わり感性が育つ"]}
+  ],
+  "evaluation": {"child_focus": "集中していた", "self_review": "道具が適切"}
+}
+```"""
+
+
+def test_validate_fields_tool_accepts_draft_json_string():
+    from hoiku_agent.tools import validate_fields
+
+    assert validate_fields(_VALID_DRAFT_JSON) == []
+
+
+def test_validate_fields_tool_reports_unparseable_json():
+    from hoiku_agent.tools import validate_fields
+
+    problems = validate_fields("これは JSON ではありません")
+    assert problems and "解釈できませんでした" in problems[0]

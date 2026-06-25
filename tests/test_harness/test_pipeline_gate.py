@@ -8,13 +8,22 @@ from __future__ import annotations
 from hoiku_agent.harness.pipeline import build_document_pipeline, is_approved
 
 
-def test_is_approved_detects_token():
+def test_is_approved_first_line_verdict():
     assert is_approved("APPROVED") is True
-    assert is_approved("総評: approved（問題なし）") is True
+    assert is_approved("APPROVED（問題なし）") is True
+    assert is_approved("**APPROVED**\n（特に指摘なし）") is True
 
 
 def test_is_approved_false_on_findings():
-    assert is_approved("criterion: 指針整合 / severity: must_fix / message: ...") is False
+    # 1行目が NEEDS_REVISION / 指摘本文なら未承認
+    assert is_approved("NEEDS_REVISION\ncriterion: 指針整合 / severity: must_fix") is False
+    assert is_approved("criterion: ... / message: この記述は approved とは言えない") is False
+
+
+def test_is_approved_false_on_negation():
+    # 散文の否定形で誤って早期終了しない（部分一致の脆弱性の回帰防止）
+    assert is_approved("NOT APPROVED") is False
+    assert is_approved("未APPROVED：以下を要修正") is False
 
 
 def test_is_approved_handles_non_string():

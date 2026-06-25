@@ -39,6 +39,14 @@ def test_extract_prefers_last_json_fence():
     assert '"b"' in extract_json_block(text)
 
 
+def test_extract_prefers_json_fence_over_trailing_bare_example():
+    """正規の ```json ドラフトの後に説明用の素フェンスが付いても、json フェンスを選ぶ（回帰防止）。"""
+    text = _fenced(_VALID_JSON) + '\nJSONの構造例:\n```\n{"これは": "説明用サンプル"}\n```\n'
+    result = finalize_document(text)
+    assert result.ok is True
+    assert result.parse_error is None
+
+
 def test_extract_json_block_bare_object():
     assert extract_json_block("前置き " + _VALID_JSON + " 後置き").strip().startswith("{")
 
