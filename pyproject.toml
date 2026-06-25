@@ -5,8 +5,9 @@ description = "保育士の書類作成を支援するAIエージェント（Dev
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    # Google ADK（エージェント本体）
-    "google-adk>=0.3.0",
+    # Google ADK（エージェント本体）。2.x 系 API（LongRunningFunctionTool / BaseAgent._run_async_impl /
+    # AgentEvaluator の async 化 / tool_context.search_memory）に依存するため下限を 2.3 に固定。
+    "google-adk>=2.3,<3",
     # Vertex AI（Gemini / RAG Engine / Agent Engine）
     "google-cloud-aiplatform[adk,agent-engines]>=1.95.0",
     # 設定・スキーマ

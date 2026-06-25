@@ -17,6 +17,13 @@ v0 の設計上の形（§6/§7）:
 - author は単一（LoopAgent に包まない）。再起案は author 自身の tool-use ループ内で完結。
 - review_loop は reviewer の巡回＋ApprovalGate の早期終了。APPROVED が出なければ max_iterations 後に
   finalize へ抜け、指摘（state["review"]）は保育士の確定（HITL）に供される（最終OKは人＝§7）。
+
+v0 スコープ（§3「日誌先行 → 月案は日誌の集積に乗せる」）:
+- このパイプラインは **保育日誌（0–2 個別）のみ** を稼働させる。月案パスと L2 還流
+  （`aggregate.aggregate_by_child` → state["prev_month_digest"] → 月案 author の gather）は **次フェーズ**。
+  `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも配線していない。
+- ADK 2.3.0 では LoopAgent/SequentialAgent が deprecated（将来 Workflow へ）。設計（§6/§7）が前提とする
+  API であり、2.3.0 の Workflow 代替は非公開のため v0 はこのまま使う（中期 TODO で移行）。
 """
 
 from __future__ import annotations
@@ -40,12 +47,24 @@ def _model_content(text: str) -> types.Content:
 
 
 def is_approved(review: object) -> bool:
-    """reviewer 出力が APPROVED か（早期終了の決定ロジック・決定的）。
+    """reviewer 出力が承認（APPROVED）か（早期終了の決定ロジック・決定的）。
 
     APPROVED 早期終了の "判定" は harness の決定的ロジック（§7/§16）。純関数として切り出し
     LLM 非依存にテストできるようにする。
+
+    reviewer は判定を **最初の行** に APPROVED / NEEDS_REVISION で書く契約（prompts.py）。
+    部分一致（`"approved" in text`）だと指摘本文の散文（例「approved とは言えない」「NOT APPROVED」）に
+    誤反応して未承認なのに早期終了してしまうため、最初の非空行が APPROVED で始まるかで判定する。
+    否定形（NOT APPROVED / 未APPROVED）は APPROVED で「始まらない」ので自然に弾かれる。
     """
-    return isinstance(review, str) and _APPROVED_TOKEN in review.upper()
+    if not isinstance(review, str):
+        return False
+    for line in review.splitlines():
+        head = line.strip().lstrip("*#>-・ 　").strip().upper()
+        if not head:
+            continue
+        return head.startswith(_APPROVED_TOKEN)
+    return False
 
 
 class ApprovalGate(BaseAgent):

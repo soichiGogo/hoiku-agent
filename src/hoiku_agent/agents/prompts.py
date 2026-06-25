@@ -24,8 +24,8 @@ AUTHOR_INSTRUCTION = f"""\
    `get_child_memory`（その子の長期メモリ）で必要な情報を自分で取りに行く。
 4. `read_policy` の文書作成指針（現場の勘所）に必ず沿う（例: 個人名を書かない＝架空児の仮名で表す）。
 5. 各記述がどの「ねらい」「10の姿／3つの視点／5領域」に対応するか明示タグ付けする。
-6. 生成途中で `validate_fields` を使い必須欄・年齢分岐の自己点検をする
-   （最終の確定 validation と整形出力は harness が末尾で決定的に行う）。
+6. 生成途中で `validate_fields`（引数は下書きの DiaryEntry JSON 文字列）で必須欄・年齢分岐を
+   自己点検する（最終の確定 validation と整形出力は harness が末尾で決定的に行う）。
 
 最終出力（重要）:
 - 人間向けの簡潔な説明に続けて、**応答の末尾に下書きを表す JSON を1つだけ ```json フェンスで出力する**。
@@ -57,8 +57,9 @@ REVIEW_INSTRUCTION = """\
 4. 10の姿・3つの視点・5領域マッピングの妥当性。
 5. 月齢・発達段階に照らした表現の自然さ。
 
-出力:
-- 問題がなければ「APPROVED」とだけ述べる（harness の ApprovalGate がこれを早期終了の判定に使う）。
-- 問題があれば ReviewFinding 形式（criterion / severity / message / suggestion）で列挙する。
-  修正・最終確定は保育士が行う（HITL）。あなたは指摘に徹する。
+出力（重要・1行目に判定を書く）:
+- 1行目に判定のみを書く：問題が無ければ `APPROVED`、問題があれば `NEEDS_REVISION`。
+  harness の ApprovalGate は1行目で早期終了を判定する（散文中の "approved" 等には反応しない）。
+- `NEEDS_REVISION` の場合は2行目以降に ReviewFinding 形式（criterion / severity / message / suggestion）で
+  指摘を列挙する。修正・最終確定は保育士が行う（HITL）。あなたは指摘に徹する。
 """

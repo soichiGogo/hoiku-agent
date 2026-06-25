@@ -37,15 +37,20 @@ def run_gate(
 
     Returns:
         {
-          "status": "no_cases" | "skipped" | "evaluated",
-          "passed": bool | None,        # None＝判定不能（採点不可で降格）
-          "mean": float | None,         # ケース平均（採点できた場合）
+          "status": "no_cases" | "skipped" | "evaluated_no_scoring",
+          "passed": bool | None,        # None＝判定不能（採点不可・未配線で降格）
+          "mean": float | None,         # 3軸ケース平均（採点できた場合）
           "must_fix_violations": int,
           "baseline_mean": float | None,
           "detail": str,
         }
-    緑条件（passed=True）＝ mean が baseline_mean 以上（baseline 未指定なら mean 取得のみで True 扱いにしない）
-    かつ must_fix 違反0。
+
+    v0 の挙動（重要）：3軸 LLM-judge（judges/*.md）を ADK 評価設定へ接続する配線は §18 未決のため、
+    実 mean・main 比較・must_fix 集計は行えない。ADK 評価が例外なく完了しても、それは ADK 既定基準
+    （tool_trajectory / response_match）の通過に過ぎず §12 の3軸非劣化ではない。よって **passed は
+    採点できた場合でも None（判定不能）で返し、偽の緑を出さない**。資格情報・ケースが無い場合も None。
+    緑/赤の確定は judges 連携を整備し §12 の判定式（mean が baseline_mean 以上 かつ must_fix 0）を
+    実装してから（その時に passed=True/False を返すよう本関数を拡張する）。
     """
     cases = find_cases(cases_dir)
     if not cases:
@@ -81,6 +86,7 @@ def run_gate(
                 await AgentEvaluator.evaluate(
                     agent_module=agent_module,
                     eval_dataset_file_path_or_dir=str(case),
+                    num_runs=1,  # v0 はコスト優先で1回（安定化が要るなら §12 と併せて増やす）
                     print_detailed_results=False,
                 )
 
@@ -95,15 +101,20 @@ def run_gate(
             "detail": f"採点を実行できませんでした（資格情報/モデル未設定の可能性）: {type(e).__name__}: {e}",
         }
 
-    # AgentEvaluator.evaluate は閾値未達で例外を投げる（＝ここに来れば全ケース合格）。
-    # v0 は ADK の合否を「回帰なし」とみなす。軸別 mean の取得は judges 連携の整備後に拡張（§18）。
+    # ここに来れば AgentEvaluator は例外なく完了したが、これは ADK 既定基準（tool_trajectory /
+    # response_match）の通過に過ぎず、§12 の3軸（指針整合/10の姿/保護者向け表現）平均でも main 比
+    # 非劣化でもない。judges/*.md を ADK 評価設定へ接続し軸別 mean を算出する配線は §18 未決。
+    # よって緑（passed=True）とは断定せず、判定不能（passed=None）で降格する（偽の合格を出さない）。
     return {
-        "status": "evaluated",
-        "passed": True,
+        "status": "evaluated_no_scoring",
+        "passed": None,
         "mean": None,
         "must_fix_violations": 0,
         "baseline_mean": baseline_mean,
-        "detail": f"{len(cases)} ケースが ADK 評価を通過（回帰なし）。",
+        "detail": (
+            f"{len(cases)} ケースで ADK 既定評価は完了したが、§12 の3軸採点・main 比較は未接続（§18）。"
+            "緑判定は judges 連携の整備後に行う。"
+        ),
     }
 
 

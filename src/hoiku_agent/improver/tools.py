@@ -91,7 +91,9 @@ def _load_run_gate():
 def run_eval(evalset: str | None = None) -> dict:
     """評価ゲート（eval/run_gate.py）を呼び、回帰判定を返す（§12）。
 
-    緑条件＝main 平均非劣化 & must_fix 0。採点不可（資格情報/ケース無し）は passed=None で降格。
+    緑/赤の確定条件＝main 平均非劣化 & must_fix 0。ただし v0 は 3軸 judge の ADK 接続が未配線（§18）の
+    ため、run_gate は採点できても passed=None（判定不能）で返す（偽の緑を出さない）。資格情報/ケースが
+    無い場合も passed=None で降格。judges 連携の整備後に passed=True/False が返るようになる。
 
     Returns:
         run_gate の判定 dict（status / passed / mean / must_fix_violations / detail）。

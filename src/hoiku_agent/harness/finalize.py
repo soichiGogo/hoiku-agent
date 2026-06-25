@@ -44,33 +44,41 @@ class FinalizedDocument:
 def extract_json_block(text: str) -> str | None:
     """テキストから DiaryEntry を表す JSON 文字列を抽出する。
 
-    優先順位: ①```json フェンス（最後のもの） ②素の ``` フェンス ③最初の波括弧バランス。
-    LLM 出力の揺れ（前後の散文・複数フェンス）に耐えるための堅牢抽出。
+    優先順位（docstring と実装を一致させる）:
+      ① 言語タグが json のフェンス（複数あれば最後のもの）
+      ② 言語タグ無し（素）フェンスで中身が { 始まり（複数あれば最後のもの）
+      ③ 波括弧バランスで最初の JSON オブジェクト
+    LLM 出力の揺れ（前後の散文・説明用の別フェンス）に耐えるための堅牢抽出。説明用に後置された
+    素フェンスが正規の ```json ドラフトを上書きしないよう、言語タグを区別する。
     """
     fences = _find_fenced_blocks(text)
-    for block in reversed(fences):  # 最後の JSON フェンスを正とする
-        stripped = block.strip()
-        if stripped.startswith("{"):
-            return stripped
-    # フェンスが無ければ波括弧バランスで最初の JSON オブジェクトを拾う
+    json_tagged = [
+        body for lang, body in fences if lang.lower() == "json" and body.strip().startswith("{")
+    ]
+    if json_tagged:
+        return json_tagged[-1].strip()
+    bare = [body for lang, body in fences if not lang and body.strip().startswith("{")]
+    if bare:
+        return bare[-1].strip()
     return _first_balanced_object(text)
 
 
-def _find_fenced_blocks(text: str) -> list[str]:
-    blocks: list[str] = []
+def _find_fenced_blocks(text: str) -> list[tuple[str, str]]:
+    """``` フェンスを (言語タグ, 本文) のリストで返す。"""
+    blocks: list[tuple[str, str]] = []
     i = 0
     while True:
         start = text.find("```", i)
         if start == -1:
             break
-        # 言語指定（```json 等）の行末まで飛ばす
         nl = text.find("\n", start)
         if nl == -1:
             break
+        lang = text[start + 3 : nl].strip()
         end = text.find("```", nl + 1)
         if end == -1:
             break
-        blocks.append(text[nl + 1 : end])
+        blocks.append((lang, text[nl + 1 : end]))
         i = end + 3
     return blocks
 

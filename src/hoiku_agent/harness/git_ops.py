@@ -62,19 +62,30 @@ def _heading_level(line: str) -> int:
     return level
 
 
-def _target_segment(target_heading: str) -> str:
-    """ "### 書類別の勘所 > 保育日誌" / "### 保育日誌" → "保育日誌"（末尾セグメント・#除去）。"""
-    seg = target_heading.split(">")[-1].strip()
-    return seg.lstrip("#").strip()
-
-
 def _find_heading_index(lines: list[str], target_heading: str) -> int:
-    target = _target_segment(target_heading)
-    for i, line in enumerate(lines):
-        text = _heading_text(line)
-        if text is not None and text == target:
-            return i
-    return -1
+    """target_heading を見出し行の index に解決する。
+
+    "親 > 子" のパス表記（§8）は親→子で範囲を絞り一意に解決する（別セクションの同名見出しを
+    誤って選ばない）。最終セグメントが複数一致して一意に定まらない場合は、黙って先頭を選ばず
+    ValueError（harness の fail-loud 方針）。見つからなければ -1。
+    """
+    segments = [s.strip().lstrip("#").strip() for s in target_heading.split(">")]
+    segments = [s for s in segments if s]
+    if not segments:
+        return -1
+    start, end = 0, len(lines)
+    idx = -1
+    for n, seg in enumerate(segments):
+        matches = [i for i in range(start, end) if _heading_text(lines[i]) == seg]
+        if not matches:
+            return -1
+        if n == len(segments) - 1 and len(matches) > 1:
+            raise ValueError(
+                f"見出しが一意に定まらない: {target_heading!r}（候補 {len(matches)} 件）"
+            )
+        idx = matches[0]
+        start, end = idx + 1, _section_end(lines, idx)
+    return idx
 
 
 def _section_end(lines: list[str], heading_idx: int) -> int:
@@ -86,9 +97,26 @@ def _section_end(lines: list[str], heading_idx: int) -> int:
     return len(lines)
 
 
+def _direct_content_end(lines: list[str], heading_idx: int) -> int:
+    """見出し直下の "直接内容" の終端＝最初の下位/同位の次見出し（無ければ末尾）。
+
+    add 挿入・箇条書き列挙を見出し直下のフラットな箇条書きに限定し、下位見出し配下の小節へ項目が
+    紛れ込むのを防ぐ（§8 の編集単位「見出し直下の箇条書き1項目」）。
+    """
+    for j in range(heading_idx + 1, len(lines)):
+        if _heading_text(lines[j]) is not None:
+            return j
+    return len(lines)
+
+
+def _is_bullet(line: str) -> bool:
+    """箇条書き行か（"- " 始まり）。水平線 '---' 等は箇条書きとして扱わない。"""
+    return line.lstrip().startswith("- ")
+
+
 def _as_bullet(text: str) -> str:
     text = text.strip()
-    return text if text.startswith("-") else f"- {text}"
+    return text if _is_bullet(text) else f"- {text}"
 
 
 def _bullet_body(line: str) -> str:
@@ -98,18 +126,19 @@ def _bullet_body(line: str) -> str:
 def list_section_bullets(target_heading: str, path: Path = _GUIDELINE_PATH) -> list[str]:
     """指定見出し直下の箇条書き項目（本文のみ）の一覧を返す（競合検出の入力・§8）。
 
-    見出しが無ければ空リスト。決定的・純関数（テスト可）。
+    見出しが無ければ空リスト（競合検出を止めないため、見出しが一意に定まらない場合も空）。決定的・純関数。
     """
     if not path.exists():
         return []
     lines = path.read_text(encoding="utf-8").split("\n")
-    idx = _find_heading_index(lines, target_heading)
+    try:
+        idx = _find_heading_index(lines, target_heading)
+    except ValueError:
+        return []
     if idx == -1:
         return []
-    end = _section_end(lines, idx)
-    return [
-        _bullet_body(lines[j]) for j in range(idx + 1, end) if lines[j].lstrip().startswith("-")
-    ]
+    end = _direct_content_end(lines, idx)
+    return [_bullet_body(lines[j]) for j in range(idx + 1, end) if _is_bullet(lines[j])]
 
 
 # ──────────────────────────── 構造化編集の適用（純関数） ────────────────────────────
@@ -131,7 +160,8 @@ def apply_structured_edit(edit: StructuredEdit, path: Path = _GUIDELINE_PATH) ->
     idx = _find_heading_index(lines, edit["target_heading"])
     if idx == -1:
         raise ValueError(f"見出しが見つからない: {edit['target_heading']!r}")
-    end = _section_end(lines, idx)
+    # 見出し直下のフラットな箇条書きに限定（下位見出し配下の小節を侵さない）。
+    end = _direct_content_end(lines, idx)
 
     op = edit.get("op", "add")
     after = (edit.get("after") or "").strip()
@@ -152,7 +182,7 @@ def apply_structured_edit(edit: StructuredEdit, path: Path = _GUIDELINE_PATH) ->
         match = -1
         target_body = _bullet_body(before)
         for j in range(idx + 1, end):
-            if lines[j].strip() and _bullet_body(lines[j]) == target_body:
+            if _is_bullet(lines[j]) and _bullet_body(lines[j]) == target_body:
                 match = j
                 break
         if match == -1:
@@ -190,6 +220,11 @@ def open_pr(
     既定 dry_run=True は安全側：適用後テキストの算出と計画の返却のみ（実 commit/PR なし）。
     dry_run=False で git/gh を実行する。採否は CI 評価ゲートが決める（保育士OK≠マージOK＝§8/§12）。
     git/gh が無い・失敗した場合は raise せず status を返して降格する。
+
+    注意（暫定）：dry_run=False は repo_root（既定は dev checkout）の working tree を直接操作する。
+    これは「プロダクトの git 操作」だが物理的には開発者の checkout を触るため、本番は専用 worktree/clone を
+    repo_root に渡して分離するのが望ましい（中期 TODO）。commit は branch に残し、処理後は元ブランチへ
+    switch し戻して dev checkout を改善ブランチに残さない。
     """
     guideline = repo_root / "knowledge" / "文書作成指針.md"
     try:
@@ -237,15 +272,22 @@ def open_pr(
     ):
         r = _run(cmd, repo_root)
         if r.returncode != 0:
+            _run(["git", "switch", base_branch], repo_root)
             return {"status": "error", "stage": " ".join(cmd), "detail": r.stderr.strip(), **plan}
 
     if shutil.which("gh") is None:
-        return {"status": "committed_no_pr", "reason": "gh 不在", **plan}
+        result = {"status": "committed_no_pr", "reason": "gh 不在", **plan}
+    else:
+        r = _run(
+            ["gh", "pr", "create", "--title", title, "--body", body, "--base", base_branch],
+            repo_root,
+        )
+        result = (
+            {"status": "pr_opened", "pr_url": r.stdout.strip(), **plan}
+            if r.returncode == 0
+            else {"status": "committed_no_pr", "reason": r.stderr.strip(), **plan}
+        )
 
-    r = _run(
-        ["gh", "pr", "create", "--title", title, "--body", body, "--base", base_branch],
-        repo_root,
-    )
-    if r.returncode != 0:
-        return {"status": "committed_no_pr", "reason": r.stderr.strip(), **plan}
-    return {"status": "pr_opened", "pr_url": r.stdout.strip(), **plan}
+    # commit は branch に残しつつ、作業ツリーは元ブランチへ戻す（dev checkout を改善ブランチに残さない）。
+    _run(["git", "switch", base_branch], repo_root)
+    return result
