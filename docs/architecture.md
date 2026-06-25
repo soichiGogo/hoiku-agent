@@ -18,7 +18,7 @@
 
 | ファイル | 関数 | 役割 |
 |---|---|---|
-| `harness/pipeline.py` | `build_document_pipeline` / `ApprovalGate` / `FinalizeAgent` / `is_approved` | author → review_loop（reviewer→ApprovalGate で APPROVED 早期終了）→ finalize の順序制御（root_agent の実体） |
+| `harness/pipeline.py` | `build_document_pipeline` / `ApprovalGate` / `FinalizeAgent` / `is_approved` / `persist_visit_to_memory`(+`_should_persist_visit`) | author → review_loop（reviewer→ApprovalGate で APPROVED 早期終了）→ finalize の順序制御（root_agent の実体）。`after_agent_callback`＝型成立の確定時のみ来園を Memory Bank へ書き戻す（§9/§13） |
 | `harness/schema_check.py` | `validate_fields` | 必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域） |
 | `harness/draft.py` | `write_draft` | pydantic（DiaryEntry 等）→ 様式整形（10の姿/3つの視点/5領域タグ明示） |
 | `harness/finalize.py` | `finalize_document` / `parse_draft_to_entry` | author 出力（DiaryEntry JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック） |
@@ -37,7 +37,7 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
 
 | 対象 | 置き場 | 参照 |
 |---|---|---|
-| 子ども別 長期メモリ | Agent Engine Memory Bank（repo外） | `get_child_memory` |
+| 子ども別 長期メモリ | Agent Engine Memory Bank（repo外） | 読み＝`get_child_memory`／書き戻し＝`persist_visit_to_memory`（pipeline の `after_agent_callback`）。配線は `--memory_service_uri=agentengine://<id>`（`config.memory_service_uri`／`server.py`）。未設定で降格 |
 | 育つ文書作成指針 | git `knowledge/文書作成指針.md` | agent は読み取り（HEAD）／improver が編集（HITL+ゲート） |
 | 静的ナレッジ（指針解説・10の姿） | Vertex RAG（`knowledge/保育所保育指針/` は gitignore のソース） | `search_guideline` |
 
@@ -51,8 +51,10 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
        ├─ review_loop (LoopAgent)
        │     ├─ reviewer (LlmAgent) … 指摘 → state["review"]
        │     └─ approval_gate (BaseAgent) … APPROVED を検知したら escalate（早期終了）
-       └─ finalize (BaseAgent) … state["draft"] を復元 → validate_fields/write_draft を確定実行
-                                  → state["final_document"]/["validation"]、awaiting_caregiver_approval=True（HITL）
+       ├─ finalize (BaseAgent) … state["draft"] を復元 → validate_fields/write_draft を確定実行
+       │                          → state["final_document"]/["validation"]、awaiting_caregiver_approval=True（HITL）
+       └─ [after_agent_callback] persist_visit_to_memory … 型成立の確定時のみ来園セッションを
+                                  子の Memory Bank へ書き戻す（§9/§13。memory_service 未配線なら降格）
 出力（確定書類）＋ 保育士の修正差分 → eval（層B・run_gate）→ improver が指針へ還元（HITL+ゲート）
 ```
 
@@ -70,12 +72,19 @@ GCP/LLM 非依存で稼働）:
   注入し `document_pipeline` を実 ADK ランタイムで end-to-end に通す。連結（draft→review→final_document）・
   APPROVED 早期終了・巡回上限到達・確定3経路（成功／parse失敗／検証不足）・HITL 不発火を **creds 不要・
   無料・決定的**に検証（中身の品質採点は層B eval＝別系統）。起動は `/e2e` skill。
+- **Memory Bank 配線（読み＋書き戻し）**：`config.memory_service_uri`（`agentengine://<id>`）→ 本番/ローカル共通の
+  入口 `server.py`（`get_fast_api_app`・自前 Runner は組まず ADK の `--memory_service_uri` 自動配線に委ねる）。
+  読み＝`get_child_memory`、書き戻し＝`persist_visit_to_memory`（`after_agent_callback`・型成立の確定時のみ）。
+  `InMemoryMemoryService` 付き Runner で書き戻しの発火/スキップ/降格を決定論E2E に検証（creds 不要）。
 
 残課題（外部リソース・実データ依存。コードは降格付きで配線済み）:
 - **月案パスと L2 還流**（`aggregate_by_child` → state["prev_month_digest"] → 月案 author の gather）は次フェーズ。
   `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも未配線（§3/§4/§10）。
   月案スキーマ（`MonthlyPlan` 等）・`doc_type` 分岐も未実装。
-- Vertex RAG corpus の作成・接続、Agent Engine Memory Bank の接続（§9・config 設定で活性化）。
+- Vertex RAG corpus の作成・接続（§9・config 設定で活性化）。
+- **Memory Bank のライブ接続**：配線（読み＋書き戻し＋`server.py` 入口）は済み。残は実 Agent Engine の
+  プロビジョニング＋`.env` の `AGENT_ENGINE_ID` 設定（手順は `docs/ライブ実行手順.md`）と、**真の承認ゲート**
+  （v0 は "型成立の確定" を承認の代理トリガにする。保育士の明示承認アクションで書き戻すのは次フェーズ）。
 - **CI（層A）**：決定論 CI（`.github/workflows/ci.yml`＝ruff＋`pytest`。毎PR・creds 不要・無料で
   harness/決定論E2E/smoke を回す）は導入済み。**未了**は実 Gemini を使う eval ゲートCI（WIF 認証・
   nightly/手動。§12 の3軸 judge 接続＋GCP の WIF 設定が前提）と Cloud Run デプロイ。
