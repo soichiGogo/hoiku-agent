@@ -4,15 +4,19 @@
 **PR の eval 平均が main 比で低下なし、かつ must_fix 違反0**。v0 は「main 平均を下回らない」のみを
 ゲートにする（軸別閾値は 15 ケース貯まってから調整）。
 
-採点は ADK の評価（`AgentEvaluator`）に委ねる（§11「ADK eval 内蔵」）。3軸の LLM-judge
-（judges/*.md：①指針整合 ②10の姿 ③保護者向け表現）は judge プロンプト資産として持ち、ADK の
-評価設定（test_config.json / rubric）から参照する想定（接続は §18 未決の整備事項）。
+採点は ADK ネイティブの rubric メトリクス `rubric_based_final_response_quality_v1` に委ねる
+（eval/test_config.json で3軸 axis_*（指針整合/10の姿/保護者向け表現）と mustfix_* を rubric として
+配線済み・judge 全文は judges/*.md）。judge（Gemini）が各 rubric を yes/no で評価し、本モジュールが
+axis_* の平均をケーススコア、mustfix_* の no を違反として集計して §12 の判定式に落とす。
 
-このモジュールは「ゲートの決定ロジック」を1箇所に集約し、improver の run_eval と
-tests/test_eval.py の双方から呼ばれる（実装を二重化しない）。LLM 資格情報・評価ケースが無い環境
-では採点はできないため、`passed=None`（判定不能＝スキップ相当）で安全に降格する。
+設計の要（§5/§16）:
+- **ゲートの決定ロジック（aggregate_rubric_scores / decide_gate / extract_rubric_scores）は純関数**で
+  ここに1つ置き、improver.run_eval / tests/test_eval.py の双方から呼ぶ（二重化しない）。LLM 非依存に
+  テストできるよう ADK の採点（要 creds）から切り離す。
+- **採点の実行（ADK 駆動）は要 LLM 資格情報**。creds・評価ケースが無い環境では採点できないため、
+  `passed=None`（判定不能＝スキップ相当）で安全に降格し、**偽の緑を出さない**。
 
-CLI: `python eval/run_gate.py` でローカル実行できる。
+CLI: `python eval/run_gate.py` でローカル実行できる（要 creds）。
 """
 
 from __future__ import annotations
@@ -21,11 +25,190 @@ from pathlib import Path
 
 _EVAL_DIR = Path(__file__).resolve().parent
 _CASES_DIR = _EVAL_DIR / "cases"
+_TEST_CONFIG = _EVAL_DIR / "test_config.json"
+
+# rubric メトリクス名（test_config.json のキーと一致）と rubric_id 体系（§12 の3軸＋must_fix）。
+RUBRIC_METRIC = "rubric_based_final_response_quality_v1"
+AXIS_RUBRIC_IDS = ("axis_guideline_alignment", "axis_ten_no_sugata", "axis_expression")
+MUST_FIX_RUBRIC_IDS = (
+    "mustfix_no_real_names",
+    "mustfix_age_framework",
+    "mustfix_no_definitive_eval",
+)
 
 
 def find_cases(cases_dir: Path = _CASES_DIR) -> list[Path]:
     """評価ケース（ADK evalset JSON）の一覧を返す。"""
     return sorted(cases_dir.glob("*.evalset.json"))
+
+
+# ──────────────────── ゲートの決定ロジック（純関数・§12・LLM 非依存） ────────────────────
+
+
+def aggregate_rubric_scores(
+    per_case_scores: list[dict[str, float]],
+    axis_ids: tuple[str, ...] = AXIS_RUBRIC_IDS,
+    must_fix_ids: tuple[str, ...] = MUST_FIX_RUBRIC_IDS,
+) -> dict:
+    """ケース別の rubric スコア（{rubric_id: 0–1}）を §12 の集計へ落とす（純関数・決定的）。
+
+    - ケーススコア＝そのケースに存在する axis_* rubric の平均（0–1）。
+    - 全体 mean＝ケーススコアの平均（採点できたケースが無ければ None）。
+    - axis_means＝軸別の平均（軸別閾値調整・可視化用）。
+    - must_fix_violations＝mustfix_* rubric が "no"（< 1.0）だった回数の総和。
+
+    Args:
+        per_case_scores: ケースごとの {rubric_id: score} のリスト。
+        axis_ids: ケーススコアを成す3軸 rubric の id。
+        must_fix_ids: 違反として数える must_fix rubric の id。
+
+    Returns:
+        {"mean", "axis_means", "must_fix_violations", "n_scored"}。
+    """
+    case_means: list[float] = []
+    axis_accum: dict[str, list[float]] = {a: [] for a in axis_ids}
+    must_fix_violations = 0
+
+    for scores in per_case_scores:
+        present = [scores[a] for a in axis_ids if scores.get(a) is not None]
+        if present:
+            case_means.append(sum(present) / len(present))
+        for a in axis_ids:
+            if scores.get(a) is not None:
+                axis_accum[a].append(scores[a])
+        for m in must_fix_ids:
+            v = scores.get(m)
+            if v is not None and v < 1.0:  # must_fix rubric の "no"（不充足）＝違反
+                must_fix_violations += 1
+
+    mean = sum(case_means) / len(case_means) if case_means else None
+    axis_means = {a: (sum(v) / len(v) if v else None) for a, v in axis_accum.items()}
+    return {
+        "mean": mean,
+        "axis_means": axis_means,
+        "must_fix_violations": must_fix_violations,
+        "n_scored": len(case_means),
+    }
+
+
+def decide_gate(
+    mean: float | None,
+    baseline_mean: float | None,
+    must_fix_violations: int,
+    *,
+    tolerance: float = 1e-9,
+) -> bool | None:
+    """§12 の判定式：main 比 非劣化 かつ must_fix 0 を緑とする（純関数・決定的）。
+
+    Returns:
+        True＝緑（非劣化＆違反0）／ False＝赤（劣化 or 違反あり）／ None＝判定不能（採点できていない）。
+    v0 は「main 平均を下回らない」のみをゲートにする（baseline_mean=None なら比較対象なしで非劣化扱い）。
+    """
+    if mean is None:
+        return None  # 採点できていない＝判定不能（偽の緑/赤を出さない）
+    if must_fix_violations > 0:
+        return False  # must_fix 違反は1件でも赤
+    if baseline_mean is None:
+        return True  # main 比較なし（初回等）＝非劣化として緑（must_fix 0 を確認済み）
+    return mean >= baseline_mean - tolerance
+
+
+def extract_rubric_scores(eval_case_result: object) -> dict[str, float]:
+    """ADK の EvalCaseResult から rubric_id→score（0–1）を取り出す（決定的・shape 不一致は空）。
+
+    overall_eval_metric_results の中から rubric メトリクスの details.rubric_scores を拾う。ADK の
+    結果型に依存するが、純粋な抽出のみで LLM は呼ばない（合成オブジェクトでテスト可）。
+    """
+    scores: dict[str, float] = {}
+    for metric_result in getattr(eval_case_result, "overall_eval_metric_results", None) or []:
+        if getattr(metric_result, "metric_name", None) != RUBRIC_METRIC:
+            continue
+        details = getattr(metric_result, "details", None)
+        for rubric_score in getattr(details, "rubric_scores", None) or []:
+            rid = getattr(rubric_score, "rubric_id", None)
+            score = getattr(rubric_score, "score", None)
+            if rid is not None and score is not None:
+                scores[rid] = float(score)
+    return scores
+
+
+# ──────────────────── ADK 駆動の採点（要 creds・降格付き） ────────────────────
+
+
+def _load_eval_metrics() -> list:
+    """eval/test_config.json から rubric メトリクス（EvalMetric）を構築する（creds 不要）。"""
+    from google.adk.evaluation.eval_config import (
+        get_eval_metrics_from_config,
+        get_evaluation_criteria_or_default,
+    )
+
+    eval_config = get_evaluation_criteria_or_default(str(_TEST_CONFIG))
+    return get_eval_metrics_from_config(eval_config)
+
+
+async def _score_cases_with_adk(cases: list[Path], agent_module: str) -> list[dict[str, float]]:
+    """各 evalset を ADK でローカル採点し、ケース別 {rubric_id: score} を返す（要 LLM 資格情報）。
+
+    LocalEvalService に root_agent と evalset を渡し、推論→rubric 採点を回す。inference/採点は judge
+    モデル（Gemini）を呼ぶため資格情報が要る。呼び出し側（run_gate）が例外を握って降格する。
+    """
+    import importlib
+    import json
+
+    from google.adk.evaluation.base_eval_service import (
+        EvaluateConfig,
+        EvaluateRequest,
+        InferenceConfig,
+        InferenceRequest,
+    )
+    from google.adk.evaluation.eval_set import EvalSet
+    from google.adk.evaluation.in_memory_eval_sets_manager import InMemoryEvalSetsManager
+    from google.adk.evaluation.local_eval_service import LocalEvalService
+
+    root_agent = importlib.import_module(agent_module).root_agent
+    eval_metrics = _load_eval_metrics()
+    app_name = "hoiku_eval"
+    per_case: list[dict[str, float]] = []
+
+    for case_path in cases:
+        eval_set = EvalSet.model_validate(json.loads(case_path.read_text(encoding="utf-8")))
+        manager = InMemoryEvalSetsManager()
+        manager.create_eval_set(app_name, eval_set.eval_set_id)
+        for case in eval_set.eval_cases:
+            manager.add_eval_case(app_name, eval_set.eval_set_id, case)
+
+        service = LocalEvalService(root_agent=root_agent, eval_sets_manager=manager)
+        inference_results = [
+            r
+            async for r in service.perform_inference(
+                inference_request=InferenceRequest(
+                    app_name=app_name,
+                    eval_set_id=eval_set.eval_set_id,
+                    inference_config=InferenceConfig(),
+                )
+            )
+        ]
+        async for case_result in service.evaluate(
+            evaluate_request=EvaluateRequest(
+                inference_results=inference_results,
+                evaluate_config=EvaluateConfig(eval_metrics=eval_metrics),
+            )
+        ):
+            per_case.append(extract_rubric_scores(case_result))
+
+    return per_case
+
+
+def _degraded(status: str, detail: str, baseline_mean: float | None) -> dict:
+    return {
+        "status": status,
+        "passed": None,
+        "mean": None,
+        "axis_means": None,
+        "must_fix_violations": 0,
+        "baseline_mean": baseline_mean,
+        "detail": detail,
+    }
 
 
 def run_gate(
@@ -37,83 +220,64 @@ def run_gate(
 
     Returns:
         {
-          "status": "no_cases" | "skipped" | "evaluated_no_scoring",
+          "status": "no_cases" | "skipped" | "scored",
           "passed": bool | None,        # None＝判定不能（採点不可・未配線で降格）
           "mean": float | None,         # 3軸ケース平均（採点できた場合）
+          "axis_means": dict | None,    # 軸別平均（採点できた場合）
           "must_fix_violations": int,
           "baseline_mean": float | None,
           "detail": str,
         }
 
-    v0 の挙動（重要）：3軸 LLM-judge（judges/*.md）を ADK 評価設定へ接続する配線は §18 未決のため、
-    実 mean・main 比較・must_fix 集計は行えない。ADK 評価が例外なく完了しても、それは ADK 既定基準
-    （tool_trajectory / response_match）の通過に過ぎず §12 の3軸非劣化ではない。よって **passed は
-    採点できた場合でも None（判定不能）で返し、偽の緑を出さない**。資格情報・ケースが無い場合も None。
-    緑/赤の確定は judges 連携を整備し §12 の判定式（mean が baseline_mean 以上 かつ must_fix 0）を
-    実装してから（その時に passed=True/False を返すよう本関数を拡張する）。
+    挙動（§12 の判定式）：rubric メトリクス（test_config.json）で各ケースを採点し、axis_* 平均を
+    ケーススコア、mustfix_* の no を違反として集計 → `decide_gate`（main 比 非劣化 かつ must_fix 0）で
+    passed を確定する。**採点できない場合（ケース未整備／LLM 資格情報なし／ADK 例外）は passed=None で
+    降格し、偽の緑を出さない**。
     """
     cases = find_cases(cases_dir)
     if not cases:
-        return {
-            "status": "no_cases",
-            "passed": None,
-            "mean": None,
-            "must_fix_violations": 0,
-            "baseline_mean": baseline_mean,
-            "detail": "評価ケース未整備（eval/cases/*.evalset.json を追加すると有効化）。",
-        }
+        return _degraded(
+            "no_cases",
+            "評価ケース未整備（eval/cases/*.evalset.json を追加すると有効化）。",
+            baseline_mean,
+        )
 
-    try:
-        from google.adk.evaluation import AgentEvaluator  # noqa: F401
-    except ImportError as e:
-        return {
-            "status": "skipped",
-            "passed": None,
-            "mean": None,
-            "must_fix_violations": 0,
-            "baseline_mean": baseline_mean,
-            "detail": f"google-adk evaluation 未利用: {e}",
-        }
-
-    # 実採点は LLM 資格情報（Vertex/Gemini）が必要。無い環境では例外になるため降格する。
     try:
         import asyncio
 
-        from google.adk.evaluation import AgentEvaluator
+        import google.adk.evaluation  # noqa: F401  ADK evaluation の有無を先に確認
+    except ImportError as e:
+        return _degraded("skipped", f"google-adk evaluation 未利用: {e}", baseline_mean)
 
-        async def _run() -> None:
-            for case in cases:
-                await AgentEvaluator.evaluate(
-                    agent_module=agent_module,
-                    eval_dataset_file_path_or_dir=str(case),
-                    num_runs=1,  # v0 はコスト優先で1回（安定化が要るなら §12 と併せて増やす）
-                    print_detailed_results=False,
-                )
-
-        asyncio.run(_run())
+    try:
+        per_case = asyncio.run(_score_cases_with_adk(cases, agent_module))
     except Exception as e:  # noqa: BLE001  資格情報なし等は判定不能として降格（ゲートを落とさない）
-        return {
-            "status": "skipped",
-            "passed": None,
-            "mean": None,
-            "must_fix_violations": 0,
-            "baseline_mean": baseline_mean,
-            "detail": f"採点を実行できませんでした（資格情報/モデル未設定の可能性）: {type(e).__name__}: {e}",
-        }
+        return _degraded(
+            "skipped",
+            f"採点を実行できませんでした（資格情報/モデル未設定の可能性）: {type(e).__name__}: {e}",
+            baseline_mean,
+        )
 
-    # ここに来れば AgentEvaluator は例外なく完了したが、これは ADK 既定基準（tool_trajectory /
-    # response_match）の通過に過ぎず、§12 の3軸（指針整合/10の姿/保護者向け表現）平均でも main 比
-    # 非劣化でもない。judges/*.md を ADK 評価設定へ接続し軸別 mean を算出する配線は §18 未決。
-    # よって緑（passed=True）とは断定せず、判定不能（passed=None）で降格する（偽の合格を出さない）。
+    agg = aggregate_rubric_scores(per_case)
+    passed = decide_gate(agg["mean"], baseline_mean, agg["must_fix_violations"])
+    if passed is None:
+        # ケースは回ったが rubric スコアを取り出せなかった（judge 応答異常等）＝判定不能で降格。
+        return _degraded(
+            "skipped",
+            f"{len(cases)} ケースを採点したが rubric スコアを取得できず判定不能。",
+            baseline_mean,
+        )
     return {
-        "status": "evaluated_no_scoring",
-        "passed": None,
-        "mean": None,
-        "must_fix_violations": 0,
+        "status": "scored",
+        "passed": passed,
+        "mean": agg["mean"],
+        "axis_means": agg["axis_means"],
+        "must_fix_violations": agg["must_fix_violations"],
         "baseline_mean": baseline_mean,
         "detail": (
-            f"{len(cases)} ケースで ADK 既定評価は完了したが、§12 の3軸採点・main 比較は未接続（§18）。"
-            "緑判定は judges 連携の整備後に行う。"
+            f"{agg['n_scored']} ケースを3軸採点（mean={agg['mean']:.3f}）／"
+            f"must_fix 違反={agg['must_fix_violations']}／"
+            f"判定={'緑' if passed else '赤'}（main 比 非劣化 かつ must_fix 0）。"
         ),
     }
 

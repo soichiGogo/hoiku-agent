@@ -11,10 +11,16 @@
   ①指針整合（保育所保育指針への整合）②10の姿マッピング ③保護者向け表現の適切さ。
   各軸 LLM-judge を **0–1** で採点し、3軸平均をケーススコアとする。
   （「文書作成指針への準拠」を4軸目にするかは設計余地だが原典に無い追加なので v0 は3軸）。
+- **judge の配線は `test_config.json`**：ADK ネイティブの `rubric_based_final_response_quality_v1` に
+  3軸（`axis_*`）と must_fix（`mustfix_*`）を rubric として載せる。`judges/*.md` は rubric 文面（text_property）の
+  出所・全文。**rubric_id 体系（axis_* / mustfix_*）と判定式の実体は `run_gate.py`** に1つ（二重実装しない）。
 - **PR ゲート＝AI版回帰テスト**：緑（auto-merge 可）の条件は **PR の eval 平均が main 比で低下なし、かつ
   `must_fix` 違反0**。v0 は「main 平均を下回らない」のみをゲートにし、軸別閾値は 15ケース貯まってから調整。
-- **実行**：`adk eval <agent_pkg> cases/<name>.evalset.json`（構文・引数は公式 docs で要確認＝§18）/
-  または `pytest tests/test_eval.py`（CI 統合）。improver の `run_eval`/`open_pr` もこのゲートを使う。
+  判定は `run_gate.py`：rubric 採点 → `aggregate_rubric_scores`（axis 平均＝ケーススコア／mustfix の no＝違反）
+  → `decide_gate`（main 比 非劣化 かつ must_fix 0）。採点不能（creds/ケース/依存なし）は `passed=None` で降格。
+- **実行**：`uv run --extra eval python eval/run_gate.py`（要 `--extra eval` ＝ `google-adk[eval]` ＋ LLM 資格情報）/
+  または `pytest tests/test_eval.py`（CI 統合・creds 無は skip）/ 判定式の単体は `tests/test_eval_gate.py`（LLM 非依存）。
+  improver の `run_eval`/`open_pr` もこのゲートを使う。
 
 ## IMPORTANT: PII を入れない
 

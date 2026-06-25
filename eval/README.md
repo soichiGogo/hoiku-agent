@@ -11,7 +11,10 @@
   期待値（採点の根拠／`must_fix` 条件）。**15–30ケースで十分**（数より質）。**実データ（PII）禁止＝架空児のみ**。
 - `judges/` … LLM-as-judge プロンプト。**3軸**：①指針整合（保育所保育指針）②10の姿マッピング
   ③保護者向け表現の適切さ。各軸 0–1 で採点し3軸平均をケーススコアにする。
-- 実行は ADK の evaluation（`adk eval`）。詳細規約は `CLAUDE.md` を参照。
+- `test_config.json` … 3軸（`axis_*`）＋must_fix（`mustfix_*`）を ADK の
+  `rubric_based_final_response_quality_v1` に rubric として配線。
+- `run_gate.py` … 採点→集計→ゲート判定の実体（`aggregate_rubric_scores`/`decide_gate`・判定式の SSOT）。
+- 実行は `uv run --extra eval python eval/run_gate.py`（要 `google-adk[eval]` ＋ LLM 資格情報）。詳細規約は `CLAUDE.md`。
 
 ## 評価ゲート
 
