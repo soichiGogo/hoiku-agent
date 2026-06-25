@@ -1,0 +1,233 @@
+"""決定論E2E（結合テスト）：document_pipeline を LLM/GCP 非依存に通す。
+
+設計コンテキスト §4/§5/§16。harness（型の保証）と agents（中身）の "結合" ＝パイプラインの
+順序制御を、実 Gemini を呼ばずに検証する層。author/reviewer の build_xxx(model=...) に
+FakeLlm（BaseLlm の決定的スタブ）を注入し、author→review_loop→finalize を実 ADK ランタイムで
+end-to-end に回す。creds 不要・無料・決定的なので毎PR/毎編集で回せる（品質採点は別層＝eval/）。
+
+ここで担保する "結合経路"（harness/pipeline.py・finalize.py が分岐を持つ点）:
+  1. 連結          author→state["draft"]→reviewer→state["review"]→finalize→state["final_document"]
+  2. 早期終了      reviewer 1行目 APPROVED で ApprovalGate が escalate（is_approved）
+  3. 巡回上限      APPROVED が出ない場合 MAX_REVIEW_ITERATIONS で頭打ち→finalize へ抜ける
+  4. 確定3経路     ① 成功（problems 空・formatted 生成）② parse 失敗（finalize_parse_error）
+                   ③ 検証不足（validation 非空でも確定下書きは生成される）
+  5. HITL 関門     ask_caregiver を発火させずに通る／確定段で awaiting_caregiver_approval=True
+
+中身の良し悪し（指針整合/10の姿/表現）は採点しない（それは層B eval＝要 LLM・/adk-eval）。
+ここは "型と順序" だけを決定的に検証する。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+
+import pytest
+
+# google-adk 未インストール環境（CI 初期等）では結合テストは回せないので skip に降格する
+# （tests/test_smoke.py / test_eval.py と同じ方針）。以降の import は ADK 前提。
+pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync 後に有効化）")
+
+from typing import AsyncGenerator  # noqa: E402
+
+from google.adk.models import BaseLlm, LlmResponse  # noqa: E402
+from google.adk.runners import Runner  # noqa: E402
+from google.adk.sessions import InMemorySessionService  # noqa: E402
+from google.genai import types  # noqa: E402
+from pydantic import PrivateAttr  # noqa: E402
+
+from hoiku_agent.harness.pipeline import (  # noqa: E402
+    MAX_REVIEW_ITERATIONS,
+    build_document_pipeline,
+)
+
+_APP = "hoiku_e2e"
+_USER = "tester"
+_MEMO = (
+    "観察メモ：架空児Aが園庭の砂場でスコップを使い感触を確かめていた。"
+    "0–2個別の保育日誌の下書きを作成してください。"
+)
+
+
+class FakeLlm(BaseLlm):
+    """決定論E2E 用の LLM スタブ（テスト専用・ネットワーク/creds 不要）。
+
+    responses[i] を i 回目の generate_content_async 呼び出しで返す（末尾を超えたら最後を反復）。
+    関数呼び出し（tool-use）は一切返さないため、注入先 LlmAgent はテキストを最終応答とみなし
+    output_key（state["draft"] / state["review"]）へ格納する。結果として ask_caregiver（HITL）も
+    発火しない＝決定論E2Eで意図的に「HITL 不発火」の経路を通す。
+    """
+
+    model: str = "fake-llm"
+    responses: list[str]
+    _calls: int = PrivateAttr(default=0)
+
+    @property
+    def call_count(self) -> int:
+        """generate_content_async が呼ばれた回数（巡回回数の検証に使う）。"""
+        return self._calls
+
+    async def generate_content_async(
+        self, llm_request, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        idx = min(self._calls, len(self.responses) - 1)
+        self._calls += 1
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(text=self.responses[idx])])
+        )
+
+
+# ───────────────────────────── fixtures（架空児のみ・§14） ─────────────────────────────
+
+
+def _valid_entry() -> dict:
+    """validate_fields を通過する 0–2 個別の DiaryEntry（タグ＝3つの視点）。"""
+    return {
+        "date": "2026-06-25",
+        "age_band": "0-2",
+        "weather": "晴れ",
+        "attendance": [{"child_id": "架空児A", "present": True, "reason": None}],
+        "health_notes": None,
+        "practice_record": "園庭の砂場で感触遊びを行った。",
+        "individual_notes": [
+            {
+                "child_id": "架空児A",
+                "observed_state": "スコップで砂をすくい、感触を確かめるように繰り返した。",
+                "tags": ["身近なものと関わり感性が育つ"],  # ThreeViewpoint
+            }
+        ],
+        "evaluation": {
+            "child_focus": "砂の感触に繰り返し関わり、感覚的な満足を得ていた。",
+            "self_review": "スコップを十分用意でき、落ち着いて関われた。",
+        },
+    }
+
+
+def _author_text(entry: dict) -> str:
+    """author の最終応答を模す（散文＋```json フェンスの DiaryEntry）。"""
+    return (
+        "観察メモから0–2個別の保育日誌の下書きを作成しました。\n```json\n"
+        + json.dumps(entry, ensure_ascii=False, indent=2)
+        + "\n```"
+    )
+
+
+def _function_call_names(events) -> list[str]:
+    """イベント列に現れた function_call（ツール呼び出し）名を集める（HITL 不発火の検証用）。"""
+    names: list[str] = []
+    for ev in events:
+        content = getattr(ev, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            fc = getattr(part, "function_call", None)
+            if fc is not None:
+                names.append(fc.name)
+    return names
+
+
+def _run(author_model, reviewer_model, memo: str = _MEMO, session_id: str = "s1"):
+    """pipeline をオフライン実行し (最終 state, events) を返す（決定論・creds 不要）。"""
+
+    async def _go():
+        pipeline = build_document_pipeline(author_model=author_model, reviewer_model=reviewer_model)
+        session_service = InMemorySessionService()
+        await session_service.create_session(app_name=_APP, user_id=_USER, session_id=session_id)
+        runner = Runner(app_name=_APP, agent=pipeline, session_service=session_service)
+        events = [
+            ev
+            async for ev in runner.run_async(
+                user_id=_USER,
+                session_id=session_id,
+                new_message=types.Content(role="user", parts=[types.Part(text=memo)]),
+            )
+        ]
+        sess = await session_service.get_session(
+            app_name=_APP, user_id=_USER, session_id=session_id
+        )
+        return dict(sess.state), events
+
+    return asyncio.run(_go())
+
+
+# ───────────────────────────────── 結合経路テスト ─────────────────────────────────
+
+
+def test_happy_path_approved_finalizes_and_skips_hitl():
+    """① 連結 ＋ ② 早期終了 ＋ ④-① 確定成功 ＋ ⑤ HITL不発火/承認待ち。"""
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+
+    state, events = _run(author, reviewer)
+
+    # ① 連結：各段の output_key が state に乗っている
+    assert "```json" in (state.get("draft") or "")
+    assert (state.get("review") or "").startswith("APPROVED")
+    # ④-① 確定成功：違反なし・整形済みドラフト生成・parse エラーなし
+    assert state.get("validation") == []
+    assert state.get("finalize_parse_error") is None
+    assert state.get("final_document")
+    # ⑤ HITL：最終OKは保育士＝承認待ちフラグが立つ／ask_caregiver は呼ばれていない
+    assert state.get("awaiting_caregiver_approval") is True
+    assert "ask_caregiver" not in _function_call_names(events)
+    # ② 早期終了：APPROVED が1巡目で出たので reviewer は1回だけ呼ばれる
+    assert reviewer.call_count == 1
+    assert author.call_count == 1
+
+
+def test_needs_revision_then_approved_loops_then_early_exits():
+    """② 巡回が複数回回り、APPROVED が出た巡で早期終了することを検証。"""
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(
+        responses=["NEEDS_REVISION\n天候の記述を補ってください。", "APPROVED\n改善を確認。"]
+    )
+
+    state, _ = _run(author, reviewer)
+
+    # 1巡目 NEEDS_REVISION（escalate せず）→ 2巡目 APPROVED（escalate）＝2回呼ばれる
+    assert reviewer.call_count == 2
+    assert (state.get("review") or "").startswith("APPROVED")
+    assert state.get("awaiting_caregiver_approval") is True
+
+
+def test_never_approved_hits_max_iterations_then_finalizes():
+    """③ APPROVED が出なくても MAX_REVIEW_ITERATIONS で頭打ち→finalize へ抜ける。"""
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["NEEDS_REVISION\nまだ不十分です。"])  # 常に未承認
+
+    state, _ = _run(author, reviewer)
+
+    assert reviewer.call_count == MAX_REVIEW_ITERATIONS  # 上限まで回って止まる
+    assert not (state.get("review") or "").startswith("APPROVED")
+    # 早期終了しなくても finalize は必ず実行される（確定下書き＋承認待ち）
+    assert state.get("final_document")
+    assert state.get("awaiting_caregiver_approval") is True
+
+
+def test_parse_error_when_draft_has_no_json():
+    """④-② author 出力に DiaryEntry JSON が無ければ finalize は parse_error を立てる。"""
+    author = FakeLlm(
+        responses=["観察情報が不足しており下書きを作成できませんでした。"]
+    )  # 波括弧なし
+    reviewer = FakeLlm(responses=["APPROVED\n（内容なし）"])
+
+    state, _ = _run(author, reviewer)
+
+    assert state.get("finalize_parse_error")  # 抽出失敗の理由が入る
+    assert state.get("final_document") is None  # 整形は行われない
+    assert state.get("awaiting_caregiver_approval") is True  # それでも人の確認に回す
+
+
+def test_validation_problems_surface_but_draft_still_produced():
+    """④-③ パースは成功するが年齢分岐タグ不足→validation 非空・確定下書きは生成。"""
+    entry = _valid_entry()
+    entry["individual_notes"][0]["tags"] = ["表現"]  # FiveDomains＝0–2 では不適合
+    author = FakeLlm(responses=[_author_text(entry)])
+    reviewer = FakeLlm(responses=["APPROVED\n（型は別途）"])
+
+    state, _ = _run(author, reviewer)
+
+    problems = state.get("validation") or []
+    assert problems, "0–2 に 5領域タグ→年齢分岐違反が検出されるはず"
+    assert any("3つの視点" in p for p in problems)
+    assert state.get("finalize_parse_error") is None  # parse は成功している
+    assert state.get("final_document")  # 違反があっても確定下書きは作る（人が直す）
+    assert state.get("awaiting_caregiver_approval") is True

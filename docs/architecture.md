@@ -66,6 +66,10 @@ GCP/LLM 非依存で稼働）:
   文字列を受け取り内部で復元→検査）。
 - `git_ops`（`>` パスで一意解決する構造化編集の適用・competition 入力・branch/PR＝既定 dry_run・処理後は
   元ブランチへ復帰）、`improver`（propose＋競合検出／run_eval／open_pr）、eval ゲート（`eval/run_gate.py`）。
+- **決定論E2E（結合テスト）**：`tests/test_e2e/`。`build_xxx(model=...)` に `FakeLlm`（`BaseLlm` スタブ）を
+  注入し `document_pipeline` を実 ADK ランタイムで end-to-end に通す。連結（draft→review→final_document）・
+  APPROVED 早期終了・巡回上限到達・確定3経路（成功／parse失敗／検証不足）・HITL 不発火を **creds 不要・
+  無料・決定的**に検証（中身の品質採点は層B eval＝別系統）。起動は `/e2e` skill。
 
 残課題（外部リソース・実データ依存。コードは降格付きで配線済み）:
 - **月案パスと L2 還流**（`aggregate_by_child` → state["prev_month_digest"] → 月案 author の gather）は次フェーズ。
