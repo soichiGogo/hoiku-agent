@@ -17,7 +17,9 @@
 - 依存: `uv sync`（uv 推奨。`pip install -e ".[dev]"` でも可）
 - ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（ブラウザ UI。agents dir＝`src/`）。
 - テスト: `pytest`（`testpaths=tests`, `pythonpath=src` は pyproject 済み）。harness の決定ロジックは
-  `tests/test_harness/` で LLM 非依存に回る。品質回帰は `pytest tests/test_eval.py`（層B）。
+  `tests/test_harness/` で LLM 非依存に回る。結合（決定論E2E）は `tests/test_e2e/`＝`FakeLlm` 注入で
+  author→review→finalize を creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
+  `uv run --extra dev pytest`）。品質回帰は `pytest tests/test_eval.py`（層B・要 LLM）。
 - lint: `ruff check .` / `ruff format .`（line-length=100, target=py311）
 - 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
 - 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト

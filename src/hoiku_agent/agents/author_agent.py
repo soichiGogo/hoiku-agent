@@ -10,6 +10,8 @@ ADK の tool-use ループ（モデルがツールを呼ばなくなるまでの
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from google.adk.agents import LlmAgent
 
 from ..config import settings
@@ -23,12 +25,22 @@ from ..tools import (
 )
 from .prompts import AUTHOR_INSTRUCTION
 
+if TYPE_CHECKING:
+    from google.adk.models import BaseLlm
 
-def build_author_agent() -> LlmAgent:
-    """作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。"""
+
+def build_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
+    """作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。
+
+    Args:
+        model: 使用するモデル。既定（None）は settings.gemini_model（実 Gemini）。
+            決定論E2E（tests/test_e2e/）では FakeLlm 等の BaseLlm インスタンスを注入し、
+            LLM/GCP 非依存に author→review→finalize の結合を検証するための差込口（§16）。
+            本番の root_agent は引数なしで呼ぶため挙動は不変。
+    """
     return LlmAgent(
         name="author",
-        model=settings.gemini_model,
+        model=model if model is not None else settings.gemini_model,
         instruction=AUTHOR_INSTRUCTION,
         tools=[
             search_records,
