@@ -66,8 +66,8 @@
   `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）/ improver（propose＋競合検出・
   run_eval・open_pr）/ eval ゲート（`eval/run_gate.py`）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus・Memory Bank の接続（config 設定で活性化）/
-  Cloud Run デプロイ・GitHub Actions×WIF（層A）/ 実様式での `write_draft` 確定（§18）/ 現場の修正差分による
-  eval ケース拡充と 3軸 judge の ADK 接続（要 LLM 資格情報）。
+  Cloud Run デプロイ・実 Gemini の eval ゲートCI（WIF 認証・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/
+  実様式での `write_draft` 確定（§18）/ 現場の修正差分による eval ケース拡充と 3軸 judge の ADK 接続（要 LLM 資格情報）。
 - 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
   決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 
