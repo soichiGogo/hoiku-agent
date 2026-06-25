@@ -66,3 +66,6 @@ gcloud auth application-default login
 adk run src/hoiku_agent      # CLI 対話
 adk web src                  # ブラウザ UI（agents dir = src/。root で叩くと dropdown に出ない）
 ```
+
+実 LLM で動かす詳細手順（Vertex AI / AI Studio APIキーの2経路・トラブルシュート）は
+[`docs/ライブ実行手順.md`](docs/ライブ実行手順.md) を参照（`.env` はルートに置きそこから起動）。
