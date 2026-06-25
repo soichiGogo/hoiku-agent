@@ -4,16 +4,20 @@
 は FunctionTool としてこれを呼ぶ薄いラッパに留める（二重実装しない＝§5/§6）。
 
 年齢分岐は必須（§10）：
-- 0–2（AgeBand.零から二歳） … 個別 note のタグ要件＝ThreeViewpoint。
-- 3–5（AgeBand.三から五歳） … タグ要件＝FiveDomains。
+- 0–2（AgeBand.零から二歳） … 個別 note のタグ要件＝ThreeViewpoint（3つの視点）。
+- 3–5（AgeBand.三から五歳） … 個別 note のタグ要件＝FiveDomains（5領域）。
 評価・反省は2視点（child_focus / self_review）が必須（§10・DiaryEvaluation で型担保済）。
+ここでは2視点が "空文字でない" ことまで踏み込んで充足を見る。
+
+「型」としての成立だけを決定的に検査する（中身の良し悪し＝レビューAI／指針整合＝eval の責務）。
+越谷市様式末尾「など」＝園差で拡張されうるため、未知の追加欄は弾かない（拡張に寛容）。
 
 LLM は呼ばない。判定は純粋関数で、tests/test_harness/ から LLM 非依存・高速に検証できる。
 """
 
 from __future__ import annotations
 
-from ..schemas import AgeBand, DiaryEntry, ThreeViewpoint
+from ..schemas import AgeBand, DiaryEntry, FiveDomains, ThreeViewpoint
 
 
 def validate_fields(entry: DiaryEntry) -> list[str]:
@@ -25,20 +29,40 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
     Returns:
         違反メッセージのリスト。空リストなら "型" として成立。
 
-    TODO(設計):
-    - 必須欄の網羅（月案側スキーマ・required_sections との突き合わせ）。
-    - 0–2/3–5 のタグ要件の本実装（下は 0–2 の最小チェックの骨格）。
-    - 越谷市様式末尾「など」に倣い、園差の拡張欄を弾かない緩さを担保（§10）。
+    検査内容（§10）:
+    - 必須欄が空でないこと（天候・実践記録・個別記録・評価反省2視点）。
+    - 年齢分岐タグ要件：0–2＝ThreeViewpoint / 3–5＝FiveDomains を各個別記録が1つ以上持つこと。
+    - 各個別記録に「子どもの姿（observed_state）」が記入されていること。
     """
     problems: list[str] = []
 
-    # 年齢分岐（0–2 は個別 note に ThreeViewpoint タグを要求）
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ──
+    if not entry.weather.strip():
+        problems.append("天候が未記入")
+    if not entry.practice_record.strip():
+        problems.append("保育の実践記録が未記入")
+    if not entry.individual_notes:
+        problems.append("個別日誌（individual_notes）が空：0–2 個別は個の記録が本体（§3/§10）")
+    if not entry.evaluation.child_focus.strip():
+        problems.append("評価・反省(a 子どもに焦点)が未記入（2視点必須＝§10）")
+    if not entry.evaluation.self_review.strip():
+        problems.append("評価・反省(b 自分の保育の適否)が未記入（2視点必須＝§10）")
+
+    # ── 年齢分岐：要求するタグ体系を決める（0–2＝3つの視点 / 3–5＝5領域） ──
     if entry.age_band is AgeBand.零から二歳:
-        for note in entry.individual_notes:
-            if not any(isinstance(t, ThreeViewpoint) for t in note.tags):
-                problems.append(
-                    f"child_id={note.child_id}: 0–2歳は3つの視点（ThreeViewpoint）のタグが必要"
-                )
-    # TODO: 3–5（FiveDomains 要件）・必須欄の網羅をここに追加。
+        required_tag_type: type = ThreeViewpoint
+        tag_label = "3つの視点（ThreeViewpoint）"
+    else:
+        required_tag_type = FiveDomains
+        tag_label = "5領域（FiveDomains）"
+
+    # ── 個別記録ごとの内容＋年齢分岐タグ ──
+    for note in entry.individual_notes:
+        if not note.observed_state.strip():
+            problems.append(f"child_id={note.child_id}: 子どもの姿（observed_state）が未記入")
+        if not any(isinstance(t, required_tag_type) for t in note.tags):
+            problems.append(
+                f"child_id={note.child_id}: {entry.age_band.value} は{tag_label}のタグが1つ以上必要"
+            )
 
     return problems

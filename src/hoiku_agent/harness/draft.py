@@ -2,14 +2,37 @@
 
 設計コンテキスト §5/§6。write_draft の "実体" はここに1つだけ置く。tools/write_draft.py は
 FunctionTool としてこれを呼ぶ薄いラッパ。確定出力（整形済みドラフト）の決定的実行は harness が
-パイプライン末尾で行う（tool ではなくステップ＝§6）。
+パイプライン末尾で行う（tool ではなくステップ＝§6・finalize.py）。
 
-pydantic スキーマ（DiaryEntry 等）→ 園の様式テキストへ整形する。LLM は呼ばない。
+pydantic スキーマ（DiaryEntry 等）→ 園の様式テキストへ整形する。**10の姿/3つの視点/5領域の
+タグを明示出力**する（§13 のドメイン作り込み＝差別化）。LLM は呼ばない。
+
+実様式1枚はヒアリングで入手するまで未確定（§18）。template_ref が与えられればそれに寄せる
+余地を残すが、v0 は越谷市様式の欄構成に倣った汎用様式で整形する（園差で拡張可＝末尾「など」）。
 """
 
 from __future__ import annotations
 
-from ..schemas import DiaryEntry
+from ..schemas import DiaryEntry, IndividualNote
+
+
+def _format_attendance(entry: DiaryEntry) -> str:
+    if not entry.attendance:
+        return "（記録なし）"
+    present = [a.child_id for a in entry.attendance if a.present]
+    absent = [
+        f"{a.child_id}（{a.reason or '理由未記入'}）" for a in entry.attendance if not a.present
+    ]
+    parts = [f"出席 {len(present)}名"]
+    if absent:
+        parts.append("欠席: " + "、".join(absent))
+    return " / ".join(parts)
+
+
+def _format_note(note: IndividualNote) -> str:
+    # タグは枠組み（10の姿/3つの視点/5領域）を明示して出力する（§13）。
+    tags = "、".join(t.value for t in note.tags) if note.tags else "（タグ未付与）"
+    return f"  - [{note.child_id}] {note.observed_state}\n    └ 対応する姿/領域: {tags}"
 
 
 def write_draft(entry: DiaryEntry, template_ref: str | None = None) -> str:
@@ -20,16 +43,32 @@ def write_draft(entry: DiaryEntry, template_ref: str | None = None) -> str:
         template_ref: 雛形のパス等（あれば様式に従う）。越谷市様式は末尾「など」＝園差で拡張可。
 
     Returns:
-        様式に整形した文字列。
-
-    TODO(設計):
-    - template_ref に基づく実様式整形（ヒアリングで実様式1枚を入手後＝§18）。
-    - 10の姿/3つの視点タグの明示出力（§13 のドメイン作り込み）。
+        様式に整形した文字列（10の姿/3つの視点/5領域タグを明示）。
     """
-    # TODO: 実様式整形に置き換える（下は最小の確認用整形）。
-    return (
-        f"【保育日誌 {entry.date} / {entry.age_band.value} / 天候:{entry.weather}】\n"
-        f"実践記録: {entry.practice_record}\n"
-        f"評価・反省(a 子ども): {entry.evaluation.child_focus}\n"
-        f"評価・反省(b 自分): {entry.evaluation.self_review}\n"
+    notes_block = (
+        "\n".join(_format_note(n) for n in entry.individual_notes)
+        if entry.individual_notes
+        else "  （個別記録なし）"
     )
+    lines = [
+        f"■ 保育日誌（{entry.age_band.value} 歳児クラス・個別）",
+        f"日付: {entry.date}　天候: {entry.weather}",
+        f"出欠: {_format_attendance(entry)}",
+        f"健康状態: {entry.health_notes or '特記なし'}",
+        "",
+        "【保育の実践記録】",
+        f"  {entry.practice_record}",
+        "",
+        "【個別の記録（子どもの姿）】",
+        notes_block,
+        "",
+        "【評価・反省】",
+        f"  (a) 子どもに焦点: {entry.evaluation.child_focus}",
+        f"  (b) 自分の保育の適否: {entry.evaluation.self_review}",
+        "",
+        f"【保護者への連絡】 {entry.parent_contact or '（なし）'}",
+    ]
+    if template_ref:
+        lines.append("")
+        lines.append(f"（様式参照: {template_ref}）")
+    return "\n".join(lines) + "\n"
