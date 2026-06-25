@@ -17,7 +17,18 @@ LLM は呼ばない。判定は純粋関数で、tests/test_harness/ から LLM 
 
 from __future__ import annotations
 
-from ..schemas import AgeBand, DiaryEntry, FiveDomains, ThreeViewpoint
+from ..schemas import AgeBand, DiaryEntry, FiveDomains, MonthlyPlan, ThreeViewpoint
+
+
+def _required_tag_type(age_band: AgeBand) -> tuple[type, str]:
+    """年齢分岐の必須タグ体系を返す（0–2＝3つの視点 / 3–5＝5領域・§10）。
+
+    日誌（個別記録）と月案（教育のねらい）で同じ分岐を使うため、決定ロジックの実体をここに1つ置く
+    （二重実装しない＝§5）。返り値は (Enum 型, 表示ラベル)。
+    """
+    if age_band is AgeBand.零から二歳:
+        return ThreeViewpoint, "3つの視点（ThreeViewpoint）"
+    return FiveDomains, "5領域（FiveDomains）"
 
 
 def validate_fields(entry: DiaryEntry) -> list[str]:
@@ -49,12 +60,7 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
         problems.append("評価・反省(b 自分の保育の適否)が未記入（2視点必須＝§10）")
 
     # ── 年齢分岐：要求するタグ体系を決める（0–2＝3つの視点 / 3–5＝5領域） ──
-    if entry.age_band is AgeBand.零から二歳:
-        required_tag_type: type = ThreeViewpoint
-        tag_label = "3つの視点（ThreeViewpoint）"
-    else:
-        required_tag_type = FiveDomains
-        tag_label = "5領域（FiveDomains）"
+    required_tag_type, tag_label = _required_tag_type(entry.age_band)
 
     # ── 個別記録ごとの内容＋年齢分岐タグ ──
     for note in entry.individual_notes:
@@ -63,6 +69,50 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
         if not any(isinstance(t, required_tag_type) for t in note.tags):
             problems.append(
                 f"child_id={note.child_id}: {entry.age_band.value} は{tag_label}のタグが1つ以上必要"
+            )
+
+    return problems
+
+
+def validate_monthly_fields(plan: MonthlyPlan) -> list[str]:
+    """個別月案ドラフトの必須欄・年齢分岐を検査し、違反メッセージの一覧を返す（空＝充足・§10）。
+
+    日誌（validate_fields）と同じく「型としての成立」だけを決定的に検査する（中身の良し悪し＝
+    レビューAI／指針整合＝eval の責務）。年齢分岐は日誌と共通の _required_tag_type を使い、
+    月案では「教育のねらい（education）」に 0–2＝3つの視点 / 3–5＝5領域 のタグを課す（§10）。
+
+    Args:
+        plan: 検査対象の月案ドラフト（MonthlyPlan）。
+
+    Returns:
+        違反メッセージのリスト。空リストなら "型" として成立。
+    """
+    problems: list[str] = []
+
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ── §10 月案：フィールド×依存元
+    if not plan.month.strip():
+        problems.append("対象月（month）が未記入")
+    if not plan.prev_child_state.strip():
+        problems.append("前月の子どもの姿が未記入（L2 還流の入力＝§10）")
+    if not plan.nurturing.strip():
+        problems.append("養護（生命の保持・情緒の安定）が未記入（§10「養護／教育」）")
+    if not plan.monthly_goals.strip():
+        problems.append("今月のねらい・内容が未記入（§10）")
+    if not plan.environment_support.strip():
+        problems.append("環境構成・援助（配慮）が未記入（§10）")
+    if not plan.evaluation_reflection.strip():
+        problems.append("評価・反省が未記入（「回す」の起点＝§10）")
+    if not plan.education:
+        problems.append("教育のねらい（education）が空：年齢分岐タグ付きで1つ以上必要（§10）")
+
+    # ── 年齢分岐：教育のねらいに必須タグ体系を課す（0–2＝3つの視点 / 3–5＝5領域） ──
+    required_tag_type, tag_label = _required_tag_type(plan.age_band)
+    for i, note in enumerate(plan.education):
+        if not note.aim.strip():
+            problems.append(f"教育のねらい[{i}]: 内容（aim）が未記入")
+        if not any(isinstance(t, required_tag_type) for t in note.tags):
+            problems.append(
+                f"教育のねらい[{i}]: {plan.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
 
     return problems

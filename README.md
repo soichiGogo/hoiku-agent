@@ -39,17 +39,18 @@
 
 ```
 src/hoiku_agent/
-├── agent.py            … ルートエージェント（root_agent）＝書類作成パイプライン
+├── agent.py            … ルートエージェント（root_agent）＝doc_type 分岐ルータ（日誌/月案・既定 日誌）
 ├── config.py           … 設定（GCPプロジェクト・モデル等。.env から）
-├── harness/            … ① 型の保証（決定的）：必須欄・年齢分岐・順序・集積・git適用
-├── agents/             … ② 中身の決定（agentic）：作成AI / レビューAI（+ prompts.py）
+├── harness/            … ① 型の保証（決定的）：必須欄・年齢分岐・順序・集積・doc_type分岐・git適用
+├── agents/             … ② 中身の決定（agentic）：作成AI（日誌/月案）/ レビューAI（+ prompts.py）
 ├── improver/           … ③ 回す（二階・別エントリ）：修正差分→指針更新を自走提案
 ├── tools/              … 4–8個のプリミティブ（記録/指針/RAG/メモリ/HITL/harness薄ラッパ）
-├── schemas/            … 書類スキーマ・年齢分岐・10の姿タグ（pydantic 集約）
+├── schemas/            … 書類スキーマ（日誌/月案）・年齢分岐・10の姿タグ（pydantic 集約）
 knowledge/              … 育つ文書作成指針（git）＋ 保育所保育指針（RAGソース・gitignore）
-eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）
+eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）＋ test_config.json / run_gate.py
 docs/                   … 設計コンテキスト.md（開発ハンドオフ）/ architecture.md（コード対応）
-tests/                  … test_harness/（決定ロジック）/ test_eval.py（層B 統合）
+tests/                  … test_harness/（決定ロジック）/ test_e2e/（結合）/ test_eval*.py（層B）
+Dockerfile / .github/   … 配信（層A）：Cloud Run コンテナ ＋ CI（ci / deploy / eval-gate）
 ```
 
 ## セットアップ
@@ -63,8 +64,15 @@ cp .env.example .env   # PROJECT_ID 等を記入
 gcloud auth application-default login
 
 # ローカル実行（ADK CLI）
-adk run src/hoiku_agent      # CLI 対話
+adk run src/hoiku_agent      # CLI 対話（日誌＝既定 doc_type）
 adk web src                  # ブラウザ UI（agents dir = src/。root で叩くと dropdown に出ない）
+
+# 月案（L2 還流・前月日誌を seed して回す専用入口）
+uv run python scripts/run_monthly.py --child-id 架空児A --month 2026-07
+
+# 本番入口（Cloud Run と同じ）／配信
+uvicorn server:app           # get_fast_api_app。AGENT_ENGINE_ID 未設定は InMemory 降格
+# デプロイ＝Dockerfile（uvicorn server:app）＋ .github/workflows/deploy.yml（WIF・要 GCP 設定）
 ```
 
 実 LLM で動かす詳細手順（Vertex AI / AI Studio APIキーの2経路・トラブルシュート）は

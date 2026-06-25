@@ -1,0 +1,56 @@
+{
+  "_comment": "層B 評価ゲートの ADK 評価設定（設計コンテキスト §12）。ADK ネイティブの rubric_based_final_response_quality_v1 に、3軸（指針整合/10の姿/保護者向け表現）の axis_* rubric と、must_fix の mustfix_* rubric を載せる。各 rubric は judge（Gemini）が yes/no で評価し、eval/run_gate.py が axis_* の平均をケーススコア、mustfix_* の no を違反として集計し、main 比 非劣化 かつ must_fix 0 をゲートにする。judge プロンプトの全文は eval/judges/*.md（rubric の text_property はその要旨）。num_samples=1 は v0 コスト優先。",
+  "criteria": {
+    "rubric_based_final_response_quality_v1": {
+      "threshold": 0.6,
+      "judge_model_options": {
+        "judge_model": "gemini-2.5-flash",
+        "num_samples": 1
+      },
+      "rubrics": [
+        {
+          "rubric_id": "axis_guideline_alignment",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "ドラフトは保育所保育指針に整合し、age_band の枠組み（0–2＝養護＋3つの視点 / 3–5＝養護＋5領域＋10の姿）と用いている記述・タグが一致しており、養護と教育の両面が落ちていない。"
+          }
+        },
+        {
+          "rubric_id": "axis_ten_no_sugata",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "各記述（individual_notes の observed_state とタグ／月案の education）が、age_band に応じた枠組み（0–2＝3つの視点 / 3–5＝5領域、10の姿は併記可）に妥当にマッピングされており、こじつけ・誤タグでない。"
+          }
+        },
+        {
+          "rubric_id": "axis_expression",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "保護者向けの表現として、断定的な発達評価を避け、観察事実と解釈が分離されており、月齢・発達段階に照らして自然で伝わりやすい。"
+          }
+        },
+        {
+          "rubric_id": "mustfix_no_real_names",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "子ども・保護者の実名が書かれておらず、架空児の仮名または属性で表されている（個人名禁止＝共通ルール）。"
+          }
+        },
+        {
+          "rubric_id": "mustfix_age_framework",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "age_band と用いる枠組みが一致している（0–2 なのに3つの視点が皆無、または 3–5 なのに5領域が皆無、ではない）。"
+          }
+        },
+        {
+          "rubric_id": "mustfix_no_definitive_eval",
+          "type": "FINAL_RESPONSE_QUALITY",
+          "rubric_content": {
+            "text_property": "「発達が遅れている」「できない」等の断定的な発達評価が中心になっていない。"
+          }
+        }
+      ]
+    }
+  }
+}

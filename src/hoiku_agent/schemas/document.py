@@ -113,3 +113,54 @@ class DiaryEntry(BaseModel):
     individual_notes: list[IndividualNote]  # 個別日誌（0–2 個別の本体）
     evaluation: DiaryEvaluation  # 両系統・2視点必須
     parent_contact: str | None = None  # クラス日誌
+
+
+# ──────────────────────────── 月案 v0（0–2 個別月案） ────────────────────────────
+# 設計コンテキスト §3「月案は日誌の集積に乗せる」/ §4「L2 月次PDCA」/ §10「月案：フィールド×依存元」。
+# 0–2 は個別計画が基本（§3）＝個別月案（child_id 単位）。前月日誌の集積（L2 還流）を「前月の子どもの姿」
+# 「評価・反省」へ流す。欄名は告示・自治体様式からの推論を含む（§10 / 制度用語と断定しない）。
+
+
+class MonthlyEducationNote(BaseModel):
+    """月案「教育」のねらい・内容（年齢分岐タグ付き）。0–2＝3つの視点 / 3–5＝5領域（§10）。
+
+    養護（生命の保持・情緒の安定）は MonthlyPlan.nurturing に分離して持つ。ここは「教育」側で、
+    年齢で枠組みが変わる（0–2＝3つの視点・3–5＝5領域・§10）ため個別記録と同型のタグ要件を課す。
+    """
+
+    aim: str = Field(description="教育のねらい・内容（今月）")
+    # タグ要件は年齢で分岐（0–2＝ThreeViewpoint / 3–5＝FiveDomains）。強制は validate_monthly_fields。
+    tags: list[ThreeViewpoint | FiveDomains | TenNoSugata] = Field(default_factory=list)
+
+
+class MonthlyPlan(BaseModel):
+    """個別月案（月次）。write_monthly_draft の出力型 / validate_monthly_fields の入力契約（§10）。
+
+    第1号は 0–2 個別＝個別月案（child_id 単位・§3）。前月日誌の月集積（L2 還流＝harness/aggregate）を
+    「前月の子どもの姿」「評価・反省」へ流す（§4/§10）。欄名は推論を含む（§10）。園差で拡張可能に保つ。
+    """
+
+    month: str = Field(description="対象月（YYYY-MM）")
+    age_band: AgeBand
+    child_id: str  # 架空児のみ（§14）。0–2 個別＝個別月案
+    prev_child_state: str = Field(
+        description="前月の子どもの姿（前月日誌の集積＋前月評価反省に依存＝L2 還流・§10）"
+    )
+    nurturing: str = Field(
+        description="養護（生命の保持・情緒の安定）。年齢に依らず必須＝§10「養護／教育」"
+    )
+    education: list[MonthlyEducationNote] = Field(
+        description="教育のねらい・内容（年齢分岐タグ必須＝0–2は3つの視点/3–5は5領域・§10）"
+    )
+    monthly_goals: str = Field(
+        description="今月のねらい・内容（記録された姿の理解→ねらいへの変換＝勘所・§10）"
+    )
+    environment_support: str = Field(
+        description="環境構成・援助（配慮）。ねらい／過去月案・園ルールに依存"
+    )
+    events_family_food: str | None = Field(
+        default=None, description="行事／家庭連携／食育・健康（様式で実在・園差で拡張＝§10）"
+    )
+    evaluation_reflection: str = Field(
+        description="評価・反省（当月日誌の集積と予想ねらいの照合＝「回す」の起点・双方向・§10）"
+    )

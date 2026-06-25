@@ -91,12 +91,12 @@ def _load_run_gate():
 def run_eval(evalset: str | None = None) -> dict:
     """評価ゲート（eval/run_gate.py）を呼び、回帰判定を返す（§12）。
 
-    緑/赤の確定条件＝main 平均非劣化 & must_fix 0。ただし v0 は 3軸 judge の ADK 接続が未配線（§18）の
-    ため、run_gate は採点できても passed=None（判定不能）で返す（偽の緑を出さない）。資格情報/ケースが
-    無い場合も passed=None で降格。judges 連携の整備後に passed=True/False が返るようになる。
+    緑/赤の確定条件＝main 平均非劣化 & must_fix 0。3軸 judge は ADK の rubric メトリクスへ配線済み
+    （eval/test_config.json）で、`google-adk[eval]`（`--extra eval`）＋ LLM 資格情報が揃えば
+    passed=True/False を返す。資格情報/ケース/eval 依存が無い場合は passed=None で降格（偽の緑を出さない）。
 
     Returns:
-        run_gate の判定 dict（status / passed / mean / must_fix_violations / detail）。
+        run_gate の判定 dict（status / passed / mean / axis_means / must_fix_violations / detail）。
     """
     try:
         gate = _load_run_gate()

@@ -1,0 +1,61 @@
+# 層B 評価ゲート CI（設計コンテキスト §12「AI版回帰テスト」）。実 Gemini judge を呼ぶため creds が要り、
+# 課金もするので決定論 CI（ci.yml・毎PR・無料）とは分け、nightly + 手動 + 任意で eval ラベル付き PR で回す。
+#
+# 前提（各自の GCP で1度だけ設定＝この workflow の外。deploy.yml と同じ WIF を再利用できる）:
+#   - WIF（鍵レス）：GitHub OIDC を信頼する Provider と、Vertex AI（Gemini judge）権限を持つ SA。
+#   - リポジトリ変数: WIF_PROVIDER / GCP_PROJECT_ID / GCP_REGION（任意: GEMINI_MODEL）。
+#   未設定なら job は skip する。判定: run_gate が passed=True→緑 / False→赤（回帰）/ None→採点不能で skip。
+#   （main 比 非劣化の baseline 保存は次フェーズ。v0 は must_fix 0 ＋ 採点可能を緑とする＝§12 暫定）。
+
+name: Eval Gate (層B・要 creds)
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 18 * * *" # 毎日 03:00 JST（18:00 UTC）
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: eval-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval-gate:
+    name: rubric eval gate (3軸・must_fix)
+    runs-on: ubuntu-latest
+    # 手動/nightly、または PR に "eval" ラベルが付いたときだけ。WIF 未設定なら skip。
+    if: >-
+      ${{ vars.WIF_PROVIDER != '' && vars.GCP_PROJECT_ID != '' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'eval') }}
+    env:
+      UV_PYTHON: "3.12"
+      GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      GOOGLE_CLOUD_LOCATION: ${{ vars.GCP_REGION }}
+      GOOGLE_GENAI_USE_VERTEXAI: "true"
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF / keyless)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SA }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (eval extra ＝ google-adk[eval])
+        run: uv sync --extra dev --extra eval
+
+      - name: Run eval gate (pytest tests/test_eval.py)
+        # run_gate: passed True→緑 / False→赤（テスト失敗）/ None→採点不能で skip（§12）。
+        run: uv run --extra dev --extra eval pytest -q tests/test_eval.py

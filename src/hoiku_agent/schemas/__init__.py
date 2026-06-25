@@ -7,6 +7,8 @@ from .document import (
     DocumentSpec,
     DocumentType,
     IndividualNote,
+    MonthlyEducationNote,
+    MonthlyPlan,
     ReviewCriteria,
     ReviewFinding,
 )
@@ -23,6 +25,8 @@ __all__ = [
     "IndividualNote",
     "DiaryEvaluation",
     "DiaryEntry",
+    "MonthlyEducationNote",
+    "MonthlyPlan",
     # enums
     "AgeBand",
     "Lineage",
