@@ -14,6 +14,9 @@ dependencies = [
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "python-dotenv>=1.0",
+    # 本番/ローカル共通の入口 server.py（get_fast_api_app）を `uvicorn server:app` で起動するため明示
+    # （ADK 経由で間接的に入るが、デプロイ手順が依存するので直接依存に固定する）。
+    "uvicorn>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -34,5 +37,6 @@ line-length = 100
 target-version = "py311"
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# src＝パッケージ（hoiku_agent）、"."＝repo root の入口 server.py を import 可能にする。
+pythonpath = ["src", "."]
 testpaths = ["tests"]

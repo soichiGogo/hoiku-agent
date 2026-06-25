@@ -16,7 +16,11 @@
 
 - 依存: `uv sync`（uv 推奨。`pip install -e ".[dev]"` でも可）
 - ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（ブラウザ UI。agents dir＝`src/`）。
-- テスト: `pytest`（`testpaths=tests`, `pythonpath=src` は pyproject 済み）。harness の決定ロジックは
+  本番/ローカル共通の入口は repo root の `server.py`（`get_fast_api_app`）＝`uvicorn server:app`。Memory Bank を
+  使うときは `.env` に `AGENT_ENGINE_ID` を入れて `uvicorn server:app`（`config.memory_service_uri` が URI 化。
+  未設定は InMemory 降格＝§9）。Memory Bank 本体は `uv run python scripts/provision_memory_bank.py --create` で
+  作成・設定する（**生成モデル必須＋日本語/子の姿カスタマイズ**＝実機検証で確定。手順は `docs/ライブ実行手順.md`）。
+- テスト: `pytest`（`testpaths=tests`, `pythonpath=["src","."]`＝root の `server.py` も import 可・pyproject 済み）。harness の決定ロジックは
   `tests/test_harness/` で LLM 非依存に回る。結合（決定論E2E）は `tests/test_e2e/`＝`FakeLlm` 注入で
   author→review→finalize を creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
   `uv run --extra dev pytest`）。品質回帰は `pytest tests/test_eval.py`（層B・要 LLM）。
@@ -63,13 +67,16 @@
 - **実装済み**: レビュー APPROVED 早期終了（`harness/pipeline.py` の `ApprovalGate`/`is_approved`）/
   確定処理（`harness/finalize.py`＋`FinalizeAgent`：DiaryEntry JSON 復元→validate→write）/
   HITL（`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval`）/
+  Memory Bank 配線（読み＝`get_child_memory`／書き戻し＝`persist_visit_to_memory`＝`after_agent_callback`・型成立の
+  確定時のみ・§9/§13。入口＝`server.py`＋`config.memory_service_uri`。未配線は InMemory 降格）/
   `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）/ improver（propose＋競合検出・
   run_eval・open_pr）/ eval ゲート（`eval/run_gate.py`）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`。author/reviewer は実 LLM でローカル稼働可）。
-- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus・Agent Engine Memory Bank の接続
-  （`RAG_CORPUS`/`AGENT_ENGINE_ID` 未設定＝現状は降格）/ Cloud Run デプロイ・eval ゲートCI（前提＝3軸 judge 配線＋WIF。
-  **Gemini 接続はブロッカーでない**・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/ 実様式での `write_draft` 確定（§18）/
-  現場の修正差分による eval ケース拡充と 3軸 judge の ADK 接続（＝§18 のコード作業。creds は接続済みで、配線すればローカル採点は可）。
+- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus の接続（`RAG_CORPUS` 未設定＝`search_guideline` 降格中）／
+  Memory Bank の**ライブ接続**（配線＋プロビジョニング `scripts/provision_memory_bank.py`＝生成モデル＋日本語/子の姿カスタマイズ・
+  ライブ往復実機確認済み。残は各自 GCP でスクリプト実行＋`AGENT_ENGINE_ID` 設定と真の承認ゲート＝次フェーズ）/
+  Cloud Run デプロイ・eval ゲートCI（前提＝3軸 judge 配線＋WIF。**Gemini 接続はブロッカーでない**・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/
+  実様式での `write_draft` 確定（§18）/ 現場の修正差分による eval ケース拡充と 3軸 judge の ADK 接続（＝§18 のコード作業。creds は接続済みで、配線すればローカル採点は可）。
 - 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
   決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 

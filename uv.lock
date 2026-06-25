@@ -1058,6 +1058,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -1075,6 +1076,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
 provides-extras = ["dev"]
 

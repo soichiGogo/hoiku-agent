@@ -83,3 +83,58 @@ def test_validate_fields_tool_reports_unparseable_json():
 
     problems = validate_fields("これは JSON ではありません")
     assert problems and "解釈できませんでした" in problems[0]
+
+
+# ──────────────────── get_child_memory（Memory Bank 読み・§9） ────────────────────
+
+
+class _StubMemoryResponse:
+    """tool_context.search_memory の戻り（SearchMemoryResponse）を模す。"""
+
+    def __init__(self, texts):
+        from google.genai import types
+
+        self.memories = [
+            type(
+                "MemoryEntry",
+                (),
+                {"content": types.Content(role="model", parts=[types.Part(text=t)])},
+            )()
+            for t in texts
+        ]
+
+
+class _StubToolContext:
+    """MemoryService 配線済みの ToolContext を模す（search_memory を提供）。"""
+
+    def __init__(self, texts):
+        self._texts = texts
+        self.queries: list[str] = []
+
+    async def search_memory(self, query: str):
+        self.queries.append(query)
+        return _StubMemoryResponse(self._texts)
+
+
+def test_get_child_memory_returns_memories_when_connected():
+    """MemoryService 配線時は search_memory の結果（その子の像）を本文として返す（非降格）。"""
+    import asyncio
+
+    from hoiku_agent.tools import get_child_memory
+
+    ctx = _StubToolContext(["前回は砂場で感触を確かめ、繰り返し楽しんでいた"])
+    out = asyncio.run(get_child_memory("架空児A", query="砂", tool_context=ctx))
+
+    assert any("感触" in m["text"] for m in out)
+    # child_id とクエリが検索キーに反映される
+    assert ctx.queries and "架空児A" in ctx.queries[0] and "砂" in ctx.queries[0]
+
+
+def test_get_child_memory_degrades_without_tool_context():
+    """tool_context 未注入（ローカル/未接続）では降格メッセージ1件で落ちない。"""
+    import asyncio
+
+    from hoiku_agent.tools import get_child_memory
+
+    out = asyncio.run(get_child_memory("架空児A"))
+    assert len(out) == 1 and "memory未接続" in out[0]["text"]

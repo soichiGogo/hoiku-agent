@@ -26,5 +26,16 @@ class Settings(BaseSettings):
     # 実データは置かない＝架空児のみ（gitignore 済み・§14）。
     records_dir: str = ""
 
+    @property
+    def memory_service_uri(self) -> str | None:
+        """Memory Bank の接続 URI（ADK の --memory_service_uri 互換）。
+
+        設計コンテキスト §9：Memory Bank は Agent Engine Runtime に載せ替えず、マネージドの
+        メモリサービスとして "呼ぶだけ"。ADK は `agentengine://<id>` を渡せば
+        `VertexAiMemoryBankService` を自動構築して Runner に挿す（自前 Runner は組まない）。
+        ここが agent_engine_id → URI の唯一の変換点。未設定なら None＝ADK が InMemory に降格する。
+        """
+        return f"agentengine://{self.agent_engine_id}" if self.agent_engine_id else None
+
 
 settings = Settings()
