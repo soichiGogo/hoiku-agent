@@ -30,6 +30,7 @@ pytest.importorskip("google.adk", reason="google-adk 未インストール（uv 
 
 from typing import AsyncGenerator  # noqa: E402
 
+from google.adk.memory import InMemoryMemoryService  # noqa: E402
 from google.adk.models import BaseLlm, LlmResponse  # noqa: E402
 from google.adk.runners import Runner  # noqa: E402
 from google.adk.sessions import InMemorySessionService  # noqa: E402
@@ -148,6 +149,48 @@ def _run(author_model, reviewer_model, memo: str = _MEMO, session_id: str = "s1"
     return asyncio.run(_go())
 
 
+class _SpyMemory(InMemoryMemoryService):
+    """書き戻し検証用：実 InMemoryMemoryService を継承し add_session_to_memory の回数を数える。
+
+    実体（keyword 検索の InMemory backend）に委譲するので「GCP 無しで本当に書ける」往復も同時に証す。
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_calls = 0
+
+    async def add_session_to_memory(self, session) -> None:  # type: ignore[override]
+        self.add_calls += 1
+        await super().add_session_to_memory(session)
+
+
+def _run_with_memory(author_model, reviewer_model, memory_service, session_id: str = "s1") -> dict:
+    """memory_service 付きで pipeline をオフライン実行し最終 state を返す（書き戻し検証用）。"""
+
+    async def _go():
+        pipeline = build_document_pipeline(author_model=author_model, reviewer_model=reviewer_model)
+        session_service = InMemorySessionService()
+        await session_service.create_session(app_name=_APP, user_id=_USER, session_id=session_id)
+        runner = Runner(
+            app_name=_APP,
+            agent=pipeline,
+            session_service=session_service,
+            memory_service=memory_service,
+        )
+        async for _ in runner.run_async(
+            user_id=_USER,
+            session_id=session_id,
+            new_message=types.Content(role="user", parts=[types.Part(text=_MEMO)]),
+        ):
+            pass
+        sess = await session_service.get_session(
+            app_name=_APP, user_id=_USER, session_id=session_id
+        )
+        return dict(sess.state)
+
+    return asyncio.run(_go())
+
+
 # ───────────────────────────────── 結合経路テスト ─────────────────────────────────
 
 
@@ -230,4 +273,65 @@ def test_validation_problems_surface_but_draft_still_produced():
     assert any("3つの視点" in p for p in problems)
     assert state.get("finalize_parse_error") is None  # parse は成功している
     assert state.get("final_document")  # 違反があっても確定下書きは作る（人が直す）
+    assert state.get("awaiting_caregiver_approval") is True
+
+
+# ──────────────────── 書き戻し（Memory Bank 配線・§9/§13） ────────────────────
+# after_agent_callback=persist_visit_to_memory が、型成立の確定時だけ来園セッションを
+# 子の長期メモリへ書き戻すことを実ランタイムで検証する（実 InMemory backend・creds 不要）。
+
+
+def test_writeback_persists_visit_on_valid_finalize():
+    """型成立の確定→add_session_to_memory が1回呼ばれ、来園が実 backend に格納される（往復）。"""
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+    memory = _SpyMemory()
+
+    state = _run_with_memory(author, reviewer, memory)
+
+    assert state.get("final_document")  # 確定下書きは出来ている
+    assert memory.add_calls == 1, "型成立の確定で書き戻しフックが1回発火するはず"
+    # 実 backend に実際に格納された（keyword 検索のトークン化に依存せず store を直接確認）
+    stored = memory._session_events.get(f"{_APP}/{_USER}", {})
+    assert stored, "来園セッションが子の長期メモリへ書き戻されているはず"
+    assert any(events for events in stored.values()), "格納セッションにイベントがあるはず"
+
+
+def test_writeback_skipped_when_parse_error():
+    """parse 失敗（型不成立）の確定では像を汚さないため書き戻さない。"""
+    author = FakeLlm(responses=["観察情報が不足しており下書きを作成できませんでした。"])
+    reviewer = FakeLlm(responses=["APPROVED\n（内容なし）"])
+    memory = _SpyMemory()
+
+    state = _run_with_memory(author, reviewer, memory)
+
+    assert state.get("finalize_parse_error")
+    assert memory.add_calls == 0, "型不成立では書き戻さない"
+    assert memory._session_events == {}
+
+
+def test_writeback_skipped_when_validation_problems():
+    """年齢分岐タグ不足（validation 非空）の確定では書き戻さない（_should_persist_visit のゲート）。"""
+    entry = _valid_entry()
+    entry["individual_notes"][0]["tags"] = ["表現"]  # 0–2 に 5領域タグ＝違反
+    author = FakeLlm(responses=[_author_text(entry)])
+    reviewer = FakeLlm(responses=["APPROVED\n（型は別途）"])
+    memory = _SpyMemory()
+
+    state = _run_with_memory(author, reviewer, memory)
+
+    assert state.get("validation")  # 違反あり
+    assert state.get("final_document")  # 確定下書き自体は作る
+    assert memory.add_calls == 0, "型不成立（validation 非空）では書き戻さない"
+
+
+def test_writeback_degrades_without_memory_service():
+    """memory_service 未配線（ローカル/未接続）でも例外を出さず素通りする（後方互換・降格）。"""
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+
+    # _run は memory_service を渡さない＝add_session_to_memory が ValueError → フックが握る
+    state, _ = _run(author, reviewer)
+
+    assert state.get("final_document")  # 書き戻し先が無くても日誌の確定は完了する
     assert state.get("awaiting_caregiver_approval") is True
