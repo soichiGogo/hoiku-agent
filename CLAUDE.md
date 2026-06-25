@@ -20,8 +20,9 @@
   `tests/test_harness/` で LLM 非依存に回る。品質回帰は `pytest tests/test_eval.py`（層B）。
 - lint: `ruff check .` / `ruff format .`（line-length=100, target=py311）
 - 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
-- 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。`adk run` で improver を指定 or
-  専用スクリプト。document_pipeline には組み込まない。
+- 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
+  `uv run python scripts/run_improver.py --diff "…" [--feedback "…"]` で起こす（要 LLM 資格情報）。
+  document_pipeline には組み込まない。
 - **ADK 探索の事実**: agents dir＝`src/`、agent package＝`hoiku_agent/`、`root_agent` は `agent.py` のみで
   トップレベル化、`__init__.py` の `from . import agent` を壊さない。`adk web` は `src/` を指して起動する
   （リポジトリ root で叩くと dropdown に出ない）。
