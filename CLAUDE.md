@@ -52,12 +52,21 @@
 - instruction（プロンプト）は各層の `prompts.py` に分離する。
 - docstring・コメント・LLM プロンプトは日本語。
 
-# 現状＝設計フェーズ（雛形）
+# 現状＝v0 実装済み（外部リソース接続は残課題）
 
-多くのツール・終了条件は `TODO(設計)` のスタブ。**スタブを場当たりで埋めない**。実装着手時は
-`docs/設計コンテキスト.md` の該当節と既存レイヤ構造に沿って入れる。主な未実装: レビュー APPROVED 判定での
-Loop 早期終了 / HITL 関門（ask_caregiver の同期ツール）/ Vertex RAG・Memory Bank 接続 /
-出力の最終 validation / git_ops（構造化編集の適用・PR）/ eval ゲートの判定。
+決定的部分（harness）は実装＋テスト済みで、LLM/GCP 非依存で稼働する。実装状況の詳細は
+`docs/architecture.md`「実装状況（v0）と残課題」を正とする（ここでは要点のみ・二重管理しない）。
+
+- **実装済み**: レビュー APPROVED 早期終了（`harness/pipeline.py` の `ApprovalGate`/`is_approved`）/
+  確定処理（`harness/finalize.py`＋`FinalizeAgent`：DiaryEntry JSON 復元→validate→write）/
+  HITL（`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval`）/
+  `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）/ improver（propose＋競合検出・
+  run_eval・open_pr）/ eval ゲート（`eval/run_gate.py`）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
+- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus・Memory Bank の接続（config 設定で活性化）/
+  Cloud Run デプロイ・GitHub Actions×WIF（層A）/ 実様式での `write_draft` 確定（§18）/ 現場の修正差分による
+  eval ケース拡充と 3軸 judge の ADK 接続（要 LLM 資格情報）。
+- 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
+  決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 
 # IMPORTANT: 個人情報・秘密の取り扱い
 
