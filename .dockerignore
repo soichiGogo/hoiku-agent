@@ -1,0 +1,36 @@
+# ビルドコンテキストから除外（イメージを小さく・秘密と実データを入れない＝§14）。
+.git
+.github
+.claude
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+.mypy_cache
+
+# 秘密・環境変数（コンテナに焼き込まない）
+.env
+.env.*
+!.env.example
+*-key.json
+*-credentials.json
+service-account*.json
+application_default_credentials.json
+
+# 実データ・RAG ソース（実行時不要＝RAG は Vertex 経由・§9/§14）
+knowledge/保育所保育指針
+data
+samples/private
+
+# 開発専用（コンテナ不要）
+tests
+eval
+scripts
+docs
+*.md
+!README.md
+# 実行時に読む育つ指針は残す（read_policy＝§9。*.md は入れ子に効かないが明示）。
+!knowledge/文書作成指針.md
