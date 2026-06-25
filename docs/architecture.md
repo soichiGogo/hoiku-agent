@@ -58,15 +58,24 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
 
 ## 実装状況（v0）と残課題
 
-v0 で実装済み（決定的部分はテスト済み・GCP/LLM 非依存で稼働）:
-- レビュー APPROVED 早期終了（`ApprovalGate`／`is_approved`）。
+v0 で稼働する範囲は **保育日誌（0–2 個別）のみ**（§3「日誌先行」）。実装済み（決定的部分はテスト済み・
+GCP/LLM 非依存で稼働）:
+- レビュー APPROVED 早期終了（`ApprovalGate`／`is_approved`。判定は1行目の verdict で行う＝prompts.py）。
 - HITL 関門：`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval` フラグ。
-- 出力の最終 validation／整形（`FinalizeAgent`＋`harness/finalize.py`）。
-- `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）、`improver`（propose＋競合検出／
-  run_eval／open_pr）、eval ゲート判定（`eval/run_gate.py`）。
+- 出力の最終 validation／整形（`FinalizeAgent`＋`harness/finalize.py`。`validate_fields` ツールは draft JSON
+  文字列を受け取り内部で復元→検査）。
+- `git_ops`（`>` パスで一意解決する構造化編集の適用・competition 入力・branch/PR＝既定 dry_run・処理後は
+  元ブランチへ復帰）、`improver`（propose＋競合検出／run_eval／open_pr）、eval ゲート（`eval/run_gate.py`）。
 
 残課題（外部リソース・実データ依存。コードは降格付きで配線済み）:
+- **月案パスと L2 還流**（`aggregate_by_child` → state["prev_month_digest"] → 月案 author の gather）は次フェーズ。
+  `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも未配線（§3/§4/§10）。
+  月案スキーマ（`MonthlyPlan` 等）・`doc_type` 分岐も未実装。
 - Vertex RAG corpus の作成・接続、Agent Engine Memory Bank の接続（§9・config 設定で活性化）。
 - Cloud Run デプロイ・GitHub Actions×WIF の配信ループ（層A）。
 - 実様式1枚の入手による `write_draft` 様式確定（§18）、現場の修正差分による eval ケース拡充（15–30件・§12）。
-- eval の 3軸 LLM-judge（`judges/*.md`）を ADK 評価設定へ接続し軸別 mean を算出（§12・要 LLM 資格情報）。
+- **eval ゲートの本採点**：3軸 LLM-judge（`judges/*.md`）を ADK 評価設定（test_config/rubric）へ接続し、
+  軸別 mean→3軸平均→main 比較→must_fix 集計を実装（§12・要 LLM 資格情報）。**それまで `run_gate` は採点でき
+  ても `passed=None`（判定不能）を返し、偽の緑を出さない**（接続後に True/False を返すよう拡張）。
+- ADK 2.3.0 で LoopAgent/SequentialAgent は deprecated（将来 Workflow へ）。設計（§6/§7）が前提とする API で
+  2.3.0 の Workflow 代替は非公開のため v0 はこのまま使う（中期 TODO で移行）。
