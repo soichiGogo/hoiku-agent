@@ -164,13 +164,24 @@ class _SpyMemory(InMemoryMemoryService):
         await super().add_session_to_memory(session)
 
 
-def _run_with_memory(author_model, reviewer_model, memory_service, session_id: str = "s1") -> dict:
-    """memory_service 付きで pipeline をオフライン実行し最終 state を返す（書き戻し検証用）。"""
+def _run_with_memory(
+    author_model,
+    reviewer_model,
+    memory_service,
+    session_id: str = "s1",
+    initial_state: dict | None = None,
+) -> dict:
+    """memory_service 付きで pipeline をオフライン実行し最終 state を返す（書き戻し検証用）。
+
+    initial_state で保育士の明示承認（caregiver_approved=True）等を seed できる（真の承認ゲート）。
+    """
 
     async def _go():
         pipeline = build_document_pipeline(author_model=author_model, reviewer_model=reviewer_model)
         session_service = InMemorySessionService()
-        await session_service.create_session(app_name=_APP, user_id=_USER, session_id=session_id)
+        await session_service.create_session(
+            app_name=_APP, user_id=_USER, session_id=session_id, state=initial_state or {}
+        )
         runner = Runner(
             app_name=_APP,
             agent=pipeline,
@@ -276,53 +287,70 @@ def test_validation_problems_surface_but_draft_still_produced():
     assert state.get("awaiting_caregiver_approval") is True
 
 
-# ──────────────────── 書き戻し（Memory Bank 配線・§9/§13） ────────────────────
-# after_agent_callback=persist_visit_to_memory が、型成立の確定時だけ来園セッションを
-# 子の長期メモリへ書き戻すことを実ランタイムで検証する（実 InMemory backend・creds 不要）。
+# ──────────────────── 書き戻し（Memory Bank 配線・真の承認ゲート・§9/§13） ────────────────────
+# after_agent_callback=persist_visit_to_memory が、**保育士の明示承認（caregiver_approved=True）かつ
+# 型成立**のときだけ来園セッションを子の長期メモリへ書き戻すことを実ランタイムで検証する
+# （実 InMemory backend・creds 不要）。型成立だけでは書き戻さない（保育士OK ≠ 自動確定）。
+_APPROVED_STATE = {"caregiver_approved": True}  # 保育士の確定（明示承認）を seed
 
 
-def test_writeback_persists_visit_on_valid_finalize():
-    """型成立の確定→add_session_to_memory が1回呼ばれ、来園が実 backend に格納される（往復）。"""
+def test_writeback_persists_visit_on_approved_valid_finalize():
+    """明示承認＋型成立→add_session_to_memory が1回呼ばれ、来園が実 backend に格納される（往復）。"""
     author = FakeLlm(responses=[_author_text(_valid_entry())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
     memory = _SpyMemory()
 
-    state = _run_with_memory(author, reviewer, memory)
+    state = _run_with_memory(author, reviewer, memory, initial_state=_APPROVED_STATE)
 
     assert state.get("final_document")  # 確定下書きは出来ている
-    assert memory.add_calls == 1, "型成立の確定で書き戻しフックが1回発火するはず"
+    assert memory.add_calls == 1, "保育士の明示承認＋型成立で書き戻しフックが1回発火するはず"
     # 実 backend に実際に格納された（keyword 検索のトークン化に依存せず store を直接確認）
     stored = memory._session_events.get(f"{_APP}/{_USER}", {})
     assert stored, "来園セッションが子の長期メモリへ書き戻されているはず"
     assert any(events for events in stored.values()), "格納セッションにイベントがあるはず"
 
 
-def test_writeback_skipped_when_parse_error():
-    """parse 失敗（型不成立）の確定では像を汚さないため書き戻さない。"""
+def test_writeback_skipped_without_caregiver_approval():
+    """真の承認ゲート：型成立でも保育士の明示承認が無ければ書き戻さない（保育士OK ≠ 自動確定）。"""
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+    memory = _SpyMemory()
+
+    # 承認を seed しない＝確定下書きは出来るが書き戻しは保留（保育士の確定待ち）
+    state = _run_with_memory(author, reviewer, memory)
+
+    assert state.get("final_document")  # 確定下書きは作る
+    assert state.get("awaiting_caregiver_approval") is True  # 承認待ち
+    assert memory.add_calls == 0, "明示承認が無ければ書き戻さない（真の承認ゲート）"
+    assert memory._session_events == {}
+
+
+def test_writeback_skipped_when_parse_error_even_if_approved():
+    """承認済みでも parse 失敗（型不成立）の確定では像を汚さないため書き戻さない。"""
     author = FakeLlm(responses=["観察情報が不足しており下書きを作成できませんでした。"])
     reviewer = FakeLlm(responses=["APPROVED\n（内容なし）"])
     memory = _SpyMemory()
 
-    state = _run_with_memory(author, reviewer, memory)
+    state = _run_with_memory(author, reviewer, memory, initial_state=_APPROVED_STATE)
 
     assert state.get("finalize_parse_error")
-    assert memory.add_calls == 0, "型不成立では書き戻さない"
+    assert memory.add_calls == 0, "承認済みでも型不成立では書き戻さない"
     assert memory._session_events == {}
 
 
-def test_writeback_skipped_when_validation_problems():
-    """年齢分岐タグ不足（validation 非空）の確定では書き戻さない（_should_persist_visit のゲート）。"""
+def test_writeback_skipped_when_validation_problems_even_if_approved():
+    """承認済みでも年齢分岐タグ不足（validation 非空）の確定では書き戻さない（型成立ゲート）。"""
     entry = _valid_entry()
     entry["individual_notes"][0]["tags"] = ["表現"]  # 0–2 に 5領域タグ＝違反
     author = FakeLlm(responses=[_author_text(entry)])
     reviewer = FakeLlm(responses=["APPROVED\n（型は別途）"])
     memory = _SpyMemory()
 
-    state = _run_with_memory(author, reviewer, memory)
+    state = _run_with_memory(author, reviewer, memory, initial_state=_APPROVED_STATE)
 
     assert state.get("validation")  # 違反あり
     assert state.get("final_document")  # 確定下書き自体は作る
-    assert memory.add_calls == 0, "型不成立（validation 非空）では書き戻さない"
+    assert memory.add_calls == 0, "承認済みでも型不成立（validation 非空）では書き戻さない"
 
 
 def test_writeback_degrades_without_memory_service():

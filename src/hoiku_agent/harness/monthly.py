@@ -9,7 +9,7 @@
       → monthly_author（前月集積＋子の像から「前月の姿／評価反省」を要約・ねらいへ変換）→ state["draft"]
       → review_loop（reviewer→ApprovalGate・日誌と共用）
       → finalize(kind="monthly")（MonthlyPlan を復元→validate_monthly_fields/write_monthly_draft）
-      → [after_agent_callback] persist_visit_to_memory（型成立の確定時のみ子の像へ書き戻し・§9）
+      → [after_agent_callback] persist_visit_to_memory（保育士の明示承認＋型成立のとき子の像へ書き戻し・§9）
 
 L2 還流の入力（前月日誌）は session state["prev_month_entries"]（DiaryEntry の dict 列）から取る。
 v0 では呼び出し側（scripts/run_monthly.py・月案デモの seeding）が前月日誌を seed する。将来は
@@ -80,7 +80,7 @@ def build_monthly_pipeline(
     """個別月案の型を保証する月案パイプラインを構築する（§3/§4/§10）。
 
     日誌の build_document_pipeline と対称。先頭に MonthlyPrepAgent（L2 還流の決定的集計）を置き、
-    finalize は kind="monthly"。after_agent_callback は日誌と共用（型成立の確定時のみ書き戻し・§9）。
+    finalize は kind="monthly"。after_agent_callback は日誌と共用（明示承認＋型成立で書き戻し・§9）。
     author_model/reviewer_model は通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(

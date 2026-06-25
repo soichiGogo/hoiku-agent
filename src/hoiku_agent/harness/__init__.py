@@ -19,7 +19,7 @@ from .schema_check import validate_fields, validate_monthly_fields
 # pipeline は agents → tools を芋づる式に読み込むため最後に import する
 # （tools 側の薄いラッパは上記の実体を submodule 直参照しており、循環は回避済み）。
 # router は両パイプライン（日誌＝pipeline / 月案＝monthly）を束ねるため pipeline/monthly の後に置く。
-from .pipeline import build_document_pipeline
+from .pipeline import CAREGIVER_APPROVAL_KEY, build_document_pipeline, mark_caregiver_approved
 from .monthly import build_monthly_pipeline
 from .router import build_root_agent
 
@@ -27,6 +27,8 @@ __all__ = [
     "build_document_pipeline",
     "build_monthly_pipeline",
     "build_root_agent",
+    "mark_caregiver_approved",
+    "CAREGIVER_APPROVAL_KEY",
     "validate_fields",
     "validate_monthly_fields",
     "write_draft",
