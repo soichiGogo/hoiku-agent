@@ -81,17 +81,20 @@ GCP/LLM 非依存で稼働）:
 - **月案パスと L2 還流**（`aggregate_by_child` → state["prev_month_digest"] → 月案 author の gather）は次フェーズ。
   `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも未配線（§3/§4/§10）。
   月案スキーマ（`MonthlyPlan` 等）・`doc_type` 分岐も未実装。
-- Vertex RAG corpus の作成・接続（§9・config 設定で活性化）。
+- **外部リソース接続**: Gemini/Vertex は**接続済み**（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`＝author/reviewer は
+  実 LLM でローカル稼働可）。**Vertex RAG corpus は未接続**（`RAG_CORPUS` 未設定＝`search_guideline` 降格中。§9・config 設定で活性化）。
 - **Memory Bank のライブ接続**：配線（読み＋書き戻し＋`server.py` 入口）＋プロビジョニング
   （`scripts/provision_memory_bank.py`＝生成モデル＋日本語/子の姿カスタマイズ。書き戻し→生成→読みの
   ライブ往復を実機確認済み）は済み。残は各自の GCP で同スクリプト実行＋`.env` の `AGENT_ENGINE_ID` 設定と、
   **真の承認ゲート**（v0 は "型成立の確定" を承認の代理トリガにする。保育士の明示承認で書き戻すのは次フェーズ）。
 - **CI（層A）**：決定論 CI（`.github/workflows/ci.yml`＝ruff＋`pytest`。毎PR・creds 不要・無料で
-  harness/決定論E2E/smoke を回す）は導入済み。**未了**は実 Gemini を使う eval ゲートCI（WIF 認証・
-  nightly/手動。§12 の3軸 judge 接続＋GCP の WIF 設定が前提）と Cloud Run デプロイ。
+  harness/決定論E2E/smoke を回す）は導入済み。**未了**は eval ゲートCI（nightly/手動。前提は §12 の3軸 judge
+  配線＋GCP の WIF 設定の2点。**Gemini 接続自体は完了済みでブロッカーではない**）と Cloud Run デプロイ。
 - 実様式1枚の入手による `write_draft` 様式確定（§18）、現場の修正差分による eval ケース拡充（15–30件・§12）。
-- **eval ゲートの本採点**：3軸 LLM-judge（`judges/*.md`）を ADK 評価設定（test_config/rubric）へ接続し、
-  軸別 mean→3軸平均→main 比較→must_fix 集計を実装（§12・要 LLM 資格情報）。**それまで `run_gate` は採点でき
-  ても `passed=None`（判定不能）を返し、偽の緑を出さない**（接続後に True/False を返すよう拡張）。
+- **eval ゲートの本採点**：3軸 LLM-judge（`judges/*.md`）を ADK 評価設定（`eval/test_config.json`）へ接続し、
+  軸別 mean→3軸平均→main 比較→must_fix 集計を実装（§12）。**配線は ADK ネイティブの
+  `rubric_based_final_response_quality_v1`（installed 2.3.0 で確認）に3軸を rubric として載せるだけで足り、外部依存は不要。
+  Gemini 資格情報は接続済みなので、配線すればローカル採点は即可能**（CI 化は別途 WIF が前提）。**それまで `run_gate` は
+  採点できても `passed=None`（判定不能）を返し、偽の緑を出さない**（接続後に True/False を返すよう拡張）。
 - ADK 2.3.0 で LoopAgent/SequentialAgent は deprecated（将来 Workflow へ）。設計（§6/§7）が前提とする API で
   2.3.0 の Workflow 代替は非公開のため v0 はこのまま使う（中期 TODO で移行）。
