@@ -16,7 +16,9 @@ def test_schemas_import():
 
 
 def test_root_agent_builds():
-    adk = pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync 後に有効化）")
+    adk = pytest.importorskip(
+        "google.adk", reason="google-adk 未インストール（uv sync 後に有効化）"
+    )
     assert adk is not None
 
     from hoiku_agent import root_agent
