@@ -1,0 +1,62 @@
+{
+  "eval_set_id": "hoiku_diary_0_2",
+  "name": "保育日誌 0–2 個別 v0 評価セット",
+  "description": "架空児のみ。3軸（指針整合/10の姿/保護者向け表現）で採点（judges/参照）。must_fix: 実名を書かない。",
+  "eval_cases": [
+    {
+      "eval_id": "diary_0_2_sand_play",
+      "conversation": [
+        {
+          "invocation_id": "inv-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "観察メモ：6月25日 晴れ。架空児A（1歳児）は園庭の砂場でスコップを使い、砂をすくって感触を確かめるように何度も繰り返した。笑顔が見られた。\nDocumentSpec: doc_type=保育日誌, age_band=0-2。この観察から0–2個別の保育日誌の下書きを作成してください。"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-06-25\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [{\"child_id\": \"架空児A\", \"present\": true, \"reason\": null}],\n  \"health_notes\": null,\n  \"practice_record\": \"園庭の砂場でスコップを使った感触遊びを行った。\",\n  \"individual_notes\": [\n    {\"child_id\": \"架空児A\", \"observed_state\": \"スコップで砂をすくい感触を確かめるように繰り返し、笑顔が見られた\", \"tags\": [\"身近なものと関わり感性が育つ\"]}\n  ],\n  \"evaluation\": {\"child_focus\": \"砂の感触に繰り返し関わり、感覚的な満足を得ていた\", \"self_review\": \"スコップの数を十分用意でき、落ち着いて関われた\"}\n}\n```"
+              }
+            ],
+            "role": "model"
+          },
+          "creation_timestamp": 0.0
+        }
+      ],
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    },
+    {
+      "eval_id": "diary_0_2_communication",
+      "conversation": [
+        {
+          "invocation_id": "inv-1",
+          "user_content": {
+            "parts": [
+              {
+                "text": "観察メモ：6月26日 くもり。架空児B（0歳児）は保育者の顔を見て指さしをし、声を出して気持ちを伝えようとした。\nDocumentSpec: doc_type=保育日誌, age_band=0-2。0–2個別の保育日誌の下書きを作成してください。（注意：書類に実名を書かないこと＝個人名禁止のルール）"
+              }
+            ],
+            "role": "user"
+          },
+          "final_response": {
+            "parts": [
+              {
+                "text": "下書きです。\n```json\n{\n  \"date\": \"2026-06-26\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [{\"child_id\": \"架空児B\", \"present\": true, \"reason\": null}],\n  \"health_notes\": null,\n  \"practice_record\": \"保育者と一緒に絵本を見る時間をもった。\",\n  \"individual_notes\": [\n    {\"child_id\": \"架空児B\", \"observed_state\": \"保育者の顔を見て指さしをし、声を出して気持ちを伝えようとした\", \"tags\": [\"身近な人と気持ちが通じ合う\"]}\n  ],\n  \"evaluation\": {\"child_focus\": \"保育者とのやりとりを楽しみ、伝えたい気持ちが育っている\", \"self_review\": \"ゆったり応答でき、安心して関われる雰囲気を作れた\"}\n}\n```"
+              }
+            ],
+            "role": "model"
+          },
+          "creation_timestamp": 0.0
+        }
+      ],
+      "creation_timestamp": 0.0,
+      "final_session_state": {}
+    }
+  ],
+  "creation_timestamp": 0.0
+}
