@@ -55,7 +55,7 @@
 - instruction（プロンプト）は各層の `prompts.py` に分離する。
 - docstring・コメント・LLM プロンプトは日本語。
 
-# 現状＝v0 実装済み（外部リソース接続は残課題）
+# 現状＝v0 実装済み（Gemini/Vertex 接続済み・RAG corpus/Memory Bank 接続が残課題）
 
 決定的部分（harness）は実装＋テスト済みで、LLM/GCP 非依存で稼働する。実装状況の詳細は
 `docs/architecture.md`「実装状況（v0）と残課題」を正とする（ここでは要点のみ・二重管理しない）。
@@ -65,9 +65,11 @@
   HITL（`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval`）/
   `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）/ improver（propose＋競合検出・
   run_eval・open_pr）/ eval ゲート（`eval/run_gate.py`）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
-- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus・Memory Bank の接続（config 設定で活性化）/
-  Cloud Run デプロイ・実 Gemini の eval ゲートCI（WIF 認証・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/
-  実様式での `write_draft` 確定（§18）/ 現場の修正差分による eval ケース拡充と 3軸 judge の ADK 接続（要 LLM 資格情報）。
+- **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`。author/reviewer は実 LLM でローカル稼働可）。
+- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus・Agent Engine Memory Bank の接続
+  （`RAG_CORPUS`/`AGENT_ENGINE_ID` 未設定＝現状は降格）/ Cloud Run デプロイ・eval ゲートCI（前提＝3軸 judge 配線＋WIF。
+  **Gemini 接続はブロッカーでない**・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/ 実様式での `write_draft` 確定（§18）/
+  現場の修正差分による eval ケース拡充と 3軸 judge の ADK 接続（＝§18 のコード作業。creds は接続済みで、配線すればローカル採点は可）。
 - 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
   決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 
