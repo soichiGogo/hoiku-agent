@@ -1,8 +1,11 @@
-"""ツール：子ども別の長期メモリを取得（Agent Engine Memory Bank）。
+"""ツール：その子の前回までの姿・育ちの蓄積を取得（Agent Engine Memory Bank）。
 
-設計コンテキスト §6 ツール表（get_child_memory）/ §9。子ども別の長期メモリ＝メモリ①。
-来園のたびに像が育つローリングな個別化（§13）。エージェントは Cloud Run 直ホストで、Memory Bank は
-Agent Engine Runtime に載せ替えず、マネージドのメモリサービスとして呼ぶ（§9）。
+設計コンテキスト §6 ツール表 / §9。子ども別の長期メモリ＝メモリ①。来園のたびに像が育つ
+ローリングな個別化（§13）。**「同じ子の継続性（前回までの様子・発達の流れ）」を踏まえたいときは
+必ずこのツールを引く**。過去に作成した書類の本文そのものは `search_past_documents`（用途が違う）。
+
+エージェントは Cloud Run 直ホストで、Memory Bank は Agent Engine Runtime に載せ替えず、マネージドの
+メモリサービスとして呼ぶ（§9）。
 
 配線（v0 確定）：ADK の MemoryService を Runner に設定した上で、ツールから
 `tool_context.search_memory(query)`（async）で引く。MemoryService 実体は本番では
@@ -26,12 +29,15 @@ def _content_text(entry: object) -> str:
     return " ".join(texts).strip()
 
 
-async def get_child_memory(
+async def recall_child_history(
     child_id: str,
     query: str | None = None,
     tool_context: ToolContext | None = None,
 ) -> list[dict]:
-    """子ども別の長期メモリ（その子の姿・発達の蓄積）を取得する。
+    """その子の前回までの姿・育ちの蓄積（来園横断の像）を取得する。
+
+    同じ子の継続性（前回までの様子・発達の流れ）を踏まえたいときは必ずこれを引く。過去の生の
+    書類本文ではなく、Memory Bank が来園を跨いで統合した「その子の像」を返す。
 
     Args:
         child_id: 対象の子ども（架空児のみ＝§14）。
@@ -39,7 +45,7 @@ async def get_child_memory(
         tool_context: ADK が注入（宣言には現れない）。MemoryService 経由の検索に使う。
 
     Returns:
-        関連メモリ（{"text", ...} のリスト）。未接続時は降格メッセージ1件。
+        その子の関連メモリ（{"text", ...} のリスト）。未接続時は降格メッセージ1件。
     """
     search = f"child_id={child_id}" + (f" {query}" if query else "")
     if tool_context is None:
