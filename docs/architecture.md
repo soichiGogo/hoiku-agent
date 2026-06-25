@@ -82,9 +82,10 @@ GCP/LLM 非依存で稼働）:
   `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも未配線（§3/§4/§10）。
   月案スキーマ（`MonthlyPlan` 等）・`doc_type` 分岐も未実装。
 - Vertex RAG corpus の作成・接続（§9・config 設定で活性化）。
-- **Memory Bank のライブ接続**：配線（読み＋書き戻し＋`server.py` 入口）は済み。残は実 Agent Engine の
-  プロビジョニング＋`.env` の `AGENT_ENGINE_ID` 設定（手順は `docs/ライブ実行手順.md`）と、**真の承認ゲート**
-  （v0 は "型成立の確定" を承認の代理トリガにする。保育士の明示承認アクションで書き戻すのは次フェーズ）。
+- **Memory Bank のライブ接続**：配線（読み＋書き戻し＋`server.py` 入口）＋プロビジョニング
+  （`scripts/provision_memory_bank.py`＝生成モデル＋日本語/子の姿カスタマイズ。書き戻し→生成→読みの
+  ライブ往復を実機確認済み）は済み。残は各自の GCP で同スクリプト実行＋`.env` の `AGENT_ENGINE_ID` 設定と、
+  **真の承認ゲート**（v0 は "型成立の確定" を承認の代理トリガにする。保育士の明示承認で書き戻すのは次フェーズ）。
 - **CI（層A）**：決定論 CI（`.github/workflows/ci.yml`＝ruff＋`pytest`。毎PR・creds 不要・無料で
   harness/決定論E2E/smoke を回す）は導入済み。**未了**は実 Gemini を使う eval ゲートCI（WIF 認証・
   nightly/手動。§12 の3軸 judge 接続＋GCP の WIF 設定が前提）と Cloud Run デプロイ。

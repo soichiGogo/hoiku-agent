@@ -17,8 +17,9 @@
 - 依存: `uv sync`（uv 推奨。`pip install -e ".[dev]"` でも可）
 - ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（ブラウザ UI。agents dir＝`src/`）。
   本番/ローカル共通の入口は repo root の `server.py`（`get_fast_api_app`）＝`uvicorn server:app`。Memory Bank を
-  使うときは `adk web src --memory_service_uri=agentengine://$AGENT_ENGINE_ID` か、`.env` に `AGENT_ENGINE_ID` を
-  入れて `uvicorn server:app`（`config.memory_service_uri` が URI 化。未設定は InMemory 降格＝§9・手順は `docs/ライブ実行手順.md`）。
+  使うときは `.env` に `AGENT_ENGINE_ID` を入れて `uvicorn server:app`（`config.memory_service_uri` が URI 化。
+  未設定は InMemory 降格＝§9）。Memory Bank 本体は `uv run python scripts/provision_memory_bank.py --create` で
+  作成・設定する（**生成モデル必須＋日本語/子の姿カスタマイズ**＝実機検証で確定。手順は `docs/ライブ実行手順.md`）。
 - テスト: `pytest`（`testpaths=tests`, `pythonpath=["src","."]`＝root の `server.py` も import 可・pyproject 済み）。harness の決定ロジックは
   `tests/test_harness/` で LLM 非依存に回る。結合（決定論E2E）は `tests/test_e2e/`＝`FakeLlm` 注入で
   author→review→finalize を creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
