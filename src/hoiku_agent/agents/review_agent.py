@@ -10,18 +10,28 @@ reviewer 単体（指摘の生成）を返す。指摘結果は state["review"] 
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from google.adk.agents import LlmAgent
 
 from ..config import settings
 from ..tools import read_policy, search_guideline, search_records
 from .prompts import REVIEW_INSTRUCTION
 
+if TYPE_CHECKING:
+    from google.adk.models import BaseLlm
 
-def build_review_agent() -> LlmAgent:
-    """レビューAI（単一 LlmAgent）を構築して返す。巡回制御は harness 側。"""
+
+def build_review_agent(model: str | BaseLlm | None = None) -> LlmAgent:
+    """レビューAI（単一 LlmAgent）を構築して返す。巡回制御は harness 側。
+
+    Args:
+        model: 使用するモデル。既定（None）は settings.gemini_model（実 Gemini）。
+            決定論E2E では FakeLlm 等の BaseLlm を注入する差込口（§16）。本番は引数なしで不変。
+    """
     return LlmAgent(
         name="reviewer",
-        model=settings.gemini_model,
+        model=model if model is not None else settings.gemini_model,
         instruction=REVIEW_INSTRUCTION,
         # search_records は前月連続性の照合に使う（§7 の観点を実際に検証できるように）
         tools=[read_policy, search_guideline, search_records],

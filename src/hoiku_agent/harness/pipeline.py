@@ -28,7 +28,7 @@ v0 スコープ（§3「日誌先行 → 月案は日誌の集積に乗せる」
 
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
 from google.adk.agents import BaseAgent, LoopAgent, SequentialAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -37,6 +37,9 @@ from google.genai import types
 
 from ..agents import build_author_agent, build_review_agent
 from .finalize import finalize_document
+
+if TYPE_CHECKING:
+    from google.adk.models import BaseLlm
 
 MAX_REVIEW_ITERATIONS = 3
 _APPROVED_TOKEN = "APPROVED"
@@ -130,22 +133,34 @@ class FinalizeAgent(BaseAgent):
         )
 
 
-def build_review_loop() -> LoopAgent:
-    """reviewer の巡回＋APPROVED 早期終了（ApprovalGate）の LoopAgent を構築する（§7）。"""
+def build_review_loop(reviewer_model: str | BaseLlm | None = None) -> LoopAgent:
+    """reviewer の巡回＋APPROVED 早期終了（ApprovalGate）の LoopAgent を構築する（§7）。
+
+    reviewer_model は通常 None（＝settings.gemini_model）。決定論E2E では FakeLlm を注入する。
+    """
     return LoopAgent(
         name="review_loop",
-        sub_agents=[build_review_agent(), ApprovalGate(name="approval_gate")],
+        sub_agents=[build_review_agent(reviewer_model), ApprovalGate(name="approval_gate")],
         max_iterations=MAX_REVIEW_ITERATIONS,
     )
 
 
-def build_document_pipeline() -> SequentialAgent:
-    """書類作成の型を保証するルートパイプラインを構築する（root_agent の実体）。"""
+def build_document_pipeline(
+    author_model: str | BaseLlm | None = None,
+    reviewer_model: str | BaseLlm | None = None,
+) -> SequentialAgent:
+    """書類作成の型を保証するルートパイプラインを構築する（root_agent の実体）。
+
+    author_model / reviewer_model は通常 None（＝settings.gemini_model で実 Gemini を使う）。
+    決定論E2E（tests/test_e2e/）では各段に FakeLlm を注入し、LLM/GCP 非依存に
+    author→review_loop→finalize の結合（順序・早期終了・確定/HITLフラグ）を検証する（§16）。
+    root_agent（agent.py）は引数なしで呼ぶため本番挙動は不変。
+    """
     return SequentialAgent(
         name="document_pipeline",
         sub_agents=[
-            build_author_agent(),
-            build_review_loop(),
+            build_author_agent(author_model),
+            build_review_loop(reviewer_model),
             FinalizeAgent(name="finalize"),
         ],
     )

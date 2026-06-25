@@ -11,7 +11,8 @@
 - **reviewer は Evaluator** で別視点の点検に徹する。**巡回（LoopAgent）と APPROVED 早期終了の
   "制御" は harness/pipeline.py 側**（決定的）。ここは reviewer 単体（指摘の生成）を返す。
 - **factory で返す。** `build_author_agent` / `build_review_agent`。トップレベルでインスタンス化
-  しない（例外は `agent.py` の root_agent のみ）。
+  しない（例外は `agent.py` の root_agent のみ）。任意引数 `model`（既定 None＝`settings.gemini_model`）は
+  決定論E2E で `FakeLlm` 等の `BaseLlm` を差し込むための注入口。本番は引数なしで呼ぶため挙動は不変。
 - **受け渡しは output_key→state**（`state["draft"]` / `state["review"]`）。独自グローバルで渡さない。
 - **instruction は `prompts.py` に分離**（ADK 慣習）。日本語で書く。
 
