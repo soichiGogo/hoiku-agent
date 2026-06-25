@@ -1,0 +1,48 @@
+# 決定論 CI（毎PR・無料・LLM/GCP 非依存）。
+# ここで回すのは harness の決定ロジック・決定論E2E（FakeLlm 注入の結合テスト）・smoke と ruff。
+# 実 Gemini を呼ぶ品質ゲート（層B eval＝eval/run_gate.py の3軸 judge）は creds・課金・§18 の judge
+# 接続が要るためここには入れない。それは WIF + §18 が揃ってから別ワークフロー（nightly/手動）で追加する。
+# CLAUDE.md「開発コマンド」/ docs/architecture.md「実装状況」と整合。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同一 PR/ブランチへの連続 push は古い実行をキャンセル（runner 分の節約）。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 最小権限（読み取りのみ）。creds も Vertex も使わない決定論ジョブ。
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint & deterministic tests (no LLM)
+    runs-on: ubuntu-latest
+    env:
+      # ローカル検証（3.12）と一致させる。requires-python は >=3.11（pyproject）。
+      UV_PYTHON: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true  # uv.lock をキーにキャッシュ
+
+      - name: Install dependencies (incl. dev extra)
+        run: uv sync --extra dev
+
+      - name: Ruff lint
+        run: uv run --extra dev ruff check .
+
+      - name: Ruff format check
+        run: uv run --extra dev ruff format --check .
+
+      - name: Pytest (harness + 決定論E2E + smoke; eval は creds 無で skip)
+        run: uv run --extra dev pytest -q
