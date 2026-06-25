@@ -19,20 +19,20 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from ..schemas import DiaryEntry
-from .draft import write_draft
-from .schema_check import validate_fields
+from ..schemas import DiaryEntry, MonthlyPlan
+from .draft import write_draft, write_monthly_draft
+from .schema_check import validate_fields, validate_monthly_fields
 
 
 @dataclass
 class FinalizedDocument:
-    """確定処理の結果（決定的）。"""
+    """確定処理の結果（決定的）。日誌（DiaryEntry）と月案（MonthlyPlan）で共用する。"""
 
-    entry: DiaryEntry | None = None
-    problems: list[str] = field(default_factory=list)  # validate_fields 違反（空＝充足）
-    formatted: str | None = None  # write_draft の整形済み出力
+    entry: DiaryEntry | MonthlyPlan | None = None  # 復元した書類モデル（日誌 or 月案）
+    problems: list[str] = field(default_factory=list)  # validate_* 違反（空＝充足）
+    formatted: str | None = None  # write_* の整形済み出力
     parse_error: str | None = None  # JSON 抽出/検証失敗の理由（None＝成功）
 
     @property
@@ -42,7 +42,7 @@ class FinalizedDocument:
 
 
 def extract_json_block(text: str) -> str | None:
-    """テキストから DiaryEntry を表す JSON 文字列を抽出する。
+    """テキストから書類（DiaryEntry / MonthlyPlan）を表す JSON 文字列を抽出する。
 
     優先順位（docstring と実装を一致させる）:
       ① 言語タグが json のフェンス（複数あれば最後のもの）
@@ -111,23 +111,44 @@ def _first_balanced_object(text: str) -> str | None:
     return None
 
 
-def parse_draft_to_entry(text: str) -> DiaryEntry:
-    """author のドラフト文字列から DiaryEntry を復元する。失敗時は ValueError。"""
+def _parse_json_to_model(text: str, model_cls: type[BaseModel], label: str) -> BaseModel:
+    """ドラフト文字列から JSON を抽出し pydantic モデルへ復元する（汎用）。失敗時は ValueError。"""
     raw = extract_json_block(text)
     if raw is None:
-        raise ValueError("ドラフトから DiaryEntry の JSON を抽出できなかった")
+        raise ValueError(f"ドラフトから {label} の JSON を抽出できなかった")
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
-        raise ValueError(f"DiaryEntry の JSON 解析に失敗: {e}") from e
+        raise ValueError(f"{label} の JSON 解析に失敗: {e}") from e
     try:
-        return DiaryEntry.model_validate(data)
+        return model_cls.model_validate(data)
     except ValidationError as e:
-        raise ValueError(f"DiaryEntry のスキーマ検証に失敗: {e}") from e
+        raise ValueError(f"{label} のスキーマ検証に失敗: {e}") from e
+
+
+def parse_draft_to_entry(text: str) -> DiaryEntry:
+    """author のドラフト文字列から DiaryEntry を復元する。失敗時は ValueError。"""
+    return _parse_json_to_model(text, DiaryEntry, "DiaryEntry")  # type: ignore[return-value]
+
+
+def parse_draft_to_plan(text: str) -> MonthlyPlan:
+    """月案 author のドラフト文字列から MonthlyPlan を復元する。失敗時は ValueError。"""
+    return _parse_json_to_model(text, MonthlyPlan, "MonthlyPlan")  # type: ignore[return-value]
+
+
+def _finalize(text, *, parse, validate, write, template_ref) -> FinalizedDocument:
+    """確定処理の汎用本体（復元→検査→整形）。日誌/月案で parse/validate/write を差し替える。"""
+    try:
+        entry = parse(text)
+    except ValueError as e:
+        return FinalizedDocument(parse_error=str(e))
+    problems = validate(entry)
+    formatted = write(entry, template_ref=template_ref)
+    return FinalizedDocument(entry=entry, problems=problems, formatted=formatted)
 
 
 def finalize_document(text: str, template_ref: str | None = None) -> FinalizedDocument:
-    """ドラフト文字列を確定処理（復元→検査→整形）する。
+    """日誌ドラフトを確定処理（復元→検査→整形）する。
 
     Args:
         text: author が生成したドラフト（DiaryEntry の JSON を含む）。
@@ -136,10 +157,29 @@ def finalize_document(text: str, template_ref: str | None = None) -> FinalizedDo
     Returns:
         FinalizedDocument（entry / problems / formatted / parse_error）。
     """
-    try:
-        entry = parse_draft_to_entry(text)
-    except ValueError as e:
-        return FinalizedDocument(parse_error=str(e))
-    problems = validate_fields(entry)
-    formatted = write_draft(entry, template_ref=template_ref)
-    return FinalizedDocument(entry=entry, problems=problems, formatted=formatted)
+    return _finalize(
+        text,
+        parse=parse_draft_to_entry,
+        validate=validate_fields,
+        write=write_draft,
+        template_ref=template_ref,
+    )
+
+
+def finalize_monthly_document(text: str, template_ref: str | None = None) -> FinalizedDocument:
+    """月案ドラフトを確定処理（復元→検査→整形）する（§10）。日誌の finalize_document と対称。
+
+    Args:
+        text: 月案 author が生成したドラフト（MonthlyPlan の JSON を含む）。
+        template_ref: 様式参照（あれば write_monthly_draft に渡す）。
+
+    Returns:
+        FinalizedDocument（entry=MonthlyPlan / problems / formatted / parse_error）。
+    """
+    return _finalize(
+        text,
+        parse=parse_draft_to_plan,
+        validate=validate_monthly_fields,
+        write=write_monthly_draft,
+        template_ref=template_ref,
+    )

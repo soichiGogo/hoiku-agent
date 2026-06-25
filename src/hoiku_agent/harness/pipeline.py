@@ -39,7 +39,7 @@ from google.adk.events import Event, EventActions
 from google.genai import types
 
 from ..agents import build_author_agent, build_review_agent
-from .finalize import finalize_document
+from .finalize import finalize_document, finalize_monthly_document
 
 if TYPE_CHECKING:
     from google.adk.agents.callback_context import CallbackContext
@@ -93,17 +93,24 @@ class ApprovalGate(BaseAgent):
 
 
 class FinalizeAgent(BaseAgent):
-    """確定処理（決定的）：ドラフトを復元し validate_fields/write_draft を末尾で実行する（§6）。
+    """確定処理（決定的）：ドラフトを復元し validate/write を末尾で実行する（§6）。
 
     結果（整形済み確定下書き・違反一覧・確定下書き待ちの HITL フラグ）を state へ書き戻す。
     最終OK（確定）は保育士＝HITL（§7）なので、ここでは "確定下書き＋承認待ち" までを作る。
+    kind で日誌（diary）／月案（monthly）の確定ロジック（harness/finalize.py の実体）を差し替える。
     """
 
     template_ref: str | None = None
+    kind: str = "diary"  # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         draft = ctx.session.state.get("draft") or ""
-        result = finalize_document(draft, template_ref=self.template_ref)
+        if self.kind == "monthly":
+            result = finalize_monthly_document(draft, template_ref=self.template_ref)
+            schema_label = "MonthlyPlan"
+        else:
+            result = finalize_document(draft, template_ref=self.template_ref)
+            schema_label = "DiaryEntry"
 
         state_delta = {
             "final_document": result.formatted,
@@ -117,7 +124,7 @@ class FinalizeAgent(BaseAgent):
             msg = (
                 "【確定処理】ドラフトの構造化に失敗しました："
                 f"{result.parse_error}\n"
-                "→ author の最終出力に DiaryEntry の JSON（```json フェンス）が必要です。"
+                f"→ author の最終出力に {schema_label} の JSON（```json フェンス）が必要です。"
             )
         elif result.problems:
             msg = (
