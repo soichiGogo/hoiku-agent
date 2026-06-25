@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from google.adk.agents import LlmAgent
 
 from ..config import settings
-from ..tools import read_policy, search_guideline, search_records
+from ..tools import read_policy, recall_child_history, search_guideline
 from .prompts import REVIEW_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ def build_review_agent(model: str | BaseLlm | None = None) -> LlmAgent:
         name="reviewer",
         model=model if model is not None else settings.gemini_model,
         instruction=REVIEW_INSTRUCTION,
-        # search_records は前月連続性の照合に使う（§7 の観点を実際に検証できるように）
-        tools=[read_policy, search_guideline, search_records],
+        # recall_child_history は前月連続性の照合に使う（その子の前回までの像と矛盾しないか＝§7）
+        tools=[read_policy, search_guideline, recall_child_history],
         output_key="review",  # 指摘結果を state["review"] に格納
     )

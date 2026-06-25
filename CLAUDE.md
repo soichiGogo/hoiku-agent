@@ -20,6 +20,9 @@
   使うときは `.env` に `AGENT_ENGINE_ID` を入れて `uvicorn server:app`（`config.memory_service_uri` が URI 化。
   未設定は InMemory 降格＝§9）。Memory Bank 本体は `uv run python scripts/provision_memory_bank.py --create` で
   作成・設定する（**生成モデル必須＋日本語/子の姿カスタマイズ**＝実機検証で確定。手順は `docs/ライブ実行手順.md`）。
+  RAG corpus（静的ナレッジ）は `uv run python scripts/provision_rag_corpus.py --create` で作成・取り込み（ソースは
+  `knowledge/保育所保育指針/`＝gitignore 済み。**新規 GCP は RagManagedDb を serverless へ REST 切替必須・埋め込みは
+  日本語向け `text-multilingual-embedding-002`**＝実機検証で確定。`RAG_CORPUS` を `.env` に設定。手順は `docs/ライブ実行手順.md`）。
 - テスト: `pytest`（`testpaths=tests`, `pythonpath=["src","."]`＝root の `server.py` も import 可・pyproject 済み）。harness の決定ロジックは
   `tests/test_harness/` で LLM 非依存に回る。結合（決定論E2E）は `tests/test_e2e/`＝`FakeLlm` 注入で
   author→review→finalize を creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
@@ -67,12 +70,14 @@
 - **実装済み**: レビュー APPROVED 早期終了（`harness/pipeline.py` の `ApprovalGate`/`is_approved`）/
   確定処理（`harness/finalize.py`＋`FinalizeAgent`：DiaryEntry JSON 復元→validate→write）/
   HITL（`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval`）/
-  Memory Bank 配線（読み＝`get_child_memory`／書き戻し＝`persist_visit_to_memory`＝`after_agent_callback`・型成立の
+  Memory Bank 配線（読み＝`recall_child_history`／書き戻し＝`persist_visit_to_memory`＝`after_agent_callback`・型成立の
   確定時のみ・§9/§13。入口＝`server.py`＋`config.memory_service_uri`。未配線は InMemory 降格）/
   `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）/ improver（propose＋競合検出・
   run_eval・open_pr）/ eval ゲート（`eval/run_gate.py`）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`。author/reviewer は実 LLM でローカル稼働可）。
-- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus の接続（`RAG_CORPUS` 未設定＝`search_guideline` 降格中）／
+- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus の**ライブ接続**（配線＋プロビジョニング
+  `scripts/provision_rag_corpus.py`＝serverless 切替・日本語埋め込み・冪等取り込み・ライブ検索往復 実機確認済み。残は各自 GCP で
+  スクリプト実行＋`RAG_CORPUS` 設定。未設定は `search_guideline` 降格）／
   Memory Bank の**ライブ接続**（配線＋プロビジョニング `scripts/provision_memory_bank.py`＝生成モデル＋日本語/子の姿カスタマイズ・
   ライブ往復実機確認済み。残は各自 GCP でスクリプト実行＋`AGENT_ENGINE_ID` 設定と真の承認ゲート＝次フェーズ）/
   Cloud Run デプロイ・eval ゲートCI（前提＝3軸 judge 配線＋WIF。**Gemini 接続はブロッカーでない**・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/

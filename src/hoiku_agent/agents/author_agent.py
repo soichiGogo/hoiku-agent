@@ -17,10 +17,9 @@ from google.adk.agents import LlmAgent
 from ..config import settings
 from ..tools import (
     ask_caregiver,
-    get_child_memory,
     read_policy,
+    recall_child_history,
     search_guideline,
-    search_records,
     validate_fields,
 )
 from .prompts import AUTHOR_INSTRUCTION
@@ -43,10 +42,9 @@ def build_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
         model=model if model is not None else settings.gemini_model,
         instruction=AUTHOR_INSTRUCTION,
         tools=[
-            search_records,
+            recall_child_history,  # 同じ子の前回までの姿（継続性は必ずこれ＝§9・B方針）
             search_guideline,
             read_policy,
-            get_child_memory,
             ask_caregiver,
             validate_fields,  # 生成途中の自己点検（最終確定は harness）
         ],

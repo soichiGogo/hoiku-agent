@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from hoiku_agent import config
-from hoiku_agent.tools import search_guideline, search_records
+from hoiku_agent.tools import search_guideline, search_past_documents
 
 
 def _write_record(directory, name, record):
@@ -16,7 +16,7 @@ def _write_record(directory, name, record):
     (directory / name).write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
 
 
-def test_search_records_filters_by_child_and_query(tmp_path, monkeypatch):
+def test_search_past_documents_filters_by_child_and_query(tmp_path, monkeypatch):
     records_dir = tmp_path / "records"
     _write_record(
         records_dir,
@@ -38,15 +38,15 @@ def test_search_records_filters_by_child_and_query(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(config.settings, "records_dir", str(records_dir))
 
-    hits = search_records("砂遊び", child_id="架空児A")
+    hits = search_past_documents("砂遊び", child_id="架空児A")
     assert len(hits) == 1
     assert "架空児A" in hits[0]["text"]
     assert "砂" in hits[0]["text"]
 
 
-def test_search_records_empty_store_returns_empty(tmp_path, monkeypatch):
+def test_search_past_documents_empty_store_returns_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(config.settings, "records_dir", str(tmp_path / "missing"))
-    assert search_records("何か") == []
+    assert search_past_documents("何か") == []
 
 
 def test_search_guideline_degrades_without_corpus(monkeypatch):
@@ -85,7 +85,7 @@ def test_validate_fields_tool_reports_unparseable_json():
     assert problems and "解釈できませんでした" in problems[0]
 
 
-# ──────────────────── get_child_memory（Memory Bank 読み・§9） ────────────────────
+# ──────────────────── recall_child_history（Memory Bank 読み・§9） ────────────────────
 
 
 class _StubMemoryResponse:
@@ -116,25 +116,39 @@ class _StubToolContext:
         return _StubMemoryResponse(self._texts)
 
 
-def test_get_child_memory_returns_memories_when_connected():
+def test_recall_child_history_returns_memories_when_connected():
     """MemoryService 配線時は search_memory の結果（その子の像）を本文として返す（非降格）。"""
     import asyncio
 
-    from hoiku_agent.tools import get_child_memory
+    from hoiku_agent.tools import recall_child_history
 
     ctx = _StubToolContext(["前回は砂場で感触を確かめ、繰り返し楽しんでいた"])
-    out = asyncio.run(get_child_memory("架空児A", query="砂", tool_context=ctx))
+    out = asyncio.run(recall_child_history("架空児A", query="砂", tool_context=ctx))
 
     assert any("感触" in m["text"] for m in out)
     # child_id とクエリが検索キーに反映される
     assert ctx.queries and "架空児A" in ctx.queries[0] and "砂" in ctx.queries[0]
 
 
-def test_get_child_memory_degrades_without_tool_context():
+def test_recall_child_history_degrades_without_tool_context():
     """tool_context 未注入（ローカル/未接続）では降格メッセージ1件で落ちない。"""
     import asyncio
 
-    from hoiku_agent.tools import get_child_memory
+    from hoiku_agent.tools import recall_child_history
 
-    out = asyncio.run(get_child_memory("架空児A"))
+    out = asyncio.run(recall_child_history("架空児A"))
     assert len(out) == 1 and "memory未接続" in out[0]["text"]
+
+
+def test_recall_child_history_degrades_when_memory_service_unwired():
+    """tool_context はあるが MemoryService 未配線（search_memory が ValueError）でも降格1件で落ちない。"""
+    import asyncio
+
+    from hoiku_agent.tools import recall_child_history
+
+    class _NoMemoryCtx:
+        async def search_memory(self, query: str):
+            raise ValueError("memory service not configured")
+
+    out = asyncio.run(recall_child_history("架空児A", tool_context=_NoMemoryCtx()))
+    assert len(out) == 1 and "Memory Bank 未設定" in out[0]["text"]

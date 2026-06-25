@@ -18,11 +18,11 @@ class Settings(BaseSettings):
 
     # 静的ナレッジ＝Vertex RAG corpus（保育所保育指針・10の姿）。空なら search_guideline は降格。
     rag_corpus: str = ""
-    # 子ども長期記憶＝Agent Engine Memory Bank の ID（get_child_memory が使う）。
+    # 子ども長期記憶＝Agent Engine Memory Bank の ID（recall_child_history が使う）。
     # 用途は Memory Bank に限定する（Runtime 名残と混同しない＝設計コンテキスト §9）。
     agent_engine_id: str = ""
 
-    # 過去記録ストア（search_records が引くローカルディレクトリ）。空なら repo の data/records。
+    # 過去書類アーカイブ（search_past_documents が引くローカルディレクトリ）。空なら repo の data/records。
     # 実データは置かない＝架空児のみ（gitignore 済み・§14）。
     records_dir: str = ""
 

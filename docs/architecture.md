@@ -27,9 +27,12 @@
 
 ## ツール（§6・4–8個のプリミティブ）
 
-`tools/`: `search_records`(ローカル架空児記録ストア) / `search_guideline`(Vertex RAG・未設定で降格) /
-`read_policy`(育つ指針 HEAD) / `get_child_memory`(Memory Bank・`tool_context.search_memory`・未接続で降格) /
-`ask_caregiver`(HITL＝`LongRunningFunctionTool`) / `validate_fields`・`write_draft`（harness の薄いラッパ）。
+`tools/`（agent が呼ぶプリミティブ）: `recall_child_history`(子の前回までの像＝Memory Bank・`tool_context.search_memory`・未接続で降格) /
+`search_guideline`(Vertex RAG・未設定で降格) / `read_policy`(育つ指針 HEAD) / `ask_caregiver`(HITL＝`LongRunningFunctionTool`) /
+`validate_fields`(生成途中の自己点検)。配線は author＝上記全部 / reviewer＝`read_policy`・`search_guideline`・`recall_child_history` のみ。
+`validate_fields`・`write_draft` の決定的実体は harness（§5）で、最終の確定 validation・整形出力は harness が末尾で実行する＝
+`write_draft` は agent tool ではない。`search_past_documents`(過去書類アーカイブ＝ローカル架空児記録ストア)は v0 では **agent に未配線**
+（継続把握は `recall_child_history` に一本化＝§9。過去書類の引用が実需になれば復活。月⇄日集積は決定的に `aggregate_by_child`）。
 improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / `run_eval`→`eval/run_gate.py`、
 `open_pr` は harness 経由）。GCP 系（RAG/Memory）は config 未設定時に安全に降格する。
 
@@ -37,7 +40,7 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
 
 | 対象 | 置き場 | 参照 |
 |---|---|---|
-| 子ども別 長期メモリ | Agent Engine Memory Bank（repo外） | 読み＝`get_child_memory`／書き戻し＝`persist_visit_to_memory`（pipeline の `after_agent_callback`）。配線は `--memory_service_uri=agentengine://<id>`（`config.memory_service_uri`／`server.py`）。未設定で降格 |
+| 子ども別 長期メモリ | Agent Engine Memory Bank（repo外） | 読み＝`recall_child_history`／書き戻し＝`persist_visit_to_memory`（pipeline の `after_agent_callback`）。配線は `--memory_service_uri=agentengine://<id>`（`config.memory_service_uri`／`server.py`）。未設定で降格 |
 | 育つ文書作成指針 | git `knowledge/文書作成指針.md` | agent は読み取り（HEAD）／improver が編集（HITL+ゲート） |
 | 静的ナレッジ（指針解説・10の姿） | Vertex RAG（`knowledge/保育所保育指針/` は gitignore のソース） | `search_guideline` |
 
@@ -74,7 +77,7 @@ GCP/LLM 非依存で稼働）:
   無料・決定的**に検証（中身の品質採点は層B eval＝別系統）。起動は `/e2e` skill。
 - **Memory Bank 配線（読み＋書き戻し）**：`config.memory_service_uri`（`agentengine://<id>`）→ 本番/ローカル共通の
   入口 `server.py`（`get_fast_api_app`・自前 Runner は組まず ADK の `--memory_service_uri` 自動配線に委ねる）。
-  読み＝`get_child_memory`、書き戻し＝`persist_visit_to_memory`（`after_agent_callback`・型成立の確定時のみ）。
+  読み＝`recall_child_history`、書き戻し＝`persist_visit_to_memory`（`after_agent_callback`・型成立の確定時のみ）。
   `InMemoryMemoryService` 付き Runner で書き戻しの発火/スキップ/降格を決定論E2E に検証（creds 不要）。
 
 残課題（外部リソース・実データ依存。コードは降格付きで配線済み）:
@@ -82,7 +85,11 @@ GCP/LLM 非依存で稼働）:
   `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも未配線（§3/§4/§10）。
   月案スキーマ（`MonthlyPlan` 等）・`doc_type` 分岐も未実装。
 - **外部リソース接続**: Gemini/Vertex は**接続済み**（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`＝author/reviewer は
-  実 LLM でローカル稼働可）。**Vertex RAG corpus は未接続**（`RAG_CORPUS` 未設定＝`search_guideline` 降格中。§9・config 設定で活性化）。
+  実 LLM でローカル稼働可）。
+- **Vertex RAG corpus のライブ接続**：配線（`search_guideline`＝`vertexai.rag.retrieval_query`・未設定で降格）＋プロビジョニング
+  （`scripts/provision_rag_corpus.py`＝**新規 GCP は RagManagedDb を serverless へ REST 切替＋Vector Search API 有効化が前提**・
+  埋め込みは日本語向け `text-multilingual-embedding-002`・冪等取り込み。取り込み→検索の往復を実機確認済み）は済み。
+  残は各自の GCP で同スクリプト実行＋`.env` の `RAG_CORPUS` 設定（未設定は `search_guideline` 降格）。
 - **Memory Bank のライブ接続**：配線（読み＋書き戻し＋`server.py` 入口）＋プロビジョニング
   （`scripts/provision_memory_bank.py`＝生成モデル＋日本語/子の姿カスタマイズ。書き戻し→生成→読みの
   ライブ往復を実機確認済み）は済み。残は各自の GCP で同スクリプト実行＋`.env` の `AGENT_ENGINE_ID` 設定と、

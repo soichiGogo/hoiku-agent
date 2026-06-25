@@ -1,7 +1,12 @@
-"""ツール：過去の日誌/月案を検索（参照・連続性）。
+"""ツール：過去に作成した日誌/月案の本文を検索（書類アーカイブ・引用/L2集積用）。
 
-設計コンテキスト §6 ツール表（search_records）。作成AIが前月連続性や過去の実践を参照するために
-自分で取りに行く（Agentic RAG / tool-use ループ）。月⇄日の還流（L2）の入力にもなる。
+設計コンテキスト §6 ツール表。過去に作成した「書類そのもの（生の本文）」のアーカイブを引く。
+**「その子が前回までどう育ってきたか」という継続性は `recall_child_history`（Memory Bank）が正**で、
+本ツールは用途が違う（過去書類の本文照会・様式参照、月⇄日の還流〔L2〕の集積入力）。
+
+v0 注：author/reviewer の継続把握は `recall_child_history` に一本化したため、本ツールは現在どの
+エージェントにも配線していない（過去書類の引用が実需になったら復活＝設計上の選択肢A）。月⇄日の
+集積は agentic 判断が要らない決定的処理として `harness/aggregate.py`（aggregate_by_child）が担う。
 
 配線（v0）：ローカルの過去記録ストア（JSON）を引く。保存先は config.records_dir、未設定なら repo の
 `data/records/`（gitignore 済み・架空児のみ＝§14）。各 JSON は DiaryEntry 相当の dict、またはその配列。
@@ -57,8 +62,8 @@ def _summarize(record: dict, child_id: str | None) -> str:
     return body
 
 
-def search_records(query: str, child_id: str | None = None, top_k: int = 4) -> list[dict]:
-    """過去の日誌/月案を検索する。
+def search_past_documents(query: str, child_id: str | None = None, top_k: int = 4) -> list[dict]:
+    """過去に作成した日誌/月案の本文を検索する（書類アーカイブ）。
 
     Args:
         query: 検索クエリ（空可。キーワード AND ではなく素朴な含有スコア）。
