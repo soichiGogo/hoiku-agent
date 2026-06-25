@@ -25,10 +25,16 @@
   日本語向け `text-multilingual-embedding-002`**＝実機検証で確定。`RAG_CORPUS` を `.env` に設定。手順は `docs/ライブ実行手順.md`）。
 - テスト: `pytest`（`testpaths=tests`, `pythonpath=["src","."]`＝root の `server.py` も import 可・pyproject 済み）。harness の決定ロジックは
   `tests/test_harness/` で LLM 非依存に回る。結合（決定論E2E）は `tests/test_e2e/`＝`FakeLlm` 注入で
-  author→review→finalize を creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
-  `uv run --extra dev pytest`）。品質回帰は `pytest tests/test_eval.py`（層B・要 LLM）。
-- lint: `ruff check .` / `ruff format .`（line-length=100, target=py311）
+  日誌/月案パイプラインを creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
+  `uv run --extra dev pytest`）。eval ゲートの判定式は `tests/test_eval_gate.py`（LLM 非依存）/ ケース集合は
+  `tests/test_eval_cases.py`。品質回帰の実採点は `pytest tests/test_eval.py`（層B・要 `--extra eval` ＝
+  `google-adk[eval]` ＋ LLM 資格情報）。**evalset JSON（`eval/cases/*.evalset.json`）に `ruff format` を当てない**（Python 扱いで壊れる）。
+- lint: `ruff check .` / `ruff format .`（line-length=100, target=py311。`.` 指定は .py のみ整形）
 - 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
+- 月案（doc_type=月案・L2 還流）は前月日誌を seed して回す専用入口 `uv run python scripts/run_monthly.py
+  --child-id 架空児A --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
+- 配信（層A）: `Dockerfile`＝`uvicorn server:app`（Cloud Run・scale-to-zero）。デプロイ＝
+  `.github/workflows/deploy.yml`（WIF）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
 - 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
   `uv run python scripts/run_improver.py --diff "…" [--feedback "…"]` で起こす（要 LLM 資格情報）。
   document_pipeline には組み込まない。
@@ -38,11 +44,11 @@
 
 # アーキ＝3責務（実装で混ぜてはいけない線。詳細は各層の CLAUDE.md）
 
-1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・git適用。LLM を呼ばない。
-   **決定ロジックの実体はここに1つだけ**。`tools/validate_fields.py`・`tools/write_draft.py` はこれを呼ぶ
-   **薄いラッパ**（二重実装しない）。
-2. **agents/（agentic・中身の決定）** — author＝**単一 LlmAgent**（v0 で LoopAgent に包まない・多層化しない）、
-   reviewer＝Evaluator。レビューは最終段で一括、巡回制御は harness 側。
+1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・git適用。
+   LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。`tools/validate_fields.py`・`tools/write_draft.py` は
+   これを呼ぶ**薄いラッパ**（二重実装しない）。Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
+2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）＝**単一 LlmAgent**（v0 で
+   LoopAgent に包まない・多層化しない）、reviewer＝Evaluator（日誌/月案共用）。レビューは最終段で一括、巡回制御は harness 側。
 3. **improver/（二階・回す）** — 修正差分→育つ指針の更新を自走提案。**HITL＋評価ゲート経由でのみ取り込む**
    （保育士OK ≠ マージOK）。git は harness/git_ops 経由。
 
@@ -54,34 +60,33 @@
 
 - 各モジュール冒頭に `from __future__ import annotations` を置く。
 - ADK エージェントは **`build_xxx()` ファクトリ関数**で構築して返す（`build_author_agent` /
-  `build_review_agent` / `build_improver_agent` / `build_document_pipeline`）。トップレベルでインスタンス化
-  しない（例外は `agent.py` の `root_agent` のみ）。
+  `build_monthly_author_agent` / `build_review_agent` / `build_improver_agent` / `build_document_pipeline` /
+  `build_monthly_pipeline` / `build_root_agent`）。トップレベルでインスタンス化しない（例外は `agent.py` の `root_agent` のみ）。
 - エージェント間の受け渡しは **`output_key` → `state[...]`**（`state["draft"]` / `state["review"]`）。
   独自グローバルで渡さない。
 - スキーマは `schemas/` の pydantic モデルに集約。同じ関心事を別所で二重定義しない。
 - instruction（プロンプト）は各層の `prompts.py` に分離する。
 - docstring・コメント・LLM プロンプトは日本語。
 
-# 現状＝v0 実装済み（Gemini/Vertex 接続済み・RAG corpus/Memory Bank 接続が残課題）
+# 現状＝v0 実装済み（コード作業は一巡。残は各自 GCP のプロビジョニング/WIF と実様式・現場依存）
 
 決定的部分（harness）は実装＋テスト済みで、LLM/GCP 非依存で稼働する。実装状況の詳細は
 `docs/architecture.md`「実装状況（v0）と残課題」を正とする（ここでは要点のみ・二重管理しない）。
 
-- **実装済み**: レビュー APPROVED 早期終了（`harness/pipeline.py` の `ApprovalGate`/`is_approved`）/
-  確定処理（`harness/finalize.py`＋`FinalizeAgent`：DiaryEntry JSON 復元→validate→write）/
-  HITL（`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval`）/
-  Memory Bank 配線（読み＝`recall_child_history`／書き戻し＝`persist_visit_to_memory`＝`after_agent_callback`・型成立の
-  確定時のみ・§9/§13。入口＝`server.py`＋`config.memory_service_uri`。未配線は InMemory 降格）/
-  `git_ops`（構造化編集の適用・competition 入力・branch/PR＝既定 dry_run）/ improver（propose＋競合検出・
-  run_eval・open_pr）/ eval ゲート（`eval/run_gate.py`）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
-- **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`。author/reviewer は実 LLM でローカル稼働可）。
-- **残課題（外部依存・コードは降格付きで配線済み）**: Vertex RAG corpus の**ライブ接続**（配線＋プロビジョニング
-  `scripts/provision_rag_corpus.py`＝serverless 切替・日本語埋め込み・冪等取り込み・ライブ検索往復 実機確認済み。残は各自 GCP で
-  スクリプト実行＋`RAG_CORPUS` 設定。未設定は `search_guideline` 降格）／
-  Memory Bank の**ライブ接続**（配線＋プロビジョニング `scripts/provision_memory_bank.py`＝生成モデル＋日本語/子の姿カスタマイズ・
-  ライブ往復実機確認済み。残は各自 GCP でスクリプト実行＋`AGENT_ENGINE_ID` 設定と真の承認ゲート＝次フェーズ）/
-  Cloud Run デプロイ・eval ゲートCI（前提＝3軸 judge 配線＋WIF。**Gemini 接続はブロッカーでない**・層A。決定論 CI＝`.github/workflows/ci.yml` は導入済み）/
-  実様式での `write_draft` 確定（§18）/ 現場の修正差分による eval ケース拡充と 3軸 judge の ADK 接続（＝§18 のコード作業。creds は接続済みで、配線すればローカル採点は可）。
+- **稼働範囲**: 保育日誌（0–2 個別）＋ **個別月案（0–2・L2 還流）**。doc_type 分岐（`DocTypeRouter`＝root_agent）で
+  振り分け（既定＝保育日誌＝§3）。
+- **実装済み（コード）**: レビュー APPROVED 早期終了（`ApprovalGate`/`is_approved`）/ 確定処理（`FinalizeAgent(kind)`＋
+  `harness/finalize.py`・日誌/月案）/ **月案パス＋L2 還流**（`MonthlyPrepAgent`→`prev_month_digest`→`monthly_author`）/
+  HITL（`ask_caregiver`・`awaiting_caregiver_approval`）/ Memory Bank 配線＋**真の承認ゲート**（書き戻しは
+  `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/ `git_ops`/ improver/
+  **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格）/
+  **eval ケース 16 件**（架空児のみ）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
+- **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
+- **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。
+- **残課題（コードだけでは閉じられない＝外部依存）**: ① 各自 GCP のプロビジョニング＋env 設定（RAG corpus＝`RAG_CORPUS` /
+  Memory Bank＝`AGENT_ENGINE_ID`。スクリプトは実機検証済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化
+  （GCP の WIF 設定＋リポジトリ変数。未設定なら job は skip）/ ③ 実様式入手による様式確定（§18）/ ④ 現場の修正差分による
+  eval ケースの質的拡充（PII 非コミットを守る）/ ⑤ eval の main 比 baseline 保存（次フェーズ）。詳細は architecture.md。
 - 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
   決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 
