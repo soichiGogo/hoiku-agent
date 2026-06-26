@@ -67,6 +67,7 @@ class MonthlyPrepAgent(BaseAgent):
         entries = _parse_prev_entries(ctx.session.state.get("prev_month_entries"))
         digest = prev_month_digest(entries)
         yield Event(
+            invocation_id=ctx.invocation_id,
             author=self.name,
             content=_model_content(format_digest_for_prompt(digest)),
             actions=EventActions(state_delta={"prev_month_digest": digest}),
