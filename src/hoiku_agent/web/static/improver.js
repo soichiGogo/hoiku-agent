@@ -86,15 +86,15 @@ export function makeImprover({ button, log, panels }) {
         ? `<span class="gate-verdict pass">緑（取り込み可）</span>`
         : r.passed === false
           ? `<span class="gate-verdict fail">赤（取り込み不可）</span>`
-          : `<span class="gate-verdict none">判定不能（降格）</span>`;
+          : `<span class="gate-verdict none">main 基準を表示（実採点は CI）</span>`;
     const cmp =
       typeof r.mean === "number"
         ? `<div class="diff-meta">今回 mean ${fmt(r.mean)}${
             typeof r.baseline_mean === "number" ? `／ main 基準 ${fmt(r.baseline_mean)}` : ""
           }・must_fix ${r.must_fix_violations ?? 0}</div>`
-        : `<div class="diff-meta">${esc(r.detail || "採点不能")}${
-            baseline && typeof baseline.mean === "number" ? `（main 基準 ${fmt(baseline.mean)}）` : ""
-          }</div>`;
+        : `<div class="diff-meta">配信器では採点を回さず main 基準（committed baseline）を表示。実採点は CI 評価ゲート（nightly/PR）が 3軸で実施し、main 比 非劣化＆must_fix 0 のみ取り込み${
+            baseline && typeof baseline.mean === "number" ? `／main mean ${fmt(baseline.mean)}` : ""
+          }。</div>`;
     panels.eval.innerHTML = barsHtml(typeof r.mean === "number" ? axis : baseline && baseline.axis_means) + cmp + verdict;
   }
 
@@ -123,7 +123,7 @@ export function makeImprover({ button, log, panels }) {
         wrap.remove();
         panels.conflict.innerHTML = `<div class="diff-meta">保育士の判断: <b>${esc(c)}</b> → 再開中…</div>`;
         await adk.ssePost(
-          "./api/improve/resume",
+          "/api/improve/resume",
           { session_id: item.session_id, function_call_id: item.function_call_id, answer: c },
           handleItem,
         );
@@ -141,7 +141,7 @@ export function makeImprover({ button, log, panels }) {
     button.disabled = true;
     const sid = (crypto.randomUUID && crypto.randomUUID()) || "imp-" + Date.now();
     try {
-      await adk.ssePost("./api/improve", { diff, feedback: feedback || null, session_id: sid }, handleItem);
+      await adk.ssePost("/api/improve", { diff, feedback: feedback || null, session_id: sid }, handleItem);
     } catch (e) {
       if (e instanceof adk.PasscodeError) {
         window.__requireGate && window.__requireGate();

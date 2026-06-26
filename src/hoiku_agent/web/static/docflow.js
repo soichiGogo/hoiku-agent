@@ -34,8 +34,14 @@ export function makeDocFlow({ area, button, showDigest }) {
         for (const it of adk.adkParts(ev)) {
           if (it.kind === "text" && it.text.trim()) {
             const who = whoOf(it.author);
-            const t = it.text.length > 360 ? it.text.slice(0, 360) + " …" : it.text;
-            pushStep(area, { ico: who.ico, who: who.label, whoCls: who.cls, text: t });
+            // 下書きの JSON ブロック（```json … / 生の {…}）はタイムラインに出さない（確定書類で見せる）。
+            let t = it.text;
+            const cut = t.search(/```|\n\s*\{/);
+            if (cut > 0) t = t.slice(0, cut).trim();
+            if (t) {
+              t = t.length > 360 ? t.slice(0, 360) + " …" : t;
+              pushStep(area, { ico: who.ico, who: who.label, whoCls: who.cls, text: t });
+            }
           } else if (it.kind === "call") {
             pushStep(area, { text: toolLabel(it.name), tool: true });
             if (it.name === "ask_caregiver" && it.longRunning) {

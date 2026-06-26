@@ -6,7 +6,7 @@ let _cfg = null;
 export class PasscodeError extends Error {}
 
 export async function loadConfig() {
-  _cfg = await (await fetch("./api/config")).json();
+  _cfg = await (await fetch("/api/config")).json();
   return _cfg;
 }
 export function config() {
@@ -16,7 +16,7 @@ const app = () => _cfg.app_name;
 const uid = () => _cfg.default_user_id;
 
 export async function gate(passcode) {
-  const r = await fetch("./api/gate", {
+  const r = await fetch("/api/gate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ passcode }),
@@ -25,11 +25,11 @@ export async function gate(passcode) {
 }
 
 export async function getPolicy() {
-  return (await (await fetch("./api/policy")).json()).markdown || "";
+  return (await (await fetch("/api/policy")).json()).markdown || "";
 }
 export async function getBaseline() {
   try {
-    const r = await fetch("./api/eval-baseline");
+    const r = await fetch("/api/eval-baseline");
     if (!r.ok) return null;
     return await r.json();
   } catch {
