@@ -97,12 +97,19 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   `eval/run_gate.py` が rubric 採点 → `aggregate_rubric_scores`（軸平均＝ケーススコア／mustfix の no＝違反）→
   `decide_gate`（main 比 非劣化 かつ must_fix 0）で **passed=True/False** を返す（採点不能時のみ None 降格＝偽の緑なし）。
   判定式の純関数は `tests/test_eval_gate.py` で LLM 非依存に検証。rubric 6件が config から評価器へロードされること、
-  採点経路が全段（推論→評価→抽出）を例外なく走り creds 無で None 降格することを実機確認済み。
+  採点経路が全段（推論→評価→抽出）を例外なく走り creds 無で None 降格することを実機確認済み。**さらに creds 有で
+  16 ケースを live 採点し本採点が end-to-end に通ることを確認**（その過程で custom BaseAgent＝ApprovalGate/
+  FinalizeAgent/MonthlyPrepAgent がイベントに `invocation_id` を伝播していなかった不具合を是正＝ADK eval の
+  「invocation 数＝conversation 数」整合に必須。回帰防止は `tests/test_e2e/test_pipeline_e2e.py`）。
+  既知の限界：rubric は judge の echo テキストで照合されるため（ADK 仕様）、長い rubric 文面（axis_guideline_alignment）は
+  judge が一部を言い換えると照合漏れし、その軸が一部ケースで欠落する（軸平均は present のみで計算・mustfix は不影響）。
+  rubric 文面の echo 安定化は今後の調整（残課題）。
 - **main 比 baseline の保存（committed）**：`eval/baseline.json` に main の eval 平均を保存し、`run_gate` が
   既定で `load_baseline` して PR の非劣化比較に使う（`build_baseline_record`/`write_baseline`／不在・壊れは
   `baseline_mean=None`＝比較なしへ降格＝偽の赤なし）。更新は `run_gate.py --update-baseline`（採点不能なら
   据え置き）で、nightly/手動の main eval-gate がこれを実行しコミットバックする（`eval-gate.yml`・`contents: write`）。
-  load/write/降格・file 優先順位は `tests/test_eval_gate.py` で LLM 非依存に検証。
+  **live 採点で実値シード済み（main mean≈0.95・must_fix 0）**。load/write/降格・file 優先順位は
+  `tests/test_eval_gate.py` で LLM 非依存に検証。
 - **eval ケース**：`eval/cases/diary_0_2.evalset.json` を 16 件（架空児のみ・現場の多様な状況）に拡充。
   件数≥15・参照ドラフトが型を通る・実名なしを `tests/test_eval_cases.py` で決定論検査。
 - **配信（層A）**：`Dockerfile`＋`.dockerignore`（`uvicorn server:app`・scale-to-zero。指針ファイルのみ同梱）、
@@ -127,6 +134,9 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   実様式をヒアリングで入手して確定する（現状は越谷市様式系の汎用様式）。**実データ・現場ヒアリング依存で、コードだけでは閉じられない。**
 - **現場の修正差分による eval ケースの質的拡充**（§12）：v0 は架空児 16 件。現場の👍👎・修正差分で「リアルな失敗」を
   足すのは現場との運用依存（PII 非コミットを守りつつ＝§14）。
+- **rubric 文面の echo 安定化**（§12）：ADK は judge の echo テキストで rubric を照合するため、長い軸 rubric
+  （axis_guideline_alignment）は judge の言い換えで照合漏れし一部ケースでその軸が欠落する（mustfix は不影響・
+  軸平均は present のみ）。rubric 文面を短く echo 安定にする調整（要 live 再採点で確認）。
 - **二階の堅牢化はスコープ外**（§8/§15）：大規模ルールの自動競合検出・多保育士調停はやらない（「閉じる1事例」で足りる）。
 - ADK 2.3.0 で LoopAgent/SequentialAgent は deprecated（将来 Workflow へ）。設計（§6/§7）が前提とする API で
   2.3.0 の Workflow 代替は非公開のため v0 はこのまま使う（中期 TODO で移行）。

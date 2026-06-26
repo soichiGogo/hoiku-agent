@@ -164,9 +164,10 @@ def test_load_baseline_malformed_returns_none(tmp_path):
     assert gate.load_baseline(p) is None
 
 
-def test_committed_baseline_file_is_valid_and_unscored():
-    # 同梱の eval/baseline.json は妥当な JSON で、初期は未採点（mean=null→None）。
-    assert gate.load_baseline(gate._BASELINE_FILE) is None
+def test_committed_baseline_file_is_valid_and_sane():
+    # 同梱の eval/baseline.json は妥当な JSON。未採点なら None、採点済みなら 0–1 の float。
+    v = gate.load_baseline(gate._BASELINE_FILE)
+    assert v is None or (isinstance(v, float) and 0.0 <= v <= 1.0)
 
 
 def test_build_baseline_record_shape():
