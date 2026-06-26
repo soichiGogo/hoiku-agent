@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from hoiku_agent.harness.finalize import (
     extract_json_block,
     finalize_document,
@@ -89,3 +91,44 @@ def test_finalize_document_parse_error_on_schema_violation():
     )
     result = finalize_document(_fenced(broken))
     assert result.parse_error is not None
+
+
+# ──────────── 記録日（date）は harness が所有・注入する（§5・本バグの回帰防止） ────────────
+
+
+def test_finalize_injects_doc_date_over_placeholder():
+    """雛形 echo（YYYY-MM-DD）でも harness が記録日を注入して確定が通る（本バグの回帰防止）。"""
+    placeholder = _VALID_JSON.replace('"date": "2026-06-25"', '"date": "YYYY-MM-DD"')
+    result = finalize_document(_fenced(placeholder), doc_date=date(2026, 6, 27))
+    assert result.ok is True
+    assert result.parse_error is None
+    assert result.entry.date == date(2026, 6, 27)
+
+
+def test_finalize_injects_doc_date_when_author_omits_date():
+    """author が date を出さない（新プロンプト準拠）でも harness が補完して確定が通る。"""
+    no_date = _VALID_JSON.replace('  "date": "2026-06-25",\n', "")
+    result = finalize_document(_fenced(no_date), doc_date=date(2026, 6, 27))
+    assert result.ok is True
+    assert result.entry.date == date(2026, 6, 27)
+
+
+def test_finalize_doc_date_overrides_author_date():
+    """記録日は harness が所有：author が日付を書いても doc_date で上書きする（§5）。"""
+    result = finalize_document(_fenced(_VALID_JSON), doc_date=date(2026, 6, 27))
+    assert result.ok is True
+    assert result.entry.date == date(2026, 6, 27)
+
+
+def test_finalize_placeholder_date_without_doc_date_still_parse_error():
+    """doc_date 未指定 + 雛形 echo は従来どおり parse_error（注入が効いている証跡＝本バグ再現）。"""
+    placeholder = _VALID_JSON.replace('"date": "2026-06-25"', '"date": "YYYY-MM-DD"')
+    result = finalize_document(_fenced(placeholder))
+    assert result.parse_error is not None
+
+
+def test_parse_draft_to_entry_injects_doc_date():
+    """parse 単体でも doc_date 指定で date を上書き復元できる。"""
+    placeholder = _VALID_JSON.replace('"date": "2026-06-25"', '"date": "YYYY-MM-DD"')
+    entry = parse_draft_to_entry(_fenced(placeholder), doc_date=date(2026, 6, 27))
+    assert entry.date == date(2026, 6, 27)

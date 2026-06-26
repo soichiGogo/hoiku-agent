@@ -23,7 +23,7 @@
 | `harness/monthly.py` | `MonthlyPrepAgent` / `build_monthly_pipeline` | 月案：前月日誌を child_id 別に決定的集計（L2 還流）→ 月案 author → review_loop → finalize(kind="monthly")（§3/§4/§10） |
 | `harness/schema_check.py` | `validate_fields` / `validate_monthly_fields`(+`_required_tag_type`) | 必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域）。日誌/月案で分岐の実体を共用 |
 | `harness/draft.py` | `write_draft` / `write_monthly_draft` | pydantic（DiaryEntry/MonthlyPlan）→ 様式整形（10の姿/3つの視点/5領域タグ明示） |
-| `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `parse_draft_to_entry` / `parse_draft_to_plan` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用） |
+| `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `parse_draft_to_entry` / `parse_draft_to_plan` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用）。日誌の **date（記録日）は harness が所有する決定的メタデータ**＝`doc_date` で復元前に注入し author 出力を上書き（LLM に日付を生成させない＝雛形 echo 耐性。clock を持たず純関数を保つため現在日付の解決は `pipeline.FinalizeAgent`） |
 | `harness/aggregate.py` | `aggregate_by_child` / `prev_month_digest` / `format_digest_for_prompt` | 月⇔日の集積（child_id 別）と L2 還流の state 用 digest・人間可読テキスト。要約生成は月案 author |
 | `harness/git_ops.py` | `apply_structured_edit` / `list_section_bullets` / `open_pr` | 構造化編集の適用・競合検出入力・branch/PR（プロダクトの git 操作。open_pr 既定 dry_run） |
 
@@ -58,7 +58,8 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
        │    ├─ author (LlmAgent)  … 不足は ask_caregiver(HITL) / RAG・記録・子メモリを収集 / 指針準拠で
        │    │                        下書き＋DiaryEntry JSON → state["draft"]
        │    ├─ review_loop (LoopAgent: reviewer→approval_gate) … 指摘→state["review"]・APPROVED で早期終了
-       │    └─ finalize(kind=diary) … 復元→validate_fields/write_draft → state["final_document"]/["validation"]、
+       │    └─ finalize(kind=diary) … 記録日を解決（state["doc_date"]｜本日）→ 復元時に date 注入 →
+       │                              validate_fields/write_draft → state["final_document"]/["validation"]、
        │                              awaiting_caregiver_approval=True（HITL）
        │
        └─[月案]─ monthly_plan_pipeline (SequentialAgent)
