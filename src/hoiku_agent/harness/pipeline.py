@@ -8,7 +8,8 @@
 APPROVED 早期終了の "判定"（ApprovalGate）と確定処理の "実行"（FinalizeAgent）はここ＝決定的に
 行い、レビュー内容の "生成" は reviewer、確定の純ロジックは harness/finalize.py に置く（実体は1つ）。
 
-パイプライン（root_agent の実体）:
+日誌パイプライン（`build_document_pipeline`。root_agent は `router.py` の `DocTypeRouter` で、これは
+その配下の保育日誌サブパイプライン）:
     author（作成・Agentic RAG / 不足は ask_caregiver）→ state["draft"]
       → review_loop（reviewer→ApprovalGate を最大 N 巡。APPROVED で escalate 早期終了）
       → finalize（確定 validate_fields/write_draft を末尾で決定的実行・HITL 承認フラグを立てる）
@@ -20,10 +21,12 @@ v0 の設計上の形（§6/§7）:
 - review_loop は reviewer の巡回＋ApprovalGate の早期終了。APPROVED が出なければ max_iterations 後に
   finalize へ抜け、指摘（state["review"]）は保育士の確定（HITL）に供される（最終OKは人＝§7）。
 
-v0 スコープ（§3「日誌先行 → 月案は日誌の集積に乗せる」）:
-- このパイプラインは **保育日誌（0–2 個別）のみ** を稼働させる。月案パスと L2 還流
-  （`aggregate.aggregate_by_child` → state["prev_month_digest"] → 月案 author の gather）は **次フェーズ**。
-  `aggregate_by_child` は集計の決定的実体としてテスト済みだが、まだどのパイプラインにも配線していない。
+スコープと関連パス（§3「日誌先行 → 月案は日誌の集積に乗せる」）:
+- このファイルが組むのは **保育日誌（0–2 個別）** のパイプライン（`build_document_pipeline`）。
+- 月案パスと L2 還流（`aggregate.aggregate_by_child` → state["prev_month_digest"] → 月案 author の
+  gather）は `monthly.py`（`MonthlyPrepAgent` / `build_monthly_pipeline`）に実装済みで、`router.py` の
+  `DocTypeRouter`（root_agent）が state["doc_type"] で日誌／月案へ決定的に振り分ける。`aggregate_by_child`
+  は集計の決定的実体として `monthly.py` に配線済み（§3/§4/§10）。
 - ADK 2.3.0 では LoopAgent/SequentialAgent が deprecated（将来 Workflow へ）。設計（§6/§7）が前提とする
   API であり、2.3.0 の Workflow 代替は非公開のため v0 はこのまま使う（中期 TODO で移行）。
 """
