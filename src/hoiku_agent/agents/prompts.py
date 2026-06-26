@@ -31,7 +31,6 @@ AUTHOR_INSTRUCTION = f"""\
 - 人間向けの簡潔な説明に続けて、**応答の末尾に下書きを表す JSON を1つだけ ```json フェンスで出力する**。
   この JSON は harness が復元し確定処理（検査・整形）する。スキーマ（DiaryEntry）:
   {{
-    "date": "YYYY-MM-DD",
     "age_band": "0-2" または "3-5",
     "weather": "天候",
     "attendance": [{{"child_id": "架空児の仮名", "present": true, "reason": null}}],
@@ -41,6 +40,8 @@ AUTHOR_INSTRUCTION = f"""\
     "evaluation": {{"child_focus": "(a)子どもに焦点", "self_review": "(b)自分の保育の適否"}},
     "parent_contact": null
   }}
+- **date（記録日）は JSON に含めない**：日付は harness が記録日で決定的に補完する（あなたは現在日付を
+  知らないため、推測や雛形の記入をしない）。
 - tags は次の語彙から **完全一致** で選ぶ（年齢分岐の必須を満たすこと）:
 {_TAG_VOCAB}
 - 実名は書かない（架空児の仮名のみ＝§14）。

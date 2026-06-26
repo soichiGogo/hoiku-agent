@@ -34,6 +34,7 @@ v0 の設計上の形（§6/§7）:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 from typing import TYPE_CHECKING, AsyncGenerator
 
 from google.adk.agents import BaseAgent, LoopAgent, SequentialAgent
@@ -55,6 +56,26 @@ _APPROVED_TOKEN = "APPROVED"
 # awaiting_caregiver_approval（承認待ち）に対し、保育士の確定アクションがこれを True にすると
 # 来園が子の長期メモリへ書き戻される（_should_persist_visit）。SSOT としてここで一度だけ定義する。
 CAREGIVER_APPROVAL_KEY = "caregiver_approved"
+
+# 記録日（日誌）は harness が所有する決定的メタデータ（§5）。保育士/UI が指定する場合はこの
+# state キーに ISO 文字列または date を載せる。未指定なら確定時に「本日」を採る（FinalizeAgent）。
+DOC_DATE_KEY = "doc_date"
+
+
+def _resolve_doc_date(raw: object) -> date:
+    """state["doc_date"] を date に解決する（記録日の決定的解決＝clock はランタイム境界に置く）。
+
+    date ならそのまま、ISO 文字列なら parse、未指定/不正なら本日を採る。LLM に日付を生成させず、
+    ここで決定的に補完する（finalize.py を純関数に保つための現在日付の解決点＝§5）。
+    """
+    if isinstance(raw, date):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return date.fromisoformat(raw.strip())
+        except ValueError:
+            pass
+    return date.today()
 
 
 def _model_content(text: str) -> types.Content:
@@ -121,6 +142,8 @@ class FinalizeAgent(BaseAgent):
     結果（整形済み確定下書き・違反一覧・確定下書き待ちの HITL フラグ）を state へ書き戻す。
     最終OK（確定）は保育士＝HITL（§7）なので、ここでは "確定下書き＋承認待ち" までを作る。
     kind で日誌（diary）／月案（monthly）の確定ロジック（harness/finalize.py の実体）を差し替える。
+    日誌の記録日（date）は harness が所有する決定的メタデータ（§5）：state["doc_date"]（無ければ本日）を
+    解決して finalize に渡し、author 出力の date を上書きする（LLM に日付を生成させない＝雛形 echo 耐性）。
     """
 
     template_ref: str | None = None
@@ -132,7 +155,8 @@ class FinalizeAgent(BaseAgent):
             result = finalize_monthly_document(draft, template_ref=self.template_ref)
             schema_label = "MonthlyPlan"
         else:
-            result = finalize_document(draft, template_ref=self.template_ref)
+            doc_date = _resolve_doc_date(ctx.session.state.get(DOC_DATE_KEY))
+            result = finalize_document(draft, template_ref=self.template_ref, doc_date=doc_date)
             schema_label = "DiaryEntry"
 
         state_delta = {

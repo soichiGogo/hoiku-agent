@@ -227,6 +227,25 @@ def test_happy_path_approved_finalizes_and_skips_hitl():
     assert author.call_count == 1
 
 
+def test_finalize_injects_date_when_author_emits_placeholder():
+    """回帰防止（本バグ）：author が壊れた/雛形 echo の date を出しても harness が救って確定が通る。
+
+    新プロンプトは date を出力させないが、旧雛形を echo した壊れた値（YYYY-MM-DD）が来ても、
+    FinalizeAgent が state["doc_date"]（無ければ本日）を解決し finalize へ渡して上書きするため
+    parse_error にならない。配線（FinalizeAgent→_resolve_doc_date→finalize_document）の end-to-end 固定。
+    """
+    entry = _valid_entry()
+    entry["date"] = "YYYY-MM-DD"  # 旧プロンプト雛形を echo した壊れた値を模す
+    author = FakeLlm(responses=[_author_text(entry)])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+
+    state, _ = _run(author, reviewer)
+
+    assert state.get("finalize_parse_error") is None  # harness が日付を注入して救う
+    assert state.get("final_document")
+    assert state.get("validation") == []
+
+
 def test_needs_revision_then_approved_loops_then_early_exits():
     """② 巡回が複数回回り、APPROVED が出た巡で早期終了することを検証。"""
     author = FakeLlm(responses=[_author_text(_valid_entry())])
