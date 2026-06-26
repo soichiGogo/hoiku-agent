@@ -122,6 +122,18 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     register_improver_route(app)
 
+    # 配布リンクの素の URL（/）を保育士 UI に着地させる。ADK 既定は / → /dev-ui へ飛ばすので、
+    # その GET / 経路だけ差し替える（dev UI は /dev-ui/ に温存）。審査員がパスを打たずに済むように。
+    app.router.routes = [
+        r
+        for r in app.router.routes
+        if not (getattr(r, "path", None) == "/" and "GET" in (getattr(r, "methods", None) or set()))
+    ]
+
+    @app.get("/")
+    async def _root_to_app():
+        return RedirectResponse("/app/")
+
     @app.get("/app")
     async def _app_index_redirect():
         # StaticFiles マウントは末尾スラッシュ必須なので /app → /app/ に寄せる。

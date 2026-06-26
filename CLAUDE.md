@@ -15,7 +15,10 @@
 # 開発コマンド（推測しないこと）
 
 - 依存: `uv sync`（uv 推奨。`pip install -e ".[dev]"` でも可）
-- ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（ブラウザ UI。agents dir＝`src/`）。
+- ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（開発 UI。agents dir＝`src/`・`/dev-ui/`）。
+  **保育士向け配布 UI は `uvicorn server:app` → `http://localhost:8000/app/`**（日誌/月案/回す を1枚で・`web/`＝層A
+  presentation。生成は ADK ネイティブ REST を直接駆動し自前 Runner は組まない＝§9。配布リンクは `.env` の
+  `DEMO_PASSCODE` で LLM を回す口のみゲート＝コスト/濫用対策。規約は `src/hoiku_agent/web/CLAUDE.md`）。
   本番/ローカル共通の入口は repo root の `server.py`（`get_fast_api_app`）＝`uvicorn server:app`。Memory Bank を
   使うときは `.env` に `AGENT_ENGINE_ID` を入れて `uvicorn server:app`（`config.memory_service_uri` が URI 化。
   未設定は InMemory 降格＝§9）。Memory Bank 本体は `uv run python scripts/provision_memory_bank.py --create` で
@@ -83,6 +86,10 @@
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
   **eval ケース 16 件**（架空児のみ）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
+- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/回す）。日誌/月案は ADK ネイティブ REST を
+  フロントが直接駆動（HITL は `function_response` 再送で再開・承認は `PATCH` で `caregiver_approved`）、improver は
+  `/api/improve` の SSE 中継。`DEMO_PASSCODE` で LLM を回す口のみゲート。実機検証済み（creds 有・gemini-2.5-pro＋
+  Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。
 - **残課題（コードだけでは閉じられない＝外部依存）**: ① 各自 GCP のプロビジョニング＋env 設定（RAG corpus＝`RAG_CORPUS` /
   Memory Bank＝`AGENT_ENGINE_ID`。スクリプトは実機検証済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化

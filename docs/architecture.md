@@ -13,6 +13,7 @@
 | ② レビューAI（§7） | `agents/review_agent.py`（`LlmAgent`・日誌/月案で共用） | 別視点で点検・APPROVED まで巡回（制御は harness） | Agentic |
 | ③ 改善エージェント（§8） | `improver/`（別エントリ・手動起動） | 修正差分→指針更新を自走提案・競合は保育士に二択 | Agentic |
 | 番人（最終）（§12） | `eval/`（cases/・judges/・`test_config.json`・`run_gate.py`） | 3軸 rubric で採点→main 比 非劣化＆must_fix 0 のみ取り込み | 決定的（CI） |
+| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`static/`） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、improver だけ SSE 中継 | 中継・描画 |
 
 ## harness 内訳（§5 物理マッピング）
 
@@ -113,10 +114,18 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   `tests/test_eval_gate.py` で LLM 非依存に検証。
 - **eval ケース**：`eval/cases/diary_0_2.evalset.json` を 16 件（架空児のみ・現場の多様な状況）に拡充。
   件数≥15・参照ドラフトが型を通る・実名なしを `tests/test_eval_cases.py` で決定論検査。
-- **配信（層A）**：`Dockerfile`＋`.dockerignore`（`uvicorn server:app`・scale-to-zero。指針ファイルのみ同梱）、
+- **配信（層A）**：`Dockerfile`＋`.dockerignore`（`uvicorn server:app`・scale-to-zero。指針ファイル＋`eval/baseline.json` のみ同梱）、
   `.github/workflows/deploy.yml`（WIF で `gcloud run deploy --source .`）、`.github/workflows/eval-gate.yml`
   （nightly/手動・WIF で creds 採点）。決定論 CI（`ci.yml`）は従来どおり毎PR・creds 不要。
   docker build → コンテナ起動で `/docs` 200 を実機確認済み。
+- **保育士向け配布 UI（`web/`・B-full）**：`server.py` が `register_web_ui(app)` で `get_fast_api_app` に同居させる。
+  保育士 SPA＝`/app/`（`/` も着地）、dev UI＝`/dev-ui/`、自前 API＝`/api/*`。日誌/月案はフロントが ADK ネイティブ REST
+  （`/run_sse`・session 作成で月案 seed・`PATCH` 承認・`function_response` で HITL 再開）を直接駆動（自前 Runner なし＝§9）。
+  improver は `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動（別エントリ維持）し、
+  「回す」全体（提案 diff→競合二択→評価ゲート3軸＋main 基準→PR）をダッシュボードに描く。LLM を回す口だけ
+  `DEMO_PASSCODE` でゲート（配布リンクのコスト/濫用対策）。**実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）**：
+  日誌 HITL 発火→`function_response` 再開→確定、月案 L2 還流、improver 提案→run_eval→open_pr(dry_run)。
+  非LLM面（配線・静的配信・コストゲート・`/` 着地）は `tests/test_web.py` で決定論検証。`web/CLAUDE.md` に規約。
 
 残課題（**外部リソース・実データ・各自 GCP 設定に依存。コードは降格付きで配線済み**＝コードだけでは閉じられない）:
 - **各自 GCP のプロビジョニング＋ env 設定**（コード・スクリプトは実機検証済み）:

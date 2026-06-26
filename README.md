@@ -46,6 +46,7 @@ src/hoiku_agent/
 ├── improver/           … ③ 回す（二階・別エントリ）：修正差分→指針更新を自走提案
 ├── tools/              … 4–8個のプリミティブ（記録/指針/RAG/メモリ/HITL/harness薄ラッパ）
 ├── schemas/            … 書類スキーマ（日誌/月案）・年齢分岐・10の姿タグ（pydantic 集約）
+├── web/                … 層A 配布UI（保育士 SPA /app/）：ADK ネイティブ REST を直接駆動・improver は SSE 中継
 knowledge/              … 育つ文書作成指針（git）＋ 保育所保育指針（RAGソース・gitignore）
 eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）＋ test_config.json / run_gate.py
 docs/                   … 設計コンテキスト.md（開発ハンドオフ）/ architecture.md（コード対応）
@@ -72,6 +73,8 @@ uv run python scripts/run_monthly.py --child-id 架空児A --month 2026-07
 
 # 本番入口（Cloud Run と同じ）／配信
 uvicorn server:app           # get_fast_api_app。AGENT_ENGINE_ID 未設定は InMemory 降格
+# → 保育士UI（配布UI）= http://localhost:8000/app/（日誌/月案/回す を1枚で・ADK dev UI は /dev-ui/）
+# 配布リンクで Gemini 課金を守るなら .env に DEMO_PASSCODE を設定（LLM を回す口のみ要パスコード）
 # デプロイ＝Dockerfile（uvicorn server:app）＋ .github/workflows/deploy.yml（WIF・要 GCP 設定）
 ```
 
