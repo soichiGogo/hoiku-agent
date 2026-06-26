@@ -129,3 +129,76 @@ def test_run_gate_no_cases_degrades(tmp_path):
     result = gate.run_gate(cases_dir=tmp_path)  # 空ディレクトリ＝ケースなし
     assert result["status"] == "no_cases"
     assert result["passed"] is None
+
+
+# ──────────────────────── baseline（committed eval/baseline.json・§12） ────────────────────────
+
+
+def test_load_baseline_missing_returns_none(tmp_path):
+    assert gate.load_baseline(tmp_path / "nope.json") is None
+
+
+def test_load_baseline_reads_mean(tmp_path):
+    p = tmp_path / "baseline.json"
+    p.write_text('{"mean": 0.73}', encoding="utf-8")
+    assert gate.load_baseline(p) == 0.73
+
+
+def test_load_baseline_null_mean_returns_none(tmp_path):
+    # 未採点（初回）＝比較なしへ降格（偽の赤を出さない）
+    p = tmp_path / "baseline.json"
+    p.write_text('{"mean": null}', encoding="utf-8")
+    assert gate.load_baseline(p) is None
+
+
+def test_load_baseline_bool_mean_returns_none(tmp_path):
+    # bool は int サブクラス。True を 1.0 と誤読しない
+    p = tmp_path / "baseline.json"
+    p.write_text('{"mean": true}', encoding="utf-8")
+    assert gate.load_baseline(p) is None
+
+
+def test_load_baseline_malformed_returns_none(tmp_path):
+    p = tmp_path / "baseline.json"
+    p.write_text("not json{", encoding="utf-8")
+    assert gate.load_baseline(p) is None
+
+
+def test_committed_baseline_file_is_valid_and_unscored():
+    # 同梱の eval/baseline.json は妥当な JSON で、初期は未採点（mean=null→None）。
+    assert gate.load_baseline(gate._BASELINE_FILE) is None
+
+
+def test_build_baseline_record_shape():
+    rec = gate.build_baseline_record(
+        {"mean": 0.8, "axis_means": {"axis_expression": 0.8}, "must_fix_violations": 0},
+        commit="abc123",
+    )
+    assert rec["mean"] == 0.8
+    assert rec["axis_means"] == {"axis_expression": 0.8}
+    assert rec["must_fix_violations"] == 0
+    assert rec["commit"] == "abc123"
+    assert "note" in rec
+
+
+def test_write_then_load_roundtrip(tmp_path):
+    p = tmp_path / "baseline.json"
+    rec = gate.build_baseline_record({"mean": 0.812, "axis_means": None, "must_fix_violations": 0})
+    gate.write_baseline(rec, p)
+    assert gate.load_baseline(p) == 0.812
+
+
+def test_run_gate_loads_baseline_from_file(tmp_path):
+    # baseline.json を読み、no_cases 降格時も baseline_mean を反映する
+    baseline = tmp_path / "baseline.json"
+    gate.write_baseline({"mean": 0.77, "axis_means": None, "must_fix_violations": 0}, baseline)
+    result = gate.run_gate(cases_dir=tmp_path, baseline_path=baseline)  # 空＝no_cases
+    assert result["status"] == "no_cases"
+    assert result["baseline_mean"] == 0.77
+
+
+def test_run_gate_explicit_baseline_overrides_file(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    gate.write_baseline({"mean": 0.5, "axis_means": None, "must_fix_violations": 0}, baseline)
+    result = gate.run_gate(cases_dir=tmp_path, baseline_mean=0.9, baseline_path=baseline)
+    assert result["baseline_mean"] == 0.9  # 明示値が file より優先

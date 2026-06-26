@@ -98,6 +98,11 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   `decide_gate`（main 比 非劣化 かつ must_fix 0）で **passed=True/False** を返す（採点不能時のみ None 降格＝偽の緑なし）。
   判定式の純関数は `tests/test_eval_gate.py` で LLM 非依存に検証。rubric 6件が config から評価器へロードされること、
   採点経路が全段（推論→評価→抽出）を例外なく走り creds 無で None 降格することを実機確認済み。
+- **main 比 baseline の保存（committed）**：`eval/baseline.json` に main の eval 平均を保存し、`run_gate` が
+  既定で `load_baseline` して PR の非劣化比較に使う（`build_baseline_record`/`write_baseline`／不在・壊れは
+  `baseline_mean=None`＝比較なしへ降格＝偽の赤なし）。更新は `run_gate.py --update-baseline`（採点不能なら
+  据え置き）で、nightly/手動の main eval-gate がこれを実行しコミットバックする（`eval-gate.yml`・`contents: write`）。
+  load/write/降格・file 優先順位は `tests/test_eval_gate.py` で LLM 非依存に検証。
 - **eval ケース**：`eval/cases/diary_0_2.evalset.json` を 16 件（架空児のみ・現場の多様な状況）に拡充。
   件数≥15・参照ドラフトが型を通る・実名なしを `tests/test_eval_cases.py` で決定論検査。
 - **配信（層A）**：`Dockerfile`＋`.dockerignore`（`uvicorn server:app`・scale-to-zero。指針ファイルのみ同梱）、
@@ -116,7 +121,8 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
 - **層A の実デプロイ／eval ゲートCI の有効化**：`deploy.yml` / `eval-gate.yml` は用意済みだが、GCP 側の
   **WIF（鍵レス）設定＋リポジトリ変数**（`WIF_PROVIDER`/`DEPLOY_SA`/`GCP_PROJECT_ID` 等）が前提（未設定なら job は skip）。
   eval ゲートCI は採点に creds が要るため `google-adk[eval]`（`--extra eval`）＋ WIF が前提。
-  **main 比 非劣化の baseline 保存**（main 平均を記録して PR で比較）は次フェーズ（v0 は must_fix 0＋採点可能を緑とする）。
+  （**main 比 baseline の保存・比較は実装済み**＝committed `eval/baseline.json`。WIF を有効化すれば nightly が
+  初回採点して baseline を埋め、以後 PR が非劣化比較する。未採点（mean=null）の間は must_fix 0＋採点可能を緑とする。）
 - **実様式1枚の入手による `write_draft`/`write_monthly_draft` 様式確定**（§18）：欄名対応は推論を含むため、
   実様式をヒアリングで入手して確定する（現状は越谷市様式系の汎用様式）。**実データ・現場ヒアリング依存で、コードだけでは閉じられない。**
 - **現場の修正差分による eval ケースの質的拡充**（§12）：v0 は架空児 16 件。現場の👍👎・修正差分で「リアルな失敗」を
