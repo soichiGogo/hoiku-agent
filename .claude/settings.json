@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "_comment": "レビュー用テンプレート。内容を確認のうえ `cp .claude/settings.json.example .claude/settings.json` で有効化する（権限付与は人が判断するため active な settings.json は自動生成しない）。チーム共有は settings.json をコミット、個人上書きは settings.local.json（gitignore 済み）。可逆・ローカルなコマンドは allow、外向き/不可逆/課金（push・PR・deploy・gcloud）は ask に置く方針（グローバル CLAUDE.md と整合）。",
+  "_comment": "レビュー用テンプレート。内容を確認のうえ `cp .claude/settings.json.example .claude/settings.json` で有効化する（権限付与は人が判断するため active な settings.json は自動生成しない）。チーム共有は settings.json をコミット、個人上書きは settings.local.json（gitignore 済み）。可逆・ローカルなコマンドは allow、外向き/不可逆/課金は ask に置く方針（グローバル CLAUDE.md と整合）。例外: push・PR 作成は本リポジトリ所有者の判断で ask ゲートを外し、各自の settings.local.json での allow（個人裁量・無確認）に委ねる（ask は allow より優先されマージ後も残るため、無確認化には committed 側から外す必要がある）。team 既定は default mode 任せ。pr merge・deploy・gcloud は引き続き ask。",
   "permissions": {
     "allow": [
       "Bash(uv sync)",
@@ -21,8 +21,6 @@
       "Bash(git commit:*)"
     ],
     "ask": [
-      "Bash(git push:*)",
-      "Bash(gh pr create:*)",
       "Bash(gh pr merge:*)",
       "Bash(adk deploy:*)",
       "Bash(gcloud:*)"
