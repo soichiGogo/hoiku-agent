@@ -80,13 +80,15 @@
   HITL（`ask_caregiver`・`awaiting_caregiver_approval`）/ Memory Bank 配線＋**真の承認ゲート**（書き戻しは
   `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/ `git_ops`/ improver/
   **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格）/
+  **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
   **eval ケース 16 件**（架空児のみ）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。
 - **残課題（コードだけでは閉じられない＝外部依存）**: ① 各自 GCP のプロビジョニング＋env 設定（RAG corpus＝`RAG_CORPUS` /
   Memory Bank＝`AGENT_ENGINE_ID`。スクリプトは実機検証済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化
-  （GCP の WIF 設定＋リポジトリ変数。未設定なら job は skip）/ ③ 実様式入手による様式確定（§18）/ ④ 現場の修正差分による
-  eval ケースの質的拡充（PII 非コミットを守る）/ ⑤ eval の main 比 baseline 保存（次フェーズ）。詳細は architecture.md。
+  （GCP の WIF 設定＋リポジトリ変数。未設定なら job は skip。**baseline 保存・比較はコード実装済み**＝committed
+  `eval/baseline.json`・WIF 有効化で nightly が初回採点して埋める）/ ③ 実様式入手による様式確定（§18）/ ④ 現場の修正差分による
+  eval ケースの質的拡充（PII 非コミットを守る）。詳細は architecture.md。
 - 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
   決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 

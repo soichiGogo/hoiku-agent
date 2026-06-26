@@ -18,7 +18,11 @@
   `must_fix` 違反0**。v0 は「main 平均を下回らない」のみをゲートにし、軸別閾値は 15ケース貯まってから調整。
   判定は `run_gate.py`：rubric 採点 → `aggregate_rubric_scores`（axis 平均＝ケーススコア／mustfix の no＝違反）
   → `decide_gate`（main 比 非劣化 かつ must_fix 0）。採点不能（creds/ケース/依存なし）は `passed=None` で降格。
-- **実行**：`uv run --extra eval python eval/run_gate.py`（要 `--extra eval` ＝ `google-adk[eval]` ＋ LLM 資格情報）/
+- **main 比の基準は committed `eval/baseline.json`**：`run_gate` が既定で `load_baseline` して読む。nightly/手動の
+  main eval-gate が `--update-baseline` で採点し直して更新・コミットバックし、PR はこれと比べる（`load_baseline`/
+  `build_baseline_record`/`write_baseline`・実体は `run_gate.py`）。不在/未採点（mean=null）/壊れは比較なしへ降格＝偽の赤を出さない。
+- **実行**：`uv run --extra eval python eval/run_gate.py`（採点して判定）／`… --update-baseline`（main を採点して
+  baseline.json 更新）。いずれも要 `--extra eval` ＝ `google-adk[eval]` ＋ LLM 資格情報 /
   または `pytest tests/test_eval.py`（CI 統合・creds 無は skip）/ 判定式の単体は `tests/test_eval_gate.py`（LLM 非依存）。
   improver の `run_eval`/`open_pr` もこのゲートを使う。
 

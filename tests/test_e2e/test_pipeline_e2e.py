@@ -287,6 +287,28 @@ def test_validation_problems_surface_but_draft_still_produced():
     assert state.get("awaiting_caregiver_approval") is True
 
 
+def test_all_events_share_one_invocation_id_for_eval_compat():
+    """eval 互換：1ユーザターンの全イベントが同一の非空 invocation_id を持つこと。
+
+    ADK の eval は「invocation 数＝conversation 数」を要求する（local_eval_service・採点段）。
+    custom BaseAgent（ApprovalGate/FinalizeAgent/MonthlyPrepAgent）が Event に invocation_id を
+    伝播しないと、それらが空 id の別 invocation 扱いになり、1ターンが2 invocation に割れて
+    本採点が ValueError で落ちる。harness 側で ctx.invocation_id を載せる回帰防止。
+    """
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+
+    _, events = _run(author, reviewer)
+
+    inv_ids = {ev.invocation_id for ev in events}
+    assert "" not in inv_ids and None not in inv_ids, (
+        f"全イベントが非空 invocation_id を持つべき（custom agent 由来の欠落を検出）: {inv_ids}"
+    )
+    assert len(inv_ids) == 1, (
+        f"1ターンの invocation_id は1つに揃うべき（finalize/gate の欠落）: {inv_ids}"
+    )
+
+
 # ──────────────────── 書き戻し（Memory Bank 配線・真の承認ゲート・§9/§13） ────────────────────
 # after_agent_callback=persist_visit_to_memory が、**保育士の明示承認（caregiver_approved=True）かつ
 # 型成立**のときだけ来園セッションを子の長期メモリへ書き戻すことを実ランタイムで検証する

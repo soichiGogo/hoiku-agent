@@ -102,6 +102,7 @@ class ApprovalGate(BaseAgent):
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         if is_approved(ctx.session.state.get("review")):
             yield Event(
+                invocation_id=ctx.invocation_id,
                 author=self.name,
                 content=_model_content(
                     "レビュー承認（APPROVED）を検知。レビュー巡回を終了します。"
@@ -157,6 +158,7 @@ class FinalizeAgent(BaseAgent):
             )
 
         yield Event(
+            invocation_id=ctx.invocation_id,
             author=self.name,
             content=_model_content(msg),
             actions=EventActions(state_delta=state_delta),

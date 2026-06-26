@@ -14,13 +14,16 @@
 - `test_config.json` … 3軸（`axis_*`）＋must_fix（`mustfix_*`）を ADK の
   `rubric_based_final_response_quality_v1` に rubric として配線。
 - `run_gate.py` … 採点→集計→ゲート判定の実体（`aggregate_rubric_scores`/`decide_gate`・判定式の SSOT）。
-- 実行は `uv run --extra eval python eval/run_gate.py`（要 `google-adk[eval]` ＋ LLM 資格情報）。詳細規約は `CLAUDE.md`。
+- `baseline.json` … main の eval 平均（committed）。`run_gate` が既定で読み PR の非劣化比較に使う。nightly が
+  `--update-baseline` で更新・コミットバックする（不在/未採点は比較なしへ降格）。手で編集しない。
+- 実行は `uv run --extra eval python eval/run_gate.py`（採点して判定）／`… --update-baseline`（baseline 更新）。
+  いずれも要 `google-adk[eval]` ＋ LLM 資格情報。詳細規約は `CLAUDE.md`。
 
 ## 評価ゲート
 
 緑（auto-merge 可）の条件＝**PR の eval 平均が main 比で低下なし、かつ `must_fix` 違反0**。
-v0 は「main 平均を下回らない」のみをゲートにし、軸別閾値は 15ケース貯まってから調整する。
-**保育士OK ≠ マージOK**（採否はゲートが決める）。
+main 比の基準は committed `baseline.json`（nightly が更新）。v0 は「main 平均を下回らない」のみをゲートにし、
+軸別閾値は 15ケース貯まってから調整する。**保育士OK ≠ マージOK**（採否はゲートが決める）。
 
 ## 「閉じる1事例」（提出前の必達点）
 

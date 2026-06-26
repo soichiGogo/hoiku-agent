@@ -5,7 +5,8 @@
 #   - WIF（鍵レス）：GitHub OIDC を信頼する Provider と、Vertex AI（Gemini judge）権限を持つ SA。
 #   - リポジトリ変数: WIF_PROVIDER / GCP_PROJECT_ID / GCP_REGION（任意: GEMINI_MODEL）。
 #   未設定なら job は skip する。判定: run_gate が passed=True→緑 / False→赤（回帰）/ None→採点不能で skip。
-#   （main 比 非劣化の baseline 保存は次フェーズ。v0 は must_fix 0 ＋ 採点可能を緑とする＝§12 暫定）。
+#   main 比の baseline は committed eval/baseline.json。nightly/手動の main 実行が --update-baseline で
+#   採点し直して更新・コミットバックし（contents: write）、PR は run_gate が既定でこれを読んで非劣化比較する（§12）。
 
 name: Eval Gate (層B・要 creds)
 
@@ -17,7 +18,7 @@ on:
     types: [labeled]
 
 permissions:
-  contents: read
+  contents: write # nightly の baseline.json コミットバックに必要（PR/手動の採点だけなら read で足りる）
   id-token: write
 
 concurrency:
@@ -59,3 +60,21 @@ jobs:
       - name: Run eval gate (pytest tests/test_eval.py)
         # run_gate: passed True→緑 / False→赤（テスト失敗）/ None→採点不能で skip（§12）。
         run: uv run --extra dev --extra eval pytest -q tests/test_eval.py
+
+      - name: Update baseline.json (nightly/手動・main のみ)
+        # main を採点し直して baseline 平均を更新し、変化があればコミットバック（PR の非劣化比較の基準＝§12）。
+        # [skip ci] でこの push が決定論 CI を再トリガしないようにする。
+        if: >-
+          ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+          && github.ref == 'refs/heads/main' }}
+        run: |
+          uv run --extra dev --extra eval python eval/run_gate.py --update-baseline --commit "${GITHUB_SHA}"
+          if git diff --quiet -- eval/baseline.json; then
+            echo "baseline 変化なし（コミットなし）"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add eval/baseline.json
+            git commit -m "chore(eval): baseline.json を更新（nightly 採点） [skip ci]"
+            git push
+          fi
