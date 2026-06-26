@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -84,6 +85,20 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         if _GUIDELINE_PATH.exists():
             return {"markdown": _GUIDELINE_PATH.read_text(encoding="utf-8")}
         return {"markdown": "（文書作成指針は未整備）"}
+
+    @app.get("/api/eval-baseline")
+    async def web_eval_baseline():
+        """committed `eval/baseline.json`（main の eval 基準）。改善ダッシュボードの常時表示用。
+
+        コンテナでは eval/ が除外され得るため不在は許容（null 返し＝降格・偽の数字を出さない）。
+        """
+        path = _REPO_ROOT / "eval" / "baseline.json"
+        if not path.exists():
+            return JSONResponse(None)
+        try:
+            return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            return JSONResponse(None)
 
     @app.post("/api/gate")
     async def web_gate(req: GateRequest):

@@ -1,8 +1,142 @@
 <!DOCTYPE html>
 <html lang="ja">
-<head><meta charset="UTF-8"><title>保育士サポート</title></head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>保育士サポート — 書類づくり</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
 <body>
-  <h1>保育士サポート（準備中）</h1>
-  <p>このページは Slice 1 で本実装に差し替えます。</p>
+
+  <!-- パスコードゲート（DEMO_PASSCODE 設定時のみ表示） -->
+  <div id="gate" class="gate hidden">
+    <div class="gate-card">
+      <div class="gate-emoji">🔑</div>
+      <h2>パスコードを入力してください</h2>
+      <p class="muted">配布デモのため、利用にはパスコードが必要です。</p>
+      <input id="gate-input" type="password" inputmode="text" placeholder="パスコード" autocomplete="off">
+      <button id="gate-submit" class="btn btn-primary">入る</button>
+      <p id="gate-error" class="gate-error hidden">パスコードが違います</p>
+    </div>
+  </div>
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-emoji">🌱</span>
+      <div>
+        <div class="brand-title">保育士サポート</div>
+        <div class="brand-sub">勘所を吸収し、書類づくりを軽くする</div>
+      </div>
+    </div>
+    <div id="conn" class="conn"></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-tab="diary" role="tab">📝 保育日誌</button>
+    <button class="tab" data-tab="monthly" role="tab">📅 個別月案</button>
+    <button class="tab" data-tab="improve" role="tab">🔄 回す（改善）</button>
+  </nav>
+
+  <main class="container">
+
+    <!-- ───────── 保育日誌 ───────── -->
+    <section id="tab-diary" class="panel is-active">
+      <div class="card intro">
+        <h1>今日の様子をメモ → 保育日誌の下書き</h1>
+        <p class="muted">気づいたことを書くだけ。不足は AI が確認し、保育所保育指針・園の指針に沿って整えます。最終確定は保育士（あなた）です。</p>
+      </div>
+
+      <div class="card">
+        <label class="field-label">対象児（架空児）</label>
+        <div id="diary-children" class="chips"></div>
+
+        <label class="field-label" for="diary-memo">観察メモ</label>
+        <textarea id="diary-memo" class="memo" rows="4" placeholder="例）戸外で砂遊び。スコップで砂をすくって繰り返し感触を確かめていた。友だちが来ると場所を空けていた。"></textarea>
+        <div class="samples">
+          <span class="samples-label">サンプル:</span>
+          <div id="diary-samples" class="chips chips-sm"></div>
+        </div>
+
+        <button id="diary-run" class="btn btn-primary btn-block">下書きを作成する</button>
+      </div>
+
+      <div id="diary-flow" class="flow-area"></div>
+    </section>
+
+    <!-- ───────── 個別月案 ───────── -->
+    <section id="tab-monthly" class="panel">
+      <div class="card intro">
+        <h1>前月の積み重ね → 個別月案の下書き</h1>
+        <p class="muted">前月の日誌を集めて「前月の姿」を要約し、今月のねらいへつなげます（L2 還流）。</p>
+      </div>
+
+      <div class="card">
+        <label class="field-label">対象児（架空児）</label>
+        <div id="monthly-children" class="chips"></div>
+
+        <div class="row">
+          <div>
+            <label class="field-label" for="monthly-month">対象月</label>
+            <input id="monthly-month" class="input" type="month" value="2026-07">
+          </div>
+        </div>
+
+        <div class="seed-note">
+          <span class="muted">前月日誌（架空児サンプルを seed します）：</span>
+          <span id="monthly-seed-count" class="badge">3 件</span>
+        </div>
+
+        <button id="monthly-run" class="btn btn-primary btn-block">月案の下書きを作成する</button>
+      </div>
+
+      <div id="monthly-flow" class="flow-area"></div>
+    </section>
+
+    <!-- ───────── 回す（改善エージェント） ───────── -->
+    <section id="tab-improve" class="panel">
+      <div class="card intro">
+        <h1>保育士の修正 → 育つ「文書作成指針」</h1>
+        <p class="muted">現場の直しや 👍👎 を、指針の更新提案へ。競合は二択で確認し、評価ゲート（main 比 非劣化＆must_fix 0）を通ったものだけ取り込みます。<b>これが「回す」の本体。</b></p>
+      </div>
+
+      <div class="card">
+        <label class="field-label">保育士の修正差分・フィードバック</label>
+        <textarea id="improve-diff" class="memo" rows="3" placeholder="例）感触遊びは『感触語＋表情』を併記したい。ただし断定的な評価表現は避けたい。"></textarea>
+        <div class="samples">
+          <span class="samples-label">サンプル:</span>
+          <div id="improve-samples" class="chips chips-sm"></div>
+        </div>
+        <button id="improve-run" class="btn btn-primary btn-block">改善を提案する</button>
+      </div>
+
+      <div class="dash">
+        <div class="dash-col">
+          <div class="dash-head">① 指針の更新提案</div>
+          <div id="dash-propose" class="dash-body placeholder">修正差分から、どの見出しに何を足すかを提案します。</div>
+        </div>
+        <div class="dash-col">
+          <div class="dash-head">② 競合チェック / 二択</div>
+          <div id="dash-conflict" class="dash-body placeholder">既存項目との競合を検出。競合があれば保育士が正を選びます。</div>
+        </div>
+        <div class="dash-col">
+          <div class="dash-head">③ 評価ゲート（3軸）</div>
+          <div id="dash-eval" class="dash-body placeholder">指針整合・10の姿・保護者向け表現の3軸で採点。main 比で非劣化かつ must_fix 0 なら緑。</div>
+        </div>
+        <div class="dash-col">
+          <div class="dash-head">④ PR（取り込み）</div>
+          <div id="dash-pr" class="dash-body placeholder">緑なら PR を起票（既定 dry_run）。採否は CI 評価ゲートが決める。</div>
+        </div>
+      </div>
+
+      <div id="improve-log" class="flow-area"></div>
+    </section>
+
+  </main>
+
+  <footer class="app-footer">
+    <span class="muted">harness（型の保証）／ agents（中身）／ improver（回す）の3責務分離。生成は ADK + Gemini。実名は扱いません（架空児のみ）。</span>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
