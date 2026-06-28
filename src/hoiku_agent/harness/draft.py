@@ -52,7 +52,7 @@ def write_draft(entry: DiaryEntry, template_ref: str | None = None) -> str:
     )
     lines = [
         f"■ 保育日誌（{entry.age_band.value} 歳児クラス・個別）",
-        f"日付: {entry.date}　天候: {entry.weather}",
+        f"日付: {entry.date}　天候: {entry.weather or '（未記入）'}",
         f"出欠: {_format_attendance(entry)}",
         f"健康状態: {entry.health_notes or '特記なし'}",
         "",

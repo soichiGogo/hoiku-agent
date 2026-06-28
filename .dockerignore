@@ -34,3 +34,6 @@ docs
 !README.md
 # 実行時に読む育つ指針は残す（read_policy＝§9。*.md は入れ子に効かないが明示）。
 !knowledge/文書作成指針.md
+# 配布UIの「回す」ダッシュボードが main 基準（baseline）を表示するため、baseline だけ残す
+# （eval 本体・ケース・judges は除外のまま＝実採点は CI が担当）。
+!eval/baseline.json

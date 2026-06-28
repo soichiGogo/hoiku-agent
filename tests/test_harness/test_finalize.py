@@ -93,6 +93,33 @@ def test_finalize_document_parse_error_on_schema_violation():
     assert result.parse_error is not None
 
 
+# ──────────── 自由記述の必須欄は null/欠落でもクラッシュさせず「不足」で報告（B 修正の回帰防止） ────────────
+
+
+def test_finalize_tolerates_null_weather_as_validation_problem():
+    """author が weather を null で出しても parse は通り、validate が「天候が未記入」を不足報告する。
+
+    以前は DiaryEntry.weather が必須 str で null が parse 段の ValidationError → 確定中止になっていた
+    （author が天候を聞き漏らすと日誌が完成しない）。設計意図（validate_fields が空欄を不足として報告）に
+    整合させ、ハードクラッシュさせない（§10）。
+    """
+    null_weather = _VALID_JSON.replace('"weather": "晴れ",', '"weather": null,')
+    result = finalize_document(_fenced(null_weather))
+    assert result.parse_error is None  # parse は落ちない
+    assert result.ok is False  # 不足ありで確定は未完了扱い
+    assert any("天候" in p for p in result.problems)
+    assert result.formatted is not None  # 整形は出る
+    assert "（未記入）" in result.formatted
+
+
+def test_finalize_tolerates_missing_weather_key():
+    """weather キーごと欠落でも parse は通り validate が「天候が未記入」を報告する。"""
+    no_weather = _VALID_JSON.replace('  "weather": "晴れ",\n', "")
+    result = finalize_document(_fenced(no_weather))
+    assert result.parse_error is None
+    assert any("天候" in p for p in result.problems)
+
+
 # ──────────── 記録日（date）は harness が所有・注入する（§5・本バグの回帰防止） ────────────
 
 

@@ -24,9 +24,14 @@ from __future__ import annotations
 from google.adk.cli.fast_api import get_fast_api_app
 
 from hoiku_agent.config import settings
+from hoiku_agent.web import register_web_ui
 
 app = get_fast_api_app(
     agents_dir="src",
     memory_service_uri=settings.memory_service_uri,  # agentengine://<id> or None→InMemory
     web=True,
 )
+
+# 保育士向け配布 UI（B-full）を同居させる：保育士 UI＝/app/、自前 API＝/api/*、dev UI＝/dev-ui/。
+# 日誌/月案の生成は ADK ネイティブ REST をフロントが直接叩く（自前 Runner を組まない＝§9）。
+register_web_ui(app)

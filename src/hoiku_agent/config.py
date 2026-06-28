@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # 実データは置かない＝架空児のみ（gitignore 済み・§14）。
     records_dir: str = ""
 
+    # 配布デモUI（B-full）の簡易共有パスコード。設定すると LLM を回す口（/run・/run_sse・
+    # /run_live・/api/improve）が要パスコードになり、無認証の公開リンクで Gemini 課金が
+    # 野放しになるのを防ぐ。空なら無効＝ローカル開放（src/hoiku_agent/web）。
+    demo_passcode: str = ""
+
     @property
     def memory_service_uri(self) -> str | None:
         """Memory Bank の接続 URI（ADK の --memory_service_uri 互換）。
