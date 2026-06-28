@@ -16,11 +16,17 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from .domain import FiveDomains, TenNoSugata, ThreeViewpoint
 from .enums import AgeBand
+
+# author が null / 省略で送っても parse を落とさず空文字へ寄せる自由記述 str。欠落そのものは
+# validate_fields が「未記入」として不足リストに報告する＝ハードクラッシュさせず「型は成立・中身は不足」
+# として可視化する設計意図に整合（§10 / harness/schema_check）。weather のような必須自由記述に使う。
+_BlankableStr = Annotated[str, BeforeValidator(lambda v: "" if v is None else v)]
 
 
 class DocumentType(str, Enum):
@@ -84,7 +90,9 @@ class IndividualNote(BaseModel):
     """個別日誌（特記事項／個人記録）。0–2 個別の本体（§10・個別日誌系統）。"""
 
     child_id: str
-    observed_state: str  # 当日の観察＝子どもの姿
+    observed_state: _BlankableStr = (
+        ""  # 当日の観察＝子どもの姿（空は validate_fields が未記入で報告）
+    )
     # タグ要件は年齢で分岐（0–2＝ThreeViewpoint / 3–5＝FiveDomains）。分岐の強制は validate_fields。
     tags: list[TenNoSugata | ThreeViewpoint | FiveDomains] = Field(default_factory=list)
 
@@ -92,8 +100,10 @@ class IndividualNote(BaseModel):
 class DiaryEvaluation(BaseModel):
     """評価・反省は必ず2視点を別フィールドで必須にする（§10）。両系統にまたがる。"""
 
-    child_focus: str = Field(description="(a)子どもに焦点を当てた振り返り")
-    self_review: str = Field(description="(b)自分のねらい・内容・環境構成・関わりの適否")
+    child_focus: _BlankableStr = Field(default="", description="(a)子どもに焦点を当てた振り返り")
+    self_review: _BlankableStr = Field(
+        default="", description="(b)自分のねらい・内容・環境構成・関わりの適否"
+    )
 
 
 class DiaryEntry(BaseModel):
@@ -104,11 +114,13 @@ class DiaryEntry(BaseModel):
 
     date: date
     age_band: AgeBand
-    weather: str
+    weather: _BlankableStr = (
+        ""  # 必須欄。空/None は validate_fields が「天候が未記入」で報告（クラッシュさせない）
+    )
     attendance: list[ChildAttendance]  # クラス日誌
     health_notes: str | None = None  # クラス日誌
-    practice_record: str = Field(  # クラス日誌（←日案←週案←月案ねらいにトップダウン一貫）
-        description="保育の実践記録。日案←週案←月案のねらいにトップダウン一貫"
+    practice_record: _BlankableStr = Field(  # クラス日誌（←日案←週案←月案ねらいにトップダウン一貫）
+        default="", description="保育の実践記録。日案←週案←月案のねらいにトップダウン一貫"
     )
     individual_notes: list[IndividualNote]  # 個別日誌（0–2 個別の本体）
     evaluation: DiaryEvaluation  # 両系統・2視点必須
