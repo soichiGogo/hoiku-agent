@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from google.adk.agents import LlmAgent
 
-from ..config import settings
+from ..models import build_model
 from ..tools import (
     ask_caregiver,
     read_policy,
@@ -32,14 +32,15 @@ def build_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     """作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。
 
     Args:
-        model: 使用するモデル。既定（None）は settings.gemini_model（実 Gemini）。
+        model: 使用するモデル。既定（None）は build_model()（settings.gemini_model を
+            model_location＝global に固定した Gemini。§11／models.py）。
             決定論E2E（tests/test_e2e/）では FakeLlm 等の BaseLlm インスタンスを注入し、
             LLM/GCP 非依存に author→review→finalize の結合を検証するための差込口（§16）。
             本番の root_agent は引数なしで呼ぶため挙動は不変。
     """
     return LlmAgent(
         name="author",
-        model=model if model is not None else settings.gemini_model,
+        model=model if model is not None else build_model(),
         instruction=AUTHOR_INSTRUCTION,
         tools=[
             recall_child_history,  # 同じ子の前回までの姿（継続性は必ずこれ＝§9・B方針）

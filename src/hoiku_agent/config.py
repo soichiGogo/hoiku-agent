@@ -8,13 +8,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # GCP / Vertex
+    # GCP / Vertex。google_cloud_location は RAG corpus / Memory Bank のリージョン（regional 専用）。
     google_cloud_project: str = ""
     google_cloud_location: str = "us-central1"
     google_genai_use_vertexai: bool = True
 
-    # モデル（最新の Gemini モデルIDに合わせる）
-    gemini_model: str = "gemini-2.5-pro"
+    # モデル（最新の Gemini モデルIDに合わせる）。
+    gemini_model: str = "gemini-3.5-flash"
+    # 生成モデルだけを別エンドポイントへ固定する location（Gemini 3.x は Vertex global 専用＝
+    # RAG/Memory の google_cloud_location と同居不可なので分離する。§11／models.build_model）。
+    # 空にすると google_cloud_location を使う＝従来動作（regional モデル向け）。
+    model_location: str = "global"
 
     # 静的ナレッジ＝Vertex RAG corpus（保育所保育指針・10の姿）。空なら search_guideline は降格。
     rag_corpus: str = ""

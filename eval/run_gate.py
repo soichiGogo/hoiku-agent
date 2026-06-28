@@ -368,6 +368,17 @@ def update_baseline(
 if __name__ == "__main__":
     import argparse
 
+    # .env を os.environ に展開する。judge（rubric LLM）の genai client は env で Vertex/AI Studio を
+    # 判定するため、未 export だと "No API key" で全ケース採点不能→ baseline が silently 据え置きになる
+    # （実機で踏んだ）。pydantic settings（env_file）は os.environ を埋めないので別途必要。CI は実 env を
+    # 使うので override=False（既存 env を壊さない）。.env が無ければ no-op。
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
     ap = argparse.ArgumentParser(description="層B 評価ゲート（採点 or baseline 更新）")
     ap.add_argument(
         "--update-baseline",

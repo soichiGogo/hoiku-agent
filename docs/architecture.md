@@ -135,6 +135,8 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   - Memory Bank：`uv run python scripts/provision_memory_bank.py --create`（生成モデル＋日本語/子の姿カスタマイズ）
     → `.env` の `AGENT_ENGINE_ID`。未設定は InMemory 降格。
   - 手順は `docs/ライブ実行手順.md`。Gemini/Vertex 自体は接続済み（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。
+    既定モデル `gemini-3.5-flash` は Vertex **global 専用**のため、生成だけ `MODEL_LOCATION`（既定 global）へ固定し、
+    RAG/Memory は `GOOGLE_CLOUD_LOCATION`（regional）のまま分離する（`src/hoiku_agent/models.py`＝`build_model`）。
 - **層A の実デプロイ／eval ゲートCI の有効化**：`deploy.yml` / `eval-gate.yml` は用意済みだが、GCP 側の
   **WIF（鍵レス）設定＋リポジトリ変数**（`WIF_PROVIDER`/`DEPLOY_SA`/`GCP_PROJECT_ID` 等）が前提（未設定なら job は skip）。
   eval ゲートCI は採点に creds が要るため `google-adk[eval]`（`--extra eval`）＋ WIF が前提。

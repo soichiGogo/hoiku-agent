@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from google.adk.agents import LlmAgent
 
-from ..config import settings
+from ..models import build_model
 from .prompts import IMPROVER_INSTRUCTION
 from .tools import ask_caregiver, open_pr, propose_policy_change, run_eval
 
@@ -23,7 +23,7 @@ def build_improver_agent() -> LlmAgent:
     """改善エージェント（単一 LlmAgent）を構築して返す。root_agent とは別エントリ（§8）。"""
     return LlmAgent(
         name="improver",
-        model=settings.gemini_model,
+        model=build_model(),
         instruction=IMPROVER_INSTRUCTION,
         tools=[propose_policy_change, run_eval, ask_caregiver, open_pr],
         output_key="policy_change",

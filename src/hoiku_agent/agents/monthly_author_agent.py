@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from google.adk.agents import LlmAgent
 
-from ..config import settings
+from ..models import build_model
 from ..tools import ask_caregiver, read_policy, recall_child_history, search_guideline
 from .prompts import MONTHLY_AUTHOR_INSTRUCTION
 
@@ -30,7 +30,8 @@ def build_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     """月案 作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。
 
     Args:
-        model: 使用するモデル。既定（None）は settings.gemini_model（実 Gemini）。
+        model: 使用するモデル。既定（None）は build_model()（settings.gemini_model を
+            model_location＝global に固定した Gemini。§11／models.py）。
             決定論E2E（tests/test_e2e/）では FakeLlm 等の BaseLlm を注入する差込口（§16）。
 
     日誌 author との違い: validate_fields ツール（DiaryEntry 用の自己点検）は配線しない。月案の確定
@@ -40,7 +41,7 @@ def build_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     """
     return LlmAgent(
         name="monthly_author",
-        model=model if model is not None else settings.gemini_model,
+        model=model if model is not None else build_model(),
         instruction=MONTHLY_AUTHOR_INSTRUCTION,
         tools=[
             recall_child_history,  # その子の前回までの像（前月連続性＝§9）

@@ -90,7 +90,11 @@
   フロントが直接駆動（HITL は `function_response` 再送で再開・承認は `PATCH` で `caregiver_approved`）、improver は
   `/api/improve` の SSE 中継。`DEMO_PASSCODE` で LLM を回す口のみゲート。実機検証済み（creds 有・gemini-2.5-pro＋
   Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
-- **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。
+- **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。既定モデル＝`gemini-3.5-flash`は
+  Vertex の **global 専用**なので、生成モデルだけ `MODEL_LOCATION`（既定 global）に固定し、RAG/Memory は
+  `GOOGLE_CLOUD_LOCATION`（regional・global 不可）のまま分離する（`models.build_model`＝§11）。eval の本採点は
+  judge（rubric LLM）の genai client が env で Vertex を判定するため、`run_gate.py` の CLI が `.env` を
+  自動 load する（未 load だと "No API key" で silently 採点不能になるのを防ぐ）。
 - **残課題（コードだけでは閉じられない＝外部依存）**: ① 各自 GCP のプロビジョニング＋env 設定（RAG corpus＝`RAG_CORPUS` /
   Memory Bank＝`AGENT_ENGINE_ID`。スクリプトは実機検証済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化
   （GCP の WIF 設定＋リポジトリ変数。未設定なら job は skip。**baseline 保存・比較はコード実装済み**＝committed

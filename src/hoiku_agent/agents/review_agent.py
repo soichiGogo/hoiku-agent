@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from google.adk.agents import LlmAgent
 
-from ..config import settings
+from ..models import build_model
 from ..tools import read_policy, recall_child_history, search_guideline
 from .prompts import REVIEW_INSTRUCTION
 
@@ -26,12 +26,13 @@ def build_review_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     """レビューAI（単一 LlmAgent）を構築して返す。巡回制御は harness 側。
 
     Args:
-        model: 使用するモデル。既定（None）は settings.gemini_model（実 Gemini）。
+        model: 使用するモデル。既定（None）は build_model()（settings.gemini_model を
+            model_location＝global に固定した Gemini。§11／models.py）。
             決定論E2E では FakeLlm 等の BaseLlm を注入する差込口（§16）。本番は引数なしで不変。
     """
     return LlmAgent(
         name="reviewer",
-        model=model if model is not None else settings.gemini_model,
+        model=model if model is not None else build_model(),
         instruction=REVIEW_INSTRUCTION,
         # recall_child_history は前月連続性の照合に使う（その子の前回までの像と矛盾しないか＝§7）
         tools=[read_policy, search_guideline, recall_child_history],
