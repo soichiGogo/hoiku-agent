@@ -1,11 +1,11 @@
 {
-  "mean": 0.9523809523809524,
+  "mean": 1.0,
   "axis_means": {
-    "axis_guideline_alignment": 0.8,
-    "axis_ten_no_sugata": 0.9285714285714286,
+    "axis_guideline_alignment": 1.0,
+    "axis_ten_no_sugata": 1.0,
     "axis_expression": 1.0
   },
   "must_fix_violations": 0,
-  "commit": "3efb14a",
+  "commit": null,
   "note": "main の eval 平均（3軸ケース平均）。nightly eval-gate が --update-baseline で更新し、PR の非劣化比較（decide_gate）に使う＝§12。手で編集しない。"
 }
