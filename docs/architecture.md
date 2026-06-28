@@ -20,8 +20,8 @@
 | ファイル | 関数 | 役割 |
 |---|---|---|
 | `harness/router.py` | `DocTypeRouter` / `build_root_agent` | `state["doc_type"]` で日誌/月案パイプラインを振り分ける決定的分岐（root_agent の実体・既定＝保育日誌＝§3） |
-| `harness/pipeline.py` | `build_document_pipeline` / `ApprovalGate` / `FinalizeAgent`(kind) / `is_approved` / `persist_visit_to_memory`(+`_should_persist_visit`) / `mark_caregiver_approved`(+`CAREGIVER_APPROVAL_KEY`) | 日誌：author → review_loop（reviewer→ApprovalGate で APPROVED 早期終了）→ finalize の順序制御。`after_agent_callback`＝**保育士の明示承認＋型成立**のときのみ来園を Memory Bank へ書き戻す（真の承認ゲート＝§9/§13） |
-| `harness/monthly.py` | `MonthlyPrepAgent` / `build_monthly_pipeline` | 月案：前月日誌を child_id 別に決定的集計（L2 還流）→ 月案 author → review_loop → finalize(kind="monthly")（§3/§4/§10） |
+| `harness/pipeline.py` | `build_document_pipeline` / `build_authoring_loop` / `ApprovalGate` / `FinalizeAgent`(kind) / `is_approved` / `persist_visit_to_memory`(+`_should_persist_visit`) / `mark_caregiver_approved`(+`CAREGIVER_APPROVAL_KEY`) | 日誌：authoring_loop（[author→reviewer→ApprovalGate] を巡回・NEEDS_REVISION で author が再作成・APPROVED 早期終了）→ finalize の順序制御。`after_agent_callback`＝**保育士の明示承認＋型成立**のときのみ来園を Memory Bank へ書き戻す（真の承認ゲート＝§9/§13） |
+| `harness/monthly.py` | `MonthlyPrepAgent` / `build_monthly_pipeline` | 月案：前月日誌を child_id 別に決定的集計（L2 還流）→ 月案 author の authoring_loop（日誌と共用・再作成）→ finalize(kind="monthly")（§3/§4/§10） |
 | `harness/schema_check.py` | `validate_fields` / `validate_monthly_fields`(+`_required_tag_type`) | 必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域）。日誌/月案で分岐の実体を共用 |
 | `harness/draft.py` | `write_draft` / `write_monthly_draft` | pydantic（DiaryEntry/MonthlyPlan）→ 様式整形（10の姿/3つの視点/5領域タグ明示） |
 | `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `parse_draft_to_entry` / `parse_draft_to_plan` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用）。日誌の **date（記録日）は harness が所有する決定的メタデータ**＝`doc_date` で復元前に注入し author 出力を上書き（LLM に日付を生成させない＝雛形 echo 耐性。clock を持たず純関数を保つため現在日付の解決は `pipeline.FinalizeAgent`） |
@@ -56,9 +56,11 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
   └─ harness: DocTypeRouter (root_agent) … doc_type で日誌/月案パイプラインを決定的に振り分け（§10）
        │
        ├─[日誌]─ document_pipeline (SequentialAgent)
-       │    ├─ author (LlmAgent)  … 不足は ask_caregiver(HITL) / RAG・記録・子メモリを収集 / 指針準拠で
-       │    │                        下書き＋DiaryEntry JSON → state["draft"]
-       │    ├─ review_loop (LoopAgent: reviewer→approval_gate) … 指摘→state["review"]・APPROVED で早期終了
+       │    ├─ authoring_loop (LoopAgent: author→reviewer→approval_gate を最大3巡)
+       │    │    ├─ author (LlmAgent)  … 不足は ask_caregiver(HITL) / RAG・記録・子メモリを収集 / 指針準拠で
+       │    │    │                        下書き＋DiaryEntry JSON → state["draft"]
+       │    │    ├─ reviewer (LlmAgent) … 別視点で点検 → state["review"]
+       │    │    └─ approval_gate … APPROVED で早期終了 / NEEDS_REVISION なら次巡で author が指摘点を再作成
        │    └─ finalize(kind=diary) … 記録日を解決（state["doc_date"]｜本日）→ 復元時に date 注入 →
        │                              validate_fields/write_draft → state["final_document"]/["validation"]、
        │                              awaiting_caregiver_approval=True（HITL）
@@ -66,8 +68,8 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
        └─[月案]─ monthly_plan_pipeline (SequentialAgent)
             ├─ monthly_prep (BaseAgent) … 前月日誌（state["prev_month_entries"]）を child_id 別に集計（L2 還流）
             │                              → state["prev_month_digest"]＋集計テキストを提示
-            ├─ monthly_author (LlmAgent) … 前月集積＋子メモリから「前月の姿/評価反省」を要約・ねらい化 → state["draft"]
-            ├─ review_loop （日誌と共用）
+            ├─ authoring_loop （日誌と共用: monthly_author→reviewer→approval_gate を巡回・再作成）
+            │    └─ monthly_author (LlmAgent) … 前月集積＋子メモリから「前月の姿/評価反省」を要約・ねらい化 → state["draft"]
             └─ finalize(kind=monthly) … 復元→validate_monthly_fields/write_monthly_draft → state["final_document"]
        │
        └─[after_agent_callback] persist_visit_to_memory … **保育士の明示承認（caregiver_approved）＋型成立**の
@@ -83,13 +85,15 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   月案は `MonthlyPrepAgent` が前月日誌を child_id 別に決定的集計（`prev_month_digest`）→ `monthly_author` が
   要約・ねらい化 → `validate_monthly_fields`/`write_monthly_draft` で確定（§3/§4/§10）。`MonthlyPlan` スキーマ・
   月案決定論E2E（ルータ分岐/L2 還流/確定）まで実装・テスト済み。デモ入口＝`scripts/run_monthly.py`。
-- レビュー APPROVED 早期終了（`ApprovalGate`／`is_approved`。判定は1行目の verdict＝prompts.py）。
+- レビュー巡回（`build_authoring_loop`＝[作成→レビュー→ApprovalGate]）：NEEDS_REVISION で作成AIが指摘点を
+  再作成し、APPROVED 早期終了（`ApprovalGate`／`is_approved`。判定は1行目の verdict＝prompts.py）。再質問しない
+  revision mode・date 等の機械的メタを指摘させない注意書きは prompts.py。
 - HITL 関門：`ask_caregiver`＝`LongRunningFunctionTool`、確定段の `awaiting_caregiver_approval` フラグ。
 - 出力の最終 validation／整形（`FinalizeAgent(kind)`＋`harness/finalize.py`。日誌/月案で `_finalize` を共用）。
 - `git_ops`（構造化編集の適用・競合入力・branch/PR＝既定 dry_run）、`improver`（propose＋競合検出／run_eval／open_pr）。
 - **決定論E2E（結合テスト）**：`tests/test_e2e/`。`FakeLlm` 注入で日誌/月案パイプラインを実 ADK ランタイムに
-  end-to-end で通し、連結・APPROVED 早期終了・巡回上限・確定3経路・HITL 不発火・**真の承認ゲートの書き戻し**・
-  **L2 還流/ルータ分岐**を creds 不要・決定的に検証（品質採点は層B eval＝別系統）。起動は `/e2e` skill。
+  end-to-end で通し、連結・APPROVED 早期終了・**NEEDS_REVISION での再作成（2枚目が確定）**・巡回上限・確定3経路・
+  HITL 不発火・**真の承認ゲートの書き戻し**・**L2 還流/ルータ分岐**を creds 不要・決定的に検証（品質採点は層B eval＝別系統）。起動は `/e2e` skill。
 - **Memory Bank 配線（読み＋書き戻し）＋ 真の承認ゲート**：`config.memory_service_uri`（`agentengine://<id>`）→
   入口 `server.py`（ADK の `--memory_service_uri` 自動配線）。読み＝`recall_child_history`、書き戻し＝
   `persist_visit_to_memory`（`after_agent_callback`）。書き戻しは **保育士の明示承認（`caregiver_approved=True`＝

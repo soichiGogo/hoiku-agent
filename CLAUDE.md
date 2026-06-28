@@ -50,8 +50,9 @@
 1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・git適用。
    LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。`tools/validate_fields.py`・`tools/write_draft.py` は
    これを呼ぶ**薄いラッパ**（二重実装しない）。Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
-2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）＝**単一 LlmAgent**（v0 で
-   LoopAgent に包まない・多層化しない）、reviewer＝Evaluator（日誌/月案共用）。レビューは最終段で一括、巡回制御は harness 側。
+2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）＝**単一 LlmAgent**（内部を
+   多層化しない。巡回＝再作成は harness の `build_authoring_loop` が [作成→レビュー→ゲート] に包んで担う＝
+   NEEDS_REVISION で author が指摘点を再作成）、reviewer＝Evaluator（日誌/月案共用）。巡回制御・早期終了は harness 側。
 3. **improver/（二階・回す）** — 修正差分→育つ指針の更新を自走提案。**HITL＋評価ゲート経由でのみ取り込む**
    （保育士OK ≠ マージOK）。git は harness/git_ops 経由。
 

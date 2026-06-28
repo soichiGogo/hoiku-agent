@@ -2,16 +2,17 @@
 
 設計コンテキスト §4/§5/§16。harness（型の保証）と agents（中身）の "結合" ＝パイプラインの
 順序制御を、実 Gemini を呼ばずに検証する層。author/reviewer の build_xxx(model=...) に
-FakeLlm（BaseLlm の決定的スタブ）を注入し、author→review_loop→finalize を実 ADK ランタイムで
-end-to-end に回す。creds 不要・無料・決定的なので毎PR/毎編集で回せる（品質採点は別層＝eval/）。
+FakeLlm（BaseLlm の決定的スタブ）を注入し、authoring_loop（作成→レビュー→ゲートの巡回）→finalize を
+実 ADK ランタイムで end-to-end に回す。creds 不要・無料・決定的なので毎PR/毎編集で回せる（品質採点は別層＝eval/）。
 
 ここで担保する "結合経路"（harness/pipeline.py・finalize.py が分岐を持つ点）:
   1. 連結          author→state["draft"]→reviewer→state["review"]→finalize→state["final_document"]
   2. 早期終了      reviewer 1行目 APPROVED で ApprovalGate が escalate（is_approved）
-  3. 巡回上限      APPROVED が出ない場合 MAX_REVIEW_ITERATIONS で頭打ち→finalize へ抜ける
-  4. 確定3経路     ① 成功（problems 空・formatted 生成）② parse 失敗（finalize_parse_error）
+  3. 再作成        NEEDS_REVISION で author が次巡で再作成し、2枚目の下書きが確定される（巡回に author を含む）
+  4. 巡回上限      APPROVED が出ない場合 MAX_REVIEW_ITERATIONS で頭打ち→finalize へ抜ける
+  5. 確定3経路     ① 成功（problems 空・formatted 生成）② parse 失敗（finalize_parse_error）
                    ③ 検証不足（validation 非空でも確定下書きは生成される）
-  5. HITL 関門     ask_caregiver を発火させずに通る／確定段で awaiting_caregiver_approval=True
+  6. HITL 関門     ask_caregiver を発火させずに通る／確定段で awaiting_caregiver_approval=True
 
 中身の良し悪し（指針整合/10の姿/表現）は採点しない（それは層B eval＝要 LLM・/adk-eval）。
 ここは "型と順序" だけを決定的に検証する。
@@ -247,7 +248,10 @@ def test_finalize_injects_date_when_author_emits_placeholder():
 
 
 def test_needs_revision_then_approved_loops_then_early_exits():
-    """② 巡回が複数回回り、APPROVED が出た巡で早期終了することを検証。"""
+    """② 巡回が複数回回り、APPROVED が出た巡で早期終了することを検証。
+
+    author を巡回に含めたので、1巡＝作成→レビューが author/reviewer をそれぞれ1回呼ぶ。
+    """
     author = FakeLlm(responses=[_author_text(_valid_entry())])
     reviewer = FakeLlm(
         responses=["NEEDS_REVISION\n天候の記述を補ってください。", "APPROVED\n改善を確認。"]
@@ -255,9 +259,40 @@ def test_needs_revision_then_approved_loops_then_early_exits():
 
     state, _ = _run(author, reviewer)
 
-    # 1巡目 NEEDS_REVISION（escalate せず）→ 2巡目 APPROVED（escalate）＝2回呼ばれる
+    # 1巡目 NEEDS_REVISION（escalate せず）→ 2巡目 APPROVED（escalate）＝各2回呼ばれる
     assert reviewer.call_count == 2
+    assert author.call_count == 2  # 作成AIも巡回に含まれ、2巡目で再作成している
     assert (state.get("review") or "").startswith("APPROVED")
+    assert state.get("awaiting_caregiver_approval") is True
+
+
+def test_needs_revision_triggers_reauthor_and_second_draft_finalizes():
+    """★本変更の核：NEEDS_REVISION で作成AIが再作成し、2枚目の下書きが確定される。
+
+    旧構成（author をループ外）では再作成が起きず1枚目が確定していた。author を巡回に含めたことで、
+    1巡目 NEEDS_REVISION → 2巡目に author が再提出 → その2枚目が finalize されることを固定する。
+    """
+    entry_v1 = _valid_entry()
+    entry_v1["practice_record"] = "初回の下書き（指摘前）。"
+    entry_v2 = _valid_entry()
+    entry_v2["practice_record"] = "修正後の下書き（指摘を反映）。"
+    author = FakeLlm(responses=[_author_text(entry_v1), _author_text(entry_v2)])
+    reviewer = FakeLlm(
+        responses=["NEEDS_REVISION\n実践記録を具体化してください。", "APPROVED\n改善を確認。"]
+    )
+
+    state, _ = _run(author, reviewer)
+
+    # 1巡目（author=1/reviewer=1・NEEDS_REVISION）→ 2巡目（author=2/reviewer=2・APPROVED）で早期終了
+    assert author.call_count == 2, (
+        "NEEDS_REVISION で作成AIが再作成するはず（旧構成は再作成しなかった）"
+    )
+    assert reviewer.call_count == 2
+    # 確定されるのは2枚目（再作成後）の下書き
+    final_doc = state.get("final_document") or ""
+    assert "修正後の下書き（指摘を反映）。" in final_doc
+    assert "初回の下書き（指摘前）。" not in final_doc
+    assert state.get("validation") == []
     assert state.get("awaiting_caregiver_approval") is True
 
 
@@ -269,6 +304,7 @@ def test_never_approved_hits_max_iterations_then_finalizes():
     state, _ = _run(author, reviewer)
 
     assert reviewer.call_count == MAX_REVIEW_ITERATIONS  # 上限まで回って止まる
+    assert author.call_count == MAX_REVIEW_ITERATIONS  # 作成AIも各巡で再作成を試みる
     assert not (state.get("review") or "").startswith("APPROVED")
     # 早期終了しなくても finalize は必ず実行される（確定下書き＋承認待ち）
     assert state.get("final_document")

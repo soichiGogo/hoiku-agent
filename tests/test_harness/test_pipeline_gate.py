@@ -32,8 +32,12 @@ def test_is_approved_handles_non_string():
 
 
 def test_pipeline_structure():
-    """root_agent の段構成（author→review_loop→finalize、loop 内は reviewer→approval_gate）。"""
+    """段構成（authoring_loop→finalize、loop 内は author→reviewer→approval_gate）。
+
+    NEEDS_REVISION で作成AIが再作成できるよう、author をレビュー巡回に**含める**（旧構成は
+    author をループ外に置き再作成が起きなかった＝本変更の回帰防止）。
+    """
     pipeline = build_document_pipeline()
-    assert [a.name for a in pipeline.sub_agents] == ["author", "review_loop", "finalize"]
-    loop = pipeline.sub_agents[1]
-    assert [a.name for a in loop.sub_agents] == ["reviewer", "approval_gate"]
+    assert [a.name for a in pipeline.sub_agents] == ["authoring_loop", "finalize"]
+    loop = pipeline.sub_agents[0]
+    assert [a.name for a in loop.sub_agents] == ["author", "reviewer", "approval_gate"]

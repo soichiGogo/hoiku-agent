@@ -6,8 +6,8 @@
 
 月案パイプライン（doc_type=月案 のときルータが選ぶ）:
     monthly_prep（前月日誌を child_id 別に決定的集計＝L2 還流の素データ）→ state["prev_month_digest"]
-      → monthly_author（前月集積＋子の像から「前月の姿／評価反省」を要約・ねらいへ変換）→ state["draft"]
-      → review_loop（reviewer→ApprovalGate・日誌と共用）
+      → authoring_loop（[monthly_author → reviewer → ApprovalGate] を巡回・日誌と共用。NEEDS_REVISION で
+        monthly_author が指摘点を再作成）→ state["draft"]/["review"]
       → finalize(kind="monthly")（MonthlyPlan を復元→validate_monthly_fields/write_monthly_draft）
       → [after_agent_callback] persist_visit_to_memory（保育士の明示承認＋型成立のとき子の像へ書き戻し・§9）
 
@@ -31,7 +31,7 @@ from .aggregate import format_digest_for_prompt, prev_month_digest
 from .pipeline import (
     FinalizeAgent,
     _model_content,
-    build_review_loop,
+    build_authoring_loop,
     persist_visit_to_memory,
 )
 
@@ -81,15 +81,15 @@ def build_monthly_pipeline(
     """個別月案の型を保証する月案パイプラインを構築する（§3/§4/§10）。
 
     日誌の build_document_pipeline と対称。先頭に MonthlyPrepAgent（L2 還流の決定的集計）を置き、
-    finalize は kind="monthly"。after_agent_callback は日誌と共用（明示承認＋型成立で書き戻し・§9）。
-    author_model/reviewer_model は通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
+    巡回は build_authoring_loop（[monthly_author → reviewer → ApprovalGate]・日誌と共用。NEEDS_REVISION で
+    monthly_author が再作成）、finalize は kind="monthly"。after_agent_callback は日誌と共用（明示承認＋
+    型成立で書き戻し・§9）。author_model/reviewer_model は通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(
         name="monthly_plan_pipeline",
         sub_agents=[
             MonthlyPrepAgent(name="monthly_prep"),
-            build_monthly_author_agent(author_model),
-            build_review_loop(reviewer_model),
+            build_authoring_loop(build_monthly_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="monthly"),
         ],
         after_agent_callback=persist_visit_to_memory,
