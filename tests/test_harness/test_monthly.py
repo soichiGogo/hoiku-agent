@@ -68,7 +68,7 @@ def test_monthly_0_2_requires_three_viewpoint_tag():
 
 def test_monthly_3_5_requires_five_domains_tag():
     """3–5 は5領域タグが必須（3つの視点だけでは違反）。"""
-    edu = [MonthlyEducationNote(aim="x", tags=[ThreeViewpoint.健やかに伸び伸び育つ])]
+    edu = [MonthlyEducationNote(aim="x", tags=[ThreeViewpoint.健やかに伸び伸びと育つ])]
     problems = validate_monthly_fields(_plan(age_band=AgeBand.三から五歳, education=edu))
     assert any("5領域" in p for p in problems)
 

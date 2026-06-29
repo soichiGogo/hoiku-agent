@@ -36,7 +36,7 @@ def _entry(
             IndividualNote(
                 child_id="架空児A",
                 observed_state=observed_state,
-                tags=tags if tags is not None else [ThreeViewpoint.健やかに伸び伸び育つ],
+                tags=tags if tags is not None else [ThreeViewpoint.健やかに伸び伸びと育つ],
             )
         ]
     return DiaryEntry(
@@ -67,7 +67,7 @@ def test_0_2_with_only_ten_no_sugata_is_insufficient():
 def test_3_5_requires_five_domains_tag():
     """3–5 は5領域タグが必須（3つの視点だけでは違反）。"""
     problems = validate_fields(
-        _entry(age_band=AgeBand.三から五歳, tags=[ThreeViewpoint.健やかに伸び伸び育つ])
+        _entry(age_band=AgeBand.三から五歳, tags=[ThreeViewpoint.健やかに伸び伸びと育つ])
     )
     assert any("5領域" in p for p in problems)
 

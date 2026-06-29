@@ -169,7 +169,7 @@ def test_router_defaults_to_diary_when_doc_type_unset():
             {
                 "child_id": "架空児A",
                 "observed_state": "花を見つめた",
-                "tags": ["健やかに伸び伸び育つ"],
+                "tags": ["健やかに伸び伸びと育つ"],
             }
         ],
         "evaluation": {"child_focus": "興味を示した", "self_review": "環境は適切だった"},
