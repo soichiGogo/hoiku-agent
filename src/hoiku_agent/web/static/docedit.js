@@ -53,13 +53,17 @@ function section(label, hint) {
 // 年齢で必須語彙が変わるタグ多選択（必須＝3つの視点/5領域、任意＝10の姿）。
 function tagEditor(currentTags, formMeta, ageBand) {
   const wrap = el("div", "de-tags");
-  const required = ageBand === "3-5" ? formMeta.five_domains : formMeta.three_viewpoint;
+  // form-meta 取得失敗時も落とさない（語彙は空＝既存タグは selected として保持される）。
+  const required = (ageBand === "3-5" ? formMeta.five_domains : formMeta.three_viewpoint) || [];
   const reqLabel = ageBand === "3-5" ? "5領域（必須）" : "3つの視点（必須）";
   const selected = new Set(currentTags || []);
+  // 語彙に無い既存タグ（form-meta 欠落時など）も選択中チップとして見せる。
+  const extra = [...selected].filter((t) => !required.includes(t) && !(formMeta.ten_no_sugata || []).includes(t));
   const groups = [
     [reqLabel, required],
-    ["10の姿（任意）", formMeta.ten_no_sugata],
+    ["10の姿（任意）", formMeta.ten_no_sugata || []],
   ];
+  if (extra.length) groups.push(["現在のタグ", extra]);
   for (const [gl, vocab] of groups) {
     const g = el("div", "de-taggroup");
     g.appendChild(el("span", "de-taglabel", esc(gl)));

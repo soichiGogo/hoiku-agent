@@ -75,7 +75,9 @@ export async function patchState(sessionId, stateDelta) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ state_delta: stateDelta }),
   });
-  return r.ok;
+  // 他のセッション系ヘルパと同様、失敗は throw する（握りつぶして偽の成功＝偽の緑を出さない）。
+  if (!r.ok) throw new Error("状態の保存に失敗 (" + r.status + ")");
+  return true;
 }
 
 // 汎用 SSE POST：data: 行ごとに onItem(parsedJson) を呼ぶ。401 は PasscodeError。

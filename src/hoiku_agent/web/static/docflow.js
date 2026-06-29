@@ -320,14 +320,21 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     async function save() {
       const entry = editor.collect();
       const res = await adk.finalizeEdit(docKind, entry, entry.date || null);
+      if (res.parse_error) {
+        // 構造化に失敗（通常の編集フォームでは到達しないが、偽の緑を出さず正直に失敗を出す）。
+        vNode.className = "validation ng";
+        vNode.innerHTML = `${iconHTML("alert")}保存できませんでした: ${esc(res.parse_error)}`;
+        throw new Error(res.parse_error);
+      }
       const problems = res.problems || [];
-      setValidation(vNode, problems);
-      if (preview._pre && res.formatted) preview._pre.textContent = res.formatted;
+      // 先に state へ反映する（patchState は失敗時 throw＝UI を緑にしない）。型成立ゲートは編集後の値で評価される。
       await adk.patchState(sessionId, {
         final_entry: entry,
-        final_document: res.formatted ?? st.final_document,
+        final_document: res.formatted,
         validation: problems,
       });
+      setValidation(vNode, problems);
+      if (preview._pre && res.formatted) preview._pre.textContent = res.formatted;
       return res;
     }
 
