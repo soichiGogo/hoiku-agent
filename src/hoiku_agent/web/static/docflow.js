@@ -37,7 +37,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
 
   // ステータスライン更新に合わせて、畳んだ過程ログの見出しも稼働中だけ追従させる。
   function phase(text, state) {
-    phase(text, state);
+    status.setPhase(text, state);
     if (procLabel && procSpin) procLabel.textContent = text;
   }
 

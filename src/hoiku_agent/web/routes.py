@@ -65,7 +65,13 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 {"error": "パスコードが必要です", "code": "passcode_required"},
                 status_code=401,
             )
-        return await call_next(request)
+        response = await call_next(request)
+        # 配布 SPA の静的資産（/app/ 配下の ES モジュール等）は常に再検証させる。StaticFiles は
+        # Cache-Control を付けないためブラウザがヒューリスティックに古い JS をキャッシュし、UI 更新が
+        # 反映されず「壊れて見える」ことがある。no-cache（=毎回 conditional 再検証・更新時のみ 200）で防ぐ。
+        if request.url.path == "/app" or request.url.path.startswith("/app/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.get("/api/config")
     async def web_config() -> dict:
