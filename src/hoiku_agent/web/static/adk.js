@@ -24,16 +24,16 @@ export async function gate(passcode) {
   return r.ok;
 }
 
+// 育つ指針＝構造化カード＋変更履歴を読む（「指針を育てる」タブの閲覧）。
+// 旧 backend（{markdown} だけ）や未配線でも壊れないよう空＋unavailable に降格する（偽の緑を出さない）。
 export async function getPolicy() {
-  return (await (await fetch("/api/policy")).json()).markdown || "";
-}
-export async function getBaseline() {
   try {
-    const r = await fetch("/api/eval-baseline");
-    if (!r.ok) return null;
-    return await r.json();
+    const r = await fetch("/api/policy");
+    if (!r.ok) return { cards: [], history: [], store: "unavailable" };
+    const j = await r.json();
+    return { cards: j.cards || [], history: j.history || [], store: j.store || "unavailable" };
   } catch {
-    return null;
+    return { cards: [], history: [], store: "unavailable" };
   }
 }
 

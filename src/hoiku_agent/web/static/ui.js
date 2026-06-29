@@ -51,6 +51,7 @@ const ICONS = {
   moon: '<path d="M20 13.5A8 8 0 1 1 10.5 4a6.3 6.3 0 0 0 9.5 9.5z"/>',
   spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
   memo: '<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 13h6M8 17h4"/>',
+  sprout: '<path d="M12 20v-7"/><path d="M12 13c-3.3 0-5.5-2-5.5-5 3.3 0 5.5 2 5.5 5z"/><path d="M12 11c0-2.8 2.2-5 5.5-5 0 2.8-2.2 5-5.5 5z"/>',
 };
 export function iconHTML(name, cls = "") {
   const path = ICONS[name] || ICONS.tool;
@@ -75,10 +76,10 @@ const TOOL_META = {
   read_policy: { icon: "clipboard", label: "園の文書作成指針を確認" },
   validate_fields: { icon: "shield", label: "必須項目を自己点検" },
   ask_caregiver: { icon: "ask", label: "保育士に確認" },
-  // improver（回す）
-  propose_policy_change: { icon: "edit", label: "指針の更新を提案" },
-  run_eval: { icon: "gauge", label: "評価ゲートで採点" },
-  open_pr: { icon: "git", label: "PR を起票" },
+  // improver（指針を育てる）
+  read_policy_cards: { icon: "clipboard", label: "いまの指針カードを確認" },
+  propose_policy_card: { icon: "edit", label: "指針に足す案を作成" },
+  commit_policy_card: { icon: "check", label: "指針に反映" },
 };
 export function toolMeta(name) {
   return TOOL_META[name] || { icon: "tool", label: name };

@@ -35,14 +35,8 @@
   /* ゲート（PRバッジ色） */
   --gate-pass:#2f8f63; --gate-pending:#bf8910; --gate-fail:#cf4a3f; --gate-none:#8a8474;
 
-  /* diff（ライト＝保育士の修正提示用） */
+  /* diff（保育士の修正提示用・将来の modify 強調に温存） */
   --diff-add-bg:#e6f4ea; --diff-add-word:#9ad6b0; --diff-rm-bg:#fbe9e7; --diff-rm-word:#f0bdb6;
-
-  /* コンソール（回す＝意図的に沈んだ計器面。ライト/ダーク共通で暗い） */
-  --console:#201c16; --console-2:#272218; --console-3:#2d2819;
-  --console-line:#3a352b; --console-ink:#ece4d2; --console-muted:#9b9176;
-  --console-add-bg:#15301e; --console-add-word:#2f7d52; --console-add-ink:#cfeed9;
-  --console-rm-bg:#311a18; --console-rm-ink:#f0cdc7;
 
   /* 形 */
   --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:999px;
@@ -351,88 +345,66 @@ a{color:var(--primary-d)}
 .persist-note{font-size:var(--fs-caption);color:var(--muted);flex:1 1 200px;min-width:0}
 
 /* ============================================================
-   回す ＝ コンソール調（沈んだ面・情報密度）
+   指針を育てる（改善エージェント・温かい：日誌/月案と同じ世界観）
    ============================================================ */
-.console{background:var(--console);border:1px solid var(--console-line);border-radius:var(--r-lg);
-  padding:var(--sp-4);color:var(--console-ink);box-shadow:var(--sh-md)}
-.console .console-label{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.08em;
-  text-transform:uppercase;color:var(--console-muted);margin-bottom:var(--sp-3)}
-.console .console-label .ic{width:14px;height:14px}
+/* カード内見出し */
+.card-title{display:flex;align-items:center;gap:var(--sp-2);font-family:var(--font-display);
+  font-size:var(--fs-h2);color:var(--ink);margin:0 0 var(--sp-3)}
+.card-title .ic{width:18px;height:18px;color:var(--primary)}
 
-/* パイプライン */
-.pipe{display:flex;align-items:stretch;flex-wrap:wrap}
-.pstep{flex:1 1 130px;min-width:0;background:var(--console-2);border:1px solid var(--console-line);
-  border-radius:var(--r-md);padding:11px 13px;position:relative;transition:.25s}
-.pstep + .pstep{margin-left:20px}
-.pstep + .pstep::before{content:"";position:absolute;left:-16px;top:50%;width:13px;height:2px;background:var(--console-line)}
-.pstep.on{border-color:#3f6f53;box-shadow:0 0 0 1px #3f6f53 inset}
-.pstep.pass{border-color:#356b4c}
-.pstep.fail{border-color:#7a3a33}
-.pstep .pt{font-size:11px;color:var(--console-muted);letter-spacing:.04em;margin-bottom:6px;display:flex;align-items:center;gap:6px}
-.pstep .pt .ic{width:13px;height:13px}
-.pstep .pv{font-size:var(--fs-sm);font-weight:700;color:var(--console-ink)}
+/* 指針カードのグリッド（auto-fill で自動レスポンシブ） */
+.policy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-3)}
+.policy-grid:empty::after{content:"まだ指針カードがありません。下の提案フローから育て始められます。";
+  color:var(--muted);font-size:var(--fs-sm)}
 
-/* コンソール用 状態チップ */
-.cschip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:var(--r-pill);margin-top:8px}
-.cschip .ic{width:11px;height:11px}
-.cschip.pass{background:#1c3a2a;color:#6fd29b}
-.cschip.pending{background:#3a3216;color:#e2c25f}
-.cschip.working{background:#1d3354;color:#7fb0ef}
-.cschip.idle{background:#2c2a22;color:var(--console-muted)}
-.cschip.fail{background:#3a1f1c;color:#ef9b90}
+/* 指針カード（左ライン＝対象書類で色分け） */
+.pcard{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--line-strong);
+  border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);box-shadow:var(--sh-sm)}
+.pcard.dt-diary{border-left-color:var(--actor-author)}
+.pcard.dt-monthly{border-left-color:var(--actor-prep)}
+.pcard.dt-common{border-left-color:var(--actor-caregiver)}
+.pcard-body{font-size:var(--fs-sm);color:var(--ink);line-height:1.8}
+.pcard-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:var(--sp-2)}
+.pcard-tag{font-size:11px;font-weight:700;border-radius:var(--r-pill);padding:2px 10px;
+  background:var(--surface-2);border:1px solid var(--line-strong);color:var(--ink-soft)}
+.pcard-src{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border-radius:var(--r-pill);
+  padding:2px 10px;background:color-mix(in srgb,var(--actor-caregiver) 13%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--actor-caregiver) 36%,var(--line));color:var(--actor-caregiver)}
+.pcard-src .ic{width:12px;height:12px}
+.pcard-date{font-size:var(--fs-caption);color:var(--muted);font-variant-numeric:tabular-nums;margin-left:auto}
+.pcard.is-new{animation:cardin .5s ease;border-color:color-mix(in srgb,var(--primary) 45%,var(--line))}
+@keyframes cardin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-/* コンソール内のグリッド */
-.console-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-4);margin-top:var(--sp-4)}
-.console-pane .pane-label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--console-muted);margin-bottom:8px}
-.console-empty{color:var(--console-muted);font-size:var(--fs-sm);background:var(--console-2);border:1px dashed var(--console-line);
-  border-radius:var(--r-md);padding:13px}
+/* 変更履歴 */
+.phist{display:flex;flex-direction:column;gap:2px}
+.phist:empty::after{content:"まだ更新はありません。";color:var(--muted);font-size:var(--fs-sm)}
+.phist-item{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-3);align-items:baseline;
+  padding:var(--sp-2) 0;border-bottom:1px dashed var(--line)}
+.phist-item:last-child{border-bottom:none}
+.phist-when{font-size:var(--fs-caption);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.phist-by{color:var(--actor-caregiver);font-weight:700}
+.phist-what{color:var(--ink-soft);font-size:var(--fs-sm)}
 
-/* diff */
-.diff{font-family:var(--font-mono);font-size:12px;line-height:1.7;border:1px solid var(--console-line);border-radius:var(--r-sm);overflow:hidden}
-.diff .dl{padding:3px 11px;white-space:pre-wrap;word-break:break-word;display:flex;gap:8px}
-.diff .dl .gut{color:var(--console-muted);user-select:none;flex:0 0 auto}
-.diff .dl.add{background:var(--console-add-bg);color:var(--console-add-ink)}
-.diff .dl.add .word{background:var(--console-add-word);color:#eafff1;border-radius:3px;padding:0 2px;font-weight:700}
-.diff .dl.rm{background:var(--console-rm-bg);color:var(--console-rm-ink)}
-.diff .dl.rm .txt{text-decoration:line-through;opacity:.85}
-.diff .dl.ctx{color:var(--console-muted)}
-.diff-anchor{font-size:11px;color:var(--console-muted);margin-bottom:7px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.diff-anchor .ic{width:13px;height:13px}
-.diff-anchor code{background:var(--console-3);border-radius:4px;padding:1px 6px;color:var(--console-ink)}
+/* 提案カード（前面・確認前→反映済み） */
+.ppropose{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+  padding:var(--sp-4);box-shadow:var(--sh-sm);margin:var(--sp-2) 0}
+.ppropose-head{display:flex;align-items:center;gap:7px;font-family:var(--font-display);
+  font-size:var(--fs-body);color:var(--ink);margin-bottom:var(--sp-3)}
+.ppropose-head .ic{width:17px;height:17px;color:var(--accent-d)}
+.ppropose-note{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--accent-d);margin-top:var(--sp-2)}
+.ppropose-note .ic{width:15px;height:15px;flex:0 0 auto}
 
-/* 評価ゲートのバー */
-.bars{display:flex;flex-direction:column;gap:8px;margin-top:2px}
-.bar-row{display:grid;grid-template-columns:92px 1fr 36px;align-items:center;gap:10px;font-size:11.5px;color:var(--console-ink)}
-.bar-track{position:relative;background:var(--console-3);border-radius:var(--r-pill);height:9px;overflow:visible}
-.bar-fill{height:100%;border-radius:var(--r-pill);transition:width .6s cubic-bezier(.3,.8,.3,1)}
-.bar-fill.pass{background:var(--gate-pass)}
-.bar-fill.warn{background:var(--gate-pending)}
-.bar-fill.fail{background:var(--gate-fail)}
-.bar-base{position:absolute;top:-3px;height:15px;width:2px;background:#cdbf93;border-radius:2px}
-.bar-base::after{content:"main";position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:8.5px;color:#cdbf93;white-space:nowrap}
-.bar-val{text-align:right;font-variant-numeric:tabular-nums;color:var(--console-ink)}
+/* 競合の比較相談（.ask 内で既存↔新を並べる） */
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin:var(--sp-2) 0}
+.compare-col{min-width:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.compare-head{display:flex;align-items:center;gap:6px;font-size:var(--fs-caption);font-weight:800;letter-spacing:.03em;color:var(--ink-soft)}
+.compare-head .ic{width:14px;height:14px}
+.compare-head.existing{color:var(--actor-caregiver)}
+.compare-head.proposed{color:var(--accent-d)}
 
-.gate-verdict{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-sm);font-weight:800;padding:4px 13px;border-radius:var(--r-pill);margin-top:11px}
-.gate-verdict .ic{width:14px;height:14px}
-.gate-verdict.pass{background:#1c3a2a;color:#7fe0a8;border:1px solid #356b4c}
-.gate-verdict.fail{background:#3a1f1c;color:#ef9b90;border:1px solid #7a3a33}
-.gate-verdict.none{background:#2c2a22;color:var(--console-muted);border:1px solid var(--console-line)}
-.gate-meta{font-size:11px;color:var(--console-muted);margin-top:8px;line-height:1.7}
-
-/* PR 行 */
-.pr-row{font-size:var(--fs-sm);margin:4px 0;color:var(--console-ink);display:flex;gap:6px;flex-wrap:wrap;align-items:baseline}
-.pr-row .k{color:var(--console-muted)}
-.pr-row code{background:var(--console-3);border-radius:5px;padding:1px 7px;font-size:11.5px;font-family:var(--font-mono);color:var(--console-ink)}
-.pr-row a{color:#7fb0ef}
-
-/* コンソール内の競合二択 */
-.cask{margin-top:6px}
-.cask .cq{display:flex;align-items:flex-start;gap:7px;color:#e2c25f;font-weight:700;font-size:var(--fs-sm);margin-bottom:9px}
-.cask .cq .ic{width:16px;height:16px;margin-top:2px}
-.cask-actions{display:flex;gap:8px;flex-wrap:wrap}
-.cbtn{border:1px solid var(--console-line);background:var(--console-3);color:var(--console-ink);
-  border-radius:var(--r-md);padding:8px 14px;font-family:inherit;font-size:var(--fs-sm);font-weight:700;cursor:pointer;transition:.15s}
-.cbtn:hover{border-color:#3f6f53;color:#fff}
+/* ストア揮発の正直表示 */
+.store-note{display:flex;align-items:center;gap:6px;font-size:var(--fs-caption);color:var(--muted);margin-top:var(--sp-2)}
+.store-note .ic{width:14px;height:14px;flex:0 0 auto}
 
 /* ============================================================
    パスコードゲート
@@ -463,9 +435,7 @@ a{color:var(--primary-d)}
 @media (max-width:680px){
   :root{--fs-display:22px;--fs-h1:18px}
   .brand-sub{display:none}
-  .console-grid{grid-template-columns:1fr}
-  .pstep + .pstep{margin-left:0;margin-top:18px}
-  .pstep + .pstep::before{left:50%;top:-16px;width:2px;height:13px;transform:translateX(-50%)}
+  .compare{grid-template-columns:1fr}
   .statusline{order:3;flex-basis:100%}
   /* タブを下部固定バー化（片手操作） */
   .tabs{position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);
