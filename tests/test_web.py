@@ -30,7 +30,15 @@ def test_static_ui_served() -> None:
     c = _client()
     # SPA 本体と各 ES モジュールが配信される。
     assert c.get("/app/").status_code == 200
-    for asset in ("app.js", "adk.js", "docflow.js", "improver.js", "ui.js", "styles.css"):
+    for asset in (
+        "app.js",
+        "adk.js",
+        "docflow.js",
+        "docedit.js",
+        "improver.js",
+        "ui.js",
+        "styles.css",
+    ):
         assert c.get(f"/app/{asset}").status_code == 200, asset
 
 
