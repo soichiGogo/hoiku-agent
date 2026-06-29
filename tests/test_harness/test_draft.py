@@ -14,6 +14,7 @@ from hoiku_agent.schemas import (
     DiaryEntry,
     DiaryEvaluation,
     IndividualNote,
+    LifeRecord,
     ThreeViewpoint,
 )
 
@@ -23,6 +24,7 @@ def _entry() -> DiaryEntry:
         date=date(2026, 6, 25),
         age_band=AgeBand.零から二歳,
         weather="晴れ",
+        daily_aim="安心して好きな遊びに関わる",
         attendance=[
             ChildAttendance(child_id="架空児A", present=True),
             ChildAttendance(child_id="架空児B", present=False, reason="発熱"),
@@ -31,8 +33,13 @@ def _entry() -> DiaryEntry:
         individual_notes=[
             IndividualNote(
                 child_id="架空児A",
+                age_months="1歳5か月",
                 observed_state="砂の感触を確かめた",
                 tags=[ThreeViewpoint.身近なものと関わり感性が育つ],
+                life_record=LifeRecord(
+                    meal="完食", sleep="午睡2時間", toilet="3回", mood_health="機嫌よし"
+                ),
+                individual_aim="素材に十分触れて満足感を得る",
             )
         ],
         evaluation=DiaryEvaluation(child_focus="感触に集中", self_review="道具が適切"),
@@ -42,7 +49,15 @@ def _entry() -> DiaryEntry:
 
 def test_write_draft_contains_core_sections():
     text = write_draft(_entry())
-    for marker in ["保育の実践記録", "個別の記録", "評価・反省", "保護者への連絡"]:
+    # 標準様式の章立て（基本情報→本日のねらい→主な活動→個別の記録（姿・生活）→家庭連絡→評価反省）。
+    for marker in [
+        "本日のねらい",
+        "主な活動",
+        "個別の記録",
+        "生活記録",
+        "評価・反省",
+        "家庭への連絡",
+    ]:
         assert marker in text
 
 

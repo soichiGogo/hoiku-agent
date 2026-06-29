@@ -19,7 +19,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児A\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"園庭の砂場でスコップを使った感触遊びを行った。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児A\",\n      \"observed_state\": \"スコップで砂をすくい感触を確かめるように繰り返し、笑顔が見られた\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"砂の感触に繰り返し関わり、感覚的な満足を得ていた\",\n    \"self_review\": \"スコップを十分用意でき、落ち着いて関われた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児A\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"園庭の砂場でスコップを使った感触遊びを行った。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児A\",\n      \"observed_state\": \"スコップで砂をすくい感触を確かめるように繰り返し、笑顔が見られた\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食・おやつを完食した\",\n        \"sleep\": \"午睡はぐっすり眠った\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく、視診で変化はなかった\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"砂の感触に繰り返し関わり、感覚的な満足を得ていた\",\n    \"self_review\": \"スコップを十分用意でき、落ち着いて関われた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -46,7 +46,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児B\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"保育者と一緒に絵本を見る時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児B\",\n      \"observed_state\": \"保育者の顔を見て指さしをし、声を出して気持ちを伝えようとした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"保育者とのやりとりを楽しみ、伝えたい気持ちが育っている\",\n    \"self_review\": \"ゆったり応答でき、安心して関われる雰囲気を作れた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児B\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"保育者と一緒に絵本を見る時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児B\",\n      \"observed_state\": \"保育者の顔を見て指さしをし、声を出して気持ちを伝えようとした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"ミルクをよく飲んだ\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"おむつ交換を数回行った\",\n        \"mood_health\": \"機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"保育者とのやりとりを楽しみ、伝えたい気持ちが育っている\",\n    \"self_review\": \"ゆったり応答でき、安心して関われる雰囲気を作れた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -73,7 +73,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児C\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"室内でつかまり立ちと歩行を促す環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児C\",\n      \"observed_state\": \"両手を広げてバランスを取りながら数歩歩き、保育者のところまで進もうとした\",\n      \"tags\": [\n        \"健やかに伸び伸びと育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自分から体を動かそうとする意欲が見られた\",\n    \"self_review\": \"転倒に備え、安全な動線とマットを用意できた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児C\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"室内でつかまり立ちと歩行を促す環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児C\",\n      \"observed_state\": \"両手を広げてバランスを取りながら数歩歩き、保育者のところまで進もうとした\",\n      \"tags\": [\n        \"健やかに伸び伸びと育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく、視診で変化はなかった\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自分から体を動かそうとする意欲が見られた\",\n    \"self_review\": \"転倒に備え、安全な動線とマットを用意できた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -100,7 +100,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児D\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"手づかみ食べを大切にした昼食の時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児D\",\n      \"observed_state\": \"手づかみで野菜を口に運び、自分で食べようとした\",\n      \"tags\": [\n        \"健やかに伸び伸びと育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自分で食べたい意欲を尊重でき、満足そうに食べていた\",\n    \"self_review\": \"汚れても良い環境を整え、急かさず関われた\"\n  },\n  \"parent_contact\": \"ご家庭でも手づかみ食べを見守っていただけると良い旨をお伝えしました。\"\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児D\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"手づかみ食べを大切にした昼食の時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児D\",\n      \"observed_state\": \"手づかみで野菜を口に運び、自分で食べようとした\",\n      \"tags\": [\n        \"健やかに伸び伸びと育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"手づかみで野菜などをよく食べた\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自分で食べたい意欲を尊重でき、満足そうに食べていた\",\n    \"self_review\": \"汚れても良い環境を整え、急かさず関われた\"\n  },\n  \"parent_contact\": \"ご家庭でも手づかみ食べを見守っていただけると良い旨をお伝えしました。\"\n}\n```"
               }
             ],
             "role": "model"
@@ -127,7 +127,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"雨\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児E\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"一人ひとりのリズムに合わせた午睡の環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児E\",\n      \"observed_state\": \"保育者にトントンされ、安心した表情で入眠した\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"特定の保育者との関わりで安心して眠りについていた\",\n    \"self_review\": \"静かな環境と一定の関わりで入眠を支えられた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"雨\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児E\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"一人ひとりのリズムに合わせた午睡の環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児E\",\n      \"observed_state\": \"保育者にトントンされ、安心した表情で入眠した\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"保育者に見守られ安心して入眠し、午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"特定の保育者との関わりで安心して眠りについていた\",\n    \"self_review\": \"静かな環境と一定の関わりで入眠を支えられた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -154,7 +154,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児F\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"少人数で絵本を読む時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児F\",\n      \"observed_state\": \"絵本の動物を指さし、声を出して保育者に見せようとした\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"興味のあるものを見つけ、伝えたい気持ちが芽生えていた\",\n    \"self_review\": \"子どもの発見に共感的に応答できた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児F\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"少人数で絵本を読む時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児F\",\n      \"observed_state\": \"絵本の動物を指さし、声を出して保育者に見せようとした\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく、視診で変化はなかった\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"興味のあるものを見つけ、伝えたい気持ちが芽生えていた\",\n    \"self_review\": \"子どもの発見に共感的に応答できた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -181,7 +181,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児G\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"友達と同じ空間で遊べる環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児G\",\n      \"observed_state\": \"友達のおもちゃに興味を示し、顔を見合わせて笑った\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"他児への関心が芽生え、関わろうとする姿が見られた\",\n    \"self_review\": \"取り合いにならないよう同じ玩具を複数用意できた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児G\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"友達と同じ空間で遊べる環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児G\",\n      \"observed_state\": \"友達のおもちゃに興味を示し、顔を見合わせて笑った\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"他児への関心が芽生え、関わろうとする姿が見られた\",\n    \"self_review\": \"取り合いにならないよう同じ玩具を複数用意できた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -208,7 +208,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児H\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"テラスで水遊びを行った。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児H\",\n      \"observed_state\": \"水面を手でたたき、しぶきが上がるのを繰り返し楽しんだ\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"水の感触や変化を全身で楽しんでいた\",\n    \"self_review\": \"水温と安全に配慮し、十分に楽しめる時間を確保できた\"\n  },\n  \"parent_contact\": \"水遊びを楽しまれた様子をお伝えしました。\"\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児H\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"テラスで水遊びを行った。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児H\",\n      \"observed_state\": \"水面を手でたたき、しぶきが上がるのを繰り返し楽しんだ\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"水遊び後も機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"水の感触や変化を全身で楽しんでいた\",\n    \"self_review\": \"水温と安全に配慮し、十分に楽しめる時間を確保できた\"\n  },\n  \"parent_contact\": \"水遊びを楽しまれた様子をお伝えしました。\"\n}\n```"
               }
             ],
             "role": "model"
@@ -235,7 +235,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児I\",\n      \"present\": false,\n      \"reason\": \"発熱\"\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"登園児は戸外で気持ちよく過ごした。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児I\",\n      \"observed_state\": \"本日は欠席のため観察記録なし。前回は保育者と触れ合い遊びを楽しんでいた\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"体調回復を第一に、無理のない範囲で見守る\",\n    \"self_review\": \"欠席児の家庭と連絡を取り、状況を把握できた\"\n  },\n  \"parent_contact\": \"発熱でお休みでした。お大事にとお伝えしました。\"\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児I\",\n      \"present\": false,\n      \"reason\": \"発熱\"\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"登園児は戸外で気持ちよく過ごした。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児I\",\n      \"observed_state\": \"本日は欠席のため観察記録なし。前回は保育者と触れ合い遊びを楽しんでいた\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"\",\n        \"sleep\": \"\",\n        \"toilet\": \"\",\n        \"mood_health\": \"欠席のため園での記録なし（家庭で発熱との連絡）\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"体調回復を第一に、無理のない範囲で見守る\",\n    \"self_review\": \"欠席児の家庭と連絡を取り、状況を把握できた\"\n  },\n  \"parent_contact\": \"発熱でお休みでした。お大事にとお伝えしました。\"\n}\n```"
               }
             ],
             "role": "model"
@@ -262,7 +262,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児J\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"興味を引く玩具を少し離して置き、移動を促す環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児J\",\n      \"observed_state\": \"うつ伏せから興味のある玩具に向かってずりばいで近づいた\",\n      \"tags\": [\n        \"健やかに伸び伸びと育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"目標に向かって体を動かそうとする意欲が育っている\",\n    \"self_review\": \"安全な広いスペースを確保し、見守れた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児J\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"興味を引く玩具を少し離して置き、移動を促す環境を整えた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児J\",\n      \"observed_state\": \"うつ伏せから興味のある玩具に向かってずりばいで近づいた\",\n      \"tags\": [\n        \"健やかに伸び伸びと育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく、視診で変化はなかった\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"目標に向かって体を動かそうとする意欲が育っている\",\n    \"self_review\": \"安全な広いスペースを確保し、見守れた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -289,7 +289,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児K\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"わらべうたを歌い、声のやりとりを楽しむ時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児K\",\n      \"observed_state\": \"保育者の歌に合わせて声を出し、機嫌よく過ごした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"声を出すことを楽しみ、やりとりの心地よさを感じていた\",\n    \"self_review\": \"ゆったりとした関わりで発声を引き出せた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児K\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"わらべうたを歌い、声のやりとりを楽しむ時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児K\",\n      \"observed_state\": \"保育者の歌に合わせて声を出し、機嫌よく過ごした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"声を出すことを楽しみ、やりとりの心地よさを感じていた\",\n    \"self_review\": \"ゆったりとした関わりで発声を引き出せた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -316,7 +316,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児L\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"小麦粉粘土で感触遊びを行った。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児L\",\n      \"observed_state\": \"粘土をにぎったり伸ばしたりして感触の変化を確かめた\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"素材の変化に気づき、探索的に関わっていた\",\n    \"self_review\": \"誤飲に配慮しつつ十分に探索できる時間を確保できた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児L\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"小麦粉粘土で感触遊びを行った。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児L\",\n      \"observed_state\": \"粘土をにぎったり伸ばしたりして感触の変化を確かめた\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく、視診で変化はなかった\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"素材の変化に気づき、探索的に関わっていた\",\n    \"self_review\": \"誤飲に配慮しつつ十分に探索できる時間を確保できた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -343,7 +343,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"雨\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児M\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"登園時の不安に寄り添い、安心できる関わりをもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児M\",\n      \"observed_state\": \"受け入れ時に泣いたが、保育者に抱かれて少しずつ落ち着いた\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"不安な気持ちを保育者に受け止めてもらい、安心を取り戻していた\",\n    \"self_review\": \"焦らず抱っこで受け止め、安心感を伝えられた\"\n  },\n  \"parent_contact\": \"朝は少し泣かれましたが、その後は落ち着いて過ごされました。\"\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"雨\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児M\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"登園時の不安に寄り添い、安心できる関わりをもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児M\",\n      \"observed_state\": \"受け入れ時に泣いたが、保育者に抱かれて少しずつ落ち着いた\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"受け入れ時に涙が見られたが、その後落ち着き体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"不安な気持ちを保育者に受け止めてもらい、安心を取り戻していた\",\n    \"self_review\": \"焦らず抱っこで受け止め、安心感を伝えられた\"\n  },\n  \"parent_contact\": \"朝は少し泣かれましたが、その後は落ち着いて過ごされました。\"\n}\n```"
               }
             ],
             "role": "model"
@@ -370,7 +370,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児N\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"近隣の公園へ散歩に出かけた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児N\",\n      \"observed_state\": \"落ち葉を拾い、保育者に渡そうとした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自然物への関心と、人に手渡そうとする気持ちが育っている\",\n    \"self_review\": \"発見に共感し、やりとりを丁寧に受けられた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児N\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"近隣の公園へ散歩に出かけた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児N\",\n      \"observed_state\": \"落ち葉を拾い、保育者に渡そうとした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく、視診で変化はなかった\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自然物への関心と、人に手渡そうとする気持ちが育っている\",\n    \"self_review\": \"発見に共感し、やりとりを丁寧に受けられた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -397,7 +397,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児O\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"リズム遊びの時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児O\",\n      \"observed_state\": \"音楽が流れると体を上下に揺らし、リズムに乗って楽しんだ\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"音やリズムを全身で感じ、表現する楽しさを味わっていた\",\n    \"self_review\": \"子どもが体を動かしやすい空間を整えられた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"くもり\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児O\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"リズム遊びの時間をもった。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児O\",\n      \"observed_state\": \"音楽が流れると体を上下に揺らし、リズムに乗って楽しんだ\",\n      \"tags\": [\n        \"身近なものと関わり感性が育つ\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"音やリズムを全身で感じ、表現する楽しさを味わっていた\",\n    \"self_review\": \"子どもが体を動かしやすい空間を整えられた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"
@@ -424,7 +424,7 @@
           "final_response": {
             "parts": [
               {
-                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児P\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"子どもの思いを受け止める関わりを心がけた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児P\",\n      \"observed_state\": \"玩具をめぐり首を振って自分の思いを表そうとした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ]\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自分の思いをもち、それを表現しようとする姿が見られた\",\n    \"self_review\": \"思いを否定せず受け止め、代替案を示せた\"\n  },\n  \"parent_contact\": null\n}\n```"
+                "text": "観察から0–2個別の保育日誌の下書きを作成しました。\n```json\n{\n  \"date\": \"2026-07-01\",\n  \"age_band\": \"0-2\",\n  \"weather\": \"晴れ\",\n  \"attendance\": [\n    {\n      \"child_id\": \"架空児P\",\n      \"present\": true,\n      \"reason\": null\n    }\n  ],\n  \"health_notes\": null,\n  \"practice_record\": \"子どもの思いを受け止める関わりを心がけた。\",\n  \"individual_notes\": [\n    {\n      \"child_id\": \"架空児P\",\n      \"observed_state\": \"玩具をめぐり首を振って自分の思いを表そうとした\",\n      \"tags\": [\n        \"身近な人と気持ちが通じ合う\"\n      ],\n      \"life_record\": {\n        \"meal\": \"給食を完食した\",\n        \"sleep\": \"午睡をとった\",\n        \"toilet\": \"排泄は順調だった\",\n        \"mood_health\": \"機嫌よく体調は安定していた\"\n      }\n    }\n  ],\n  \"evaluation\": {\n    \"child_focus\": \"自分の思いをもち、それを表現しようとする姿が見られた\",\n    \"self_review\": \"思いを否定せず受け止め、代替案を示せた\"\n  },\n  \"parent_contact\": null\n}\n```"
               }
             ],
             "role": "model"

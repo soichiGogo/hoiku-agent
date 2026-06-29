@@ -15,6 +15,7 @@ from hoiku_agent.schemas import (
     DiaryEvaluation,
     FiveDomains,
     IndividualNote,
+    LifeRecord,
     TenNoSugata,
     ThreeViewpoint,
 )
@@ -29,6 +30,7 @@ def _entry(
     observed_state: str = "花を見つめた",
     child_focus: str = "興味を示した",
     self_review: str = "環境構成は適切だった",
+    life_record: LifeRecord | None = None,
     individual_notes: list | None = None,
 ) -> DiaryEntry:
     if individual_notes is None:
@@ -37,6 +39,7 @@ def _entry(
                 child_id="架空児A",
                 observed_state=observed_state,
                 tags=tags if tags is not None else [ThreeViewpoint.健やかに伸び伸びと育つ],
+                life_record=life_record if life_record is not None else LifeRecord(meal="完食"),
             )
         ]
     return DiaryEntry(
@@ -95,3 +98,9 @@ def test_blank_evaluation_views_are_violations():
 
 def test_blank_observed_state_is_violation():
     assert any("子どもの姿" in p for p in validate_fields(_entry(observed_state="")))
+
+
+def test_blank_life_record_is_violation():
+    """0–2 養護の中核＝生活記録が4欄すべて空なら違反（1欄でも記入があれば型成立）。"""
+    assert any("生活記録" in p for p in validate_fields(_entry(life_record=LifeRecord())))
+    assert validate_fields(_entry(life_record=LifeRecord(sleep="午睡2時間"))) == []

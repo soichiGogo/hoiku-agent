@@ -28,7 +28,8 @@ def _plan(
     education: list | None = None,
     month: str = "2026-07",
     prev_child_state: str = "前月は砂遊びに繰り返し関わった",
-    nurturing: str = "睡眠・授乳のリズムを整え情緒の安定を図る",
+    nurturing_life: str = "睡眠・授乳のリズムを整え健康に過ごせるようにする",
+    nurturing_emotion: str = "応答的に関わり情緒の安定を図る",
     monthly_goals: str = "感触遊びを通して感覚的な満足を広げる",
     environment_support: str = "素材を複数用意し落ち着いて関われる場を作る",
     evaluation_reflection: str = "予想したねらいに対し実際の姿はおおむね沿っていた",
@@ -45,7 +46,8 @@ def _plan(
         age_band=age_band,
         child_id="架空児A",
         prev_child_state=prev_child_state,
-        nurturing=nurturing,
+        nurturing_life=nurturing_life,
+        nurturing_emotion=nurturing_emotion,
         education=education,
         monthly_goals=monthly_goals,
         environment_support=environment_support,
@@ -84,10 +86,17 @@ def test_monthly_empty_education_is_violation():
 
 def test_monthly_missing_required_fields_are_violations():
     problems = validate_monthly_fields(
-        _plan(prev_child_state="  ", nurturing="", monthly_goals="", evaluation_reflection="")
+        _plan(
+            prev_child_state="  ",
+            nurturing_life="",
+            nurturing_emotion="",
+            monthly_goals="",
+            evaluation_reflection="",
+        )
     )
     assert any("前月の子どもの姿" in p for p in problems)
-    assert any("養護" in p for p in problems)
+    # 養護2本柱（生命の保持／情緒の安定）がそれぞれ違反になる。
+    assert sum(1 for p in problems if "養護" in p) == 2
     assert any("今月のねらい" in p for p in problems)
     assert any("評価・反省" in p for p in problems)
 

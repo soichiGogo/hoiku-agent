@@ -43,15 +43,18 @@ AUTHOR_INSTRUCTION = f"""\
   {{
     "age_band": "0-2" または "3-5",
     "weather": "天候",
+    "daily_aim": "本日のねらい（養護面・教育面。任意）",
     "attendance": [{{"child_id": "架空児の仮名", "present": true, "reason": null}}],
     "health_notes": null,
-    "practice_record": "保育の実践記録（日案←週案←月案ねらいに一貫）",
-    "individual_notes": [{{"child_id": "架空児の仮名", "observed_state": "当日の子どもの姿", "tags": ["..."]}}],
+    "practice_record": "主な活動・保育者の援助（日案←週案←月案ねらいに一貫）",
+    "individual_notes": [{{"child_id": "架空児の仮名", "age_months": "1歳3か月（分かれば。任意）", "observed_state": "当日の子どもの姿", "tags": ["..."], "life_record": {{"meal": "食事・授乳・離乳食", "sleep": "午睡", "toilet": "排泄", "mood_health": "機嫌・体調・視診"}}, "individual_aim": "個人のねらい（任意）"}}],
     "evaluation": {{"child_focus": "(a)子どもに焦点", "self_review": "(b)自分の保育の適否"}},
     "parent_contact": null
   }}
 - **date（記録日）は JSON に含めない**：日付は harness が記録日で決定的に補完する（あなたは現在日付を
   知らないため、推測や雛形の記入をしない）。
+- **個別記録（individual_notes）の `life_record`（食事・睡眠・排泄・機嫌/体調）は 0–2 養護の中核**。
+  観察メモから分かる範囲で **1欄以上を必ず記入** する（4欄すべて空は不可）。不明な欄は空文字でよい。
 - tags は次の語彙から **完全一致** で選ぶ（年齢分岐の必須を満たすこと）:
 {_TAG_VOCAB}
 - 実名は書かない（架空児の仮名のみ＝§14）。
@@ -71,7 +74,8 @@ MONTHLY_AUTHOR_INSTRUCTION = f"""\
    **「記録された姿の理解 → 今月のねらい」への変換が勘所**＝あなたの核（制度に変換手順が無い）。
 3. `search_guideline`（保育所保育指針・10の姿の根拠）・`read_policy`（文書作成指針＝現場の勘所。
    例: 個人名を書かない＝架空児の仮名で表す）に必ず沿う。
-4. 養護（生命の保持・情緒の安定）と教育（ねらい・内容）を分けて書き、教育の各ねらいがどの
+4. 養護は **生命の保持（nurturing_life）／情緒の安定（nurturing_emotion）の2本柱をそれぞれ別欄**に
+   分けて書く（0–2 様式の標準）。教育（ねらい・内容）は分けて書き、教育の各ねらいがどの
    「3つの視点／5領域／10の姿」に対応するか明示タグ付けする。
 
 最終出力（重要）:
@@ -81,8 +85,10 @@ MONTHLY_AUTHOR_INSTRUCTION = f"""\
     "month": "YYYY-MM",
     "age_band": "0-2" または "3-5",
     "child_id": "架空児の仮名",
+    "age_months": "1歳3か月（分かれば。任意）",
     "prev_child_state": "前月の子どもの姿（前月集積＋その子の像から要約）",
-    "nurturing": "養護（生命の保持・情緒の安定）",
+    "nurturing_life": "養護：生命の保持（安全・健康・生理的欲求の充足）",
+    "nurturing_emotion": "養護：情緒の安定（応答的関わり・信頼関係・愛着）",
     "education": [{{"aim": "今月の教育のねらい・内容", "tags": ["..."]}}],
     "monthly_goals": "今月のねらい・内容（記録された姿→ねらいへの変換）",
     "environment_support": "環境構成・援助（配慮）",
