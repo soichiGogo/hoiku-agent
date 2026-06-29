@@ -31,8 +31,12 @@
   authoring_loop（日誌と共用）→ 確定。`build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
 - `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案を振り分ける
   決定的分岐（root_agent の実体・既定＝保育日誌＝§3）。
-- `git_ops.py` … branch/commit/`gh pr`/構造化編集の適用。**これはプロダクトが回す git 操作**で、
-  開発者自身のブランチ運用（グローバル CLAUDE.md）とは別物。混同しない。
+- `policy_store.py` … 育つ指針＝構造化カードストア（`knowledge/文書作成指針.json`）の決定的 CRUD・
+  完全重複ガード・履歴・テキスト再生（`render_to_text`）・view（`/api/policy` 用）。**指針編集の決定的実体は
+  ここに1つ**（improver/tools・read_policy はこれを呼ぶ薄いラッパ）。意味的競合の判定は LLM（improver）の
+  責務でここは持たない（安全網＝完全重複のみ）。clock を持たず日時は外部注入（§8/§9）。
+- `git_ops.py` … カードストア JSON の git 証拠 commit（`commit_policy_book`・既定 dry_run）。
+  **これはプロダクトが回す git 操作**で、開発者自身のブランチ運用（グローバル CLAUDE.md）とは別物。混同しない。
 
 ## スタブを埋めるとき
 

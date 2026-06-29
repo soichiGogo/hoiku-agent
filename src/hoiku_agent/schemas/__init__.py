@@ -14,6 +14,14 @@ from .document import (
 )
 from .domain import FiveDomains, TenNoSugata, ThreeViewpoint
 from .enums import AgeBand, Certainty, Lineage
+from .policy import (
+    PolicyBook,
+    PolicyCard,
+    PolicyChange,
+    PolicyChangeAction,
+    PolicyScope,
+    PolicyStatus,
+)
 
 __all__ = [
     # document
@@ -35,4 +43,11 @@ __all__ = [
     "FiveDomains",
     "ThreeViewpoint",
     "TenNoSugata",
+    # policy（育つ指針＝構造化カード・§8/§9）
+    "PolicyScope",
+    "PolicyStatus",
+    "PolicyChangeAction",
+    "PolicyCard",
+    "PolicyChange",
+    "PolicyBook",
 ]

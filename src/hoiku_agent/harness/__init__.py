@@ -13,7 +13,23 @@ from .finalize import (
     parse_draft_to_entry,
     parse_draft_to_plan,
 )
-from .git_ops import StructuredEdit, apply_structured_edit, list_section_bullets, open_pr
+from .git_ops import commit_policy_book
+from .policy_store import (
+    active_cards,
+    add_card,
+    book_view,
+    card_view,
+    find_card,
+    find_exact_duplicate,
+    history_view,
+    load_book,
+    next_card_id,
+    remove_card,
+    render_to_text,
+    save_book,
+    store_status,
+    supersede_card,
+)
 from .schema_check import validate_fields, validate_monthly_fields
 
 # pipeline は agents → tools を芋づる式に読み込むため最後に import する
@@ -41,8 +57,20 @@ __all__ = [
     "aggregate_by_child",
     "prev_month_digest",
     "format_digest_for_prompt",
-    "apply_structured_edit",
-    "list_section_bullets",
-    "open_pr",
-    "StructuredEdit",
+    # 育つ指針＝構造化カードストア（§8/§9）
+    "load_book",
+    "save_book",
+    "add_card",
+    "supersede_card",
+    "remove_card",
+    "render_to_text",
+    "active_cards",
+    "find_card",
+    "next_card_id",
+    "find_exact_duplicate",
+    "store_status",
+    "card_view",
+    "history_view",
+    "book_view",
+    "commit_policy_book",
 ]
