@@ -18,8 +18,9 @@
 - **harness（型の保証・決定的）**：書式・章立て・必須項目の充足・年齢分岐・順序を**決定的なコード**で保証。
 - **agents（中身の決定・agentic）**：作成AI（単一エージェント）が不足情報を自分で取りに行く（Agentic RAG）。
   **作成AI ＋ レビューAI の二軸**で、レビューがOKを出すまで巡回し最終確定は保育士（HITL）。
-- **improver（回す・二階）**：先輩の勘所・園のルール・現場の修正を**育つ「文書作成指針」**へ吸収し続ける
-  （＝「回す」の本体・`knowledge/文書作成指針.md`）。取り込みは HITL ＋ 評価ゲート経由。
+- **improver（回す・二階）**：先輩の勘所・園のルール・現場の修正を**育つ「文書作成指針」＝構造化カード**へ
+  吸収し続ける（＝「回す」の本体・`knowledge/文書作成指針.json`）。既存カードとの**意味的競合**を精査し、
+  競合は保育士に比較相談、**保育士の決定で即反映**（番人＝意味的競合精査＋保育士決定。eval は CI 専用に decouple）。
 
 詳細は `docs/設計コンテキスト.md` / `docs/architecture.md`、各層の `CLAUDE.md` を参照。
 
@@ -41,13 +42,13 @@
 src/hoiku_agent/
 ├── agent.py            … ルートエージェント（root_agent）＝doc_type 分岐ルータ（日誌/月案・既定 日誌）
 ├── config.py           … 設定（GCPプロジェクト・モデル等。.env から）
-├── harness/            … ① 型の保証（決定的）：必須欄・年齢分岐・順序・集積・doc_type分岐・git適用
+├── harness/            … ① 型の保証（決定的）：必須欄・年齢分岐・順序・集積・doc_type分岐・指針カードストア（policy_store）
 ├── agents/             … ② 中身の決定（agentic）：作成AI（日誌/月案）/ レビューAI（+ prompts.py）
-├── improver/           … ③ 回す（二階・別エントリ）：修正差分→指針更新を自走提案
+├── improver/           … ③ 回す（二階・別エントリ）：修正メモ→指針カードを提案・意味的競合を精査・保育士決定で即反映
 ├── tools/              … 4–8個のプリミティブ（記録/指針/RAG/メモリ/HITL/harness薄ラッパ）
-├── schemas/            … 書類スキーマ（日誌/月案）・年齢分岐・10の姿タグ（pydantic 集約）
-├── web/                … 層A 配布UI（保育士 SPA /app/）：ADK ネイティブ REST を直接駆動・improver は SSE 中継
-knowledge/              … 育つ文書作成指針（git）＋ 保育所保育指針（RAGソース・gitignore）
+├── schemas/            … 書類スキーマ（日誌/月案）・指針カード（policy）・年齢分岐・10の姿タグ（pydantic 集約）
+├── web/                … 層A 配布UI（保育士 SPA /app/）：日誌/月案は ADK REST 直駆動・指針を育てる（improver）は SSE 中継
+knowledge/              … 育つ文書作成指針＝構造化カード（git・文書作成指針.json）＋ 保育所保育指針（RAGソース・gitignore）
 eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）＋ test_config.json / run_gate.py
 docs/                   … 設計コンテキスト.md（開発ハンドオフ）/ architecture.md（コード対応）
 tests/                  … test_harness/（決定ロジック）/ test_e2e/（結合）/ test_eval*.py（層B）

@@ -24,7 +24,8 @@
 - **実行**：`uv run --extra eval python eval/run_gate.py`（採点して判定）／`… --update-baseline`（main を採点して
   baseline.json 更新）。いずれも要 `--extra eval` ＝ `google-adk[eval]` ＋ LLM 資格情報 /
   または `pytest tests/test_eval.py`（CI 統合・creds 無は skip）/ 判定式の単体は `tests/test_eval_gate.py`（LLM 非依存）。
-  improver の `run_eval`/`open_pr` もこのゲートを使う。
+  **このゲートは CI の品質回帰テスト専用**（prompt/モデル/指針の変更を守る）。**改善エージェント（improver）の
+  指針取り込みには関与しない**＝v1 で decouple（取り込みの番人は「意味的競合精査＋保育士の決定で即反映」＝§8）。
 
 ## IMPORTANT: PII を入れない
 
