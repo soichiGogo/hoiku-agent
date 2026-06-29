@@ -23,11 +23,12 @@
   汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。
 - `aggregate.py` … `aggregate_by_child`（Counter 版）/ `prev_month_digest`（state 用 serializable）/
   `format_digest_for_prompt`（L2 還流の人間可読テキスト）。要約生成は月案 author に委ねる（§10）。
-- `pipeline.py` … 日誌：author → review_loop → 確定/HITL の順序制御（旧 `workflow/document_pipeline.py`）。
-  APPROVED 早期終了の**判定**はここ（制御＝決定的）、レビュー内容の**生成**は reviewer。
+- `pipeline.py` … 日誌：authoring_loop（作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御
+  （旧 `workflow/document_pipeline.py`）。`build_authoring_loop` が author を巡回に包み NEEDS_REVISION で
+  再作成、APPROVED 早期終了の**判定**（ApprovalGate）はここ（制御＝決定的）、レビュー内容の**生成**は reviewer。
   `FinalizeAgent(kind=...)` で日誌/月案の確定を切替（実体は finalize.py）。
-- `monthly.py` … 月案：`MonthlyPrepAgent`（前月日誌を child_id 別集計＝L2 還流の決定的部分）→ 月案 author
-  → review_loop → 確定。`build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
+- `monthly.py` … 月案：`MonthlyPrepAgent`（前月日誌を child_id 別集計＝L2 還流の決定的部分）→ 月案 author の
+  authoring_loop（日誌と共用）→ 確定。`build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
 - `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案を振り分ける
   決定的分岐（root_agent の実体・既定＝保育日誌＝§3）。
 - `git_ops.py` … branch/commit/`gh pr`/構造化編集の適用。**これはプロダクトが回す git 操作**で、

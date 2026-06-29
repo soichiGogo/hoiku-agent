@@ -1,9 +1,13 @@
 """作成AI（中身の決定＝agentic 層・責務②）。
 
-設計コンテキスト §6：作成AI＝**単一 LlmAgent**。gather → act → verify は instruction の手順＋
-ADK の tool-use ループ（モデルがツールを呼ばなくなるまでの自然な反復）で表現する。
-**LoopAgent では包まない**（多層化回避＝§4 と整合）。不足検知 → ask_caregiver → 再起案の反復は
-この tool-calling ループ内で完結させる。収集・質問生成・起案を別エージェントに分けない。
+設計コンテキスト §6：作成AI＝**単一 LlmAgent**（内部を多層化しない）。gather → act → verify は
+instruction の手順＋ADK の tool-use ループ（モデルがツールを呼ばなくなるまでの自然な反復）で表現する。
+収集・質問生成・起案を別エージェントに分けない。
+
+巡回（レビューの差し戻しでの再作成）は harness が担う：harness/pipeline.py の `build_authoring_loop` が
+[作成 → レビュー → ApprovalGate] を1巡とする LoopAgent に**この author を包み**、NEEDS_REVISION の
+とき次巡で author が指摘点を直して再提出する（「巡回保証が要る」と判断したための設計＝旧 v0 は author を
+ループに包まなかった）。再作成時の挙動（白紙から作り直さない・同じ不足で再質問しない）は prompts.py。
 
 "型"（必須項目の充足・整形）は harness が保証するので、ここは「中身」に集中する。
 """
@@ -29,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def build_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
-    """作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。
+    """作成AI（単一 LlmAgent）を構築して返す。巡回（再作成）は harness の authoring_loop が担う（§6/§7）。
 
     Args:
         model: 使用するモデル。既定（None）は build_model()（settings.gemini_model を

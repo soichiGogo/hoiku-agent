@@ -1,6 +1,8 @@
 // 日誌/月案で共通の作成フロー（前月集計→収集→下書き→HITL→レビュー→確定→承認）。
 // 生成は ADK /run_sse を直接駆動（自前 Runner は組まない＝§9）。harness/agents は不変。
-// 役割（actor lane）・計画ステッパー・ツールバッジ・ステータスラインで「働いている実質」を可視化する。
+// 「働いている実質」は計画ステッパー＋ステータスラインで示し、作成AI/レビューAI/ツールの細かな
+// やりとりは既定で畳む（<details class="proc">）。保育士が前面で確認するのは「不足の確認（HITL）」と
+// 「最終下書き＋不足内容」だけにする（過程は経過として開けば見られる）。
 
 import * as adk from "./adk.js";
 import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner } from "./ui.js";
@@ -20,12 +22,44 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   let maxStep = -1;
   let cur = null; // 直近の actor turn（連続イベントを同じ turn にまとめる）
   let toolBadges = {}; // functionCall id → バッジ要素（response で done へ）
+  // 過程ログ（作成/レビュー/ツール/前月集計）は既定で畳む <details>。状態はステッパー＋ステータスライン。
+  let proc = null,
+    procBody = null,
+    procLabel = null,
+    procSpin = null;
 
   // ステップは前進のみ（遅れて来る収集イベント等で後退させない）。
   function toStep(idx, state) {
     if (idx < 0 || idx < maxStep) return;
     maxStep = idx;
     stepper.advanceTo(idx, state || "now");
+  }
+
+  // ステータスライン更新に合わせて、畳んだ過程ログの見出しも稼働中だけ追従させる。
+  function phase(text, state) {
+    status.setPhase(text, state);
+    if (procLabel && procSpin) procLabel.textContent = text;
+  }
+
+  // 過程ログ（畳み）を用意する。actor turn・ツールバッジ・前月集計はこの中に積む。
+  function buildProc() {
+    proc = el("details", "proc");
+    const sum = el("summary", "proc-sum");
+    procSpin = el("span", "spinner");
+    procLabel = el("span", "proc-label", "AI が作業しています…");
+    sum.append(procSpin, procLabel, el("span", "proc-hint", "経過を見る"));
+    proc.appendChild(sum);
+    procBody = el("div", "proc-body");
+    proc.appendChild(procBody);
+    area.appendChild(proc);
+  }
+  // 過程が一段落したらスピナーを止める（偽の稼働を残さない＝降格/完了を正直に示す）。
+  function procStop(text) {
+    if (procSpin) {
+      procSpin.remove();
+      procSpin = null;
+    }
+    if (procLabel) procLabel.textContent = text || "AI のやりとり（経過）";
   }
 
   // 連続する同一 actor のイベントを1枚の turn に束ねる。
@@ -36,9 +70,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     turn.innerHTML =
       `<div class="turn-lane ${who.cls}"></div>` +
       `<div class="turn-body"><div class="turn-who ${who.cls}">${iconHTML(who.icon)}${esc(who.label)}</div></div>`;
-    area.appendChild(turn);
+    procBody.appendChild(turn);
     cur = { author, body: turn.querySelector(".turn-body"), toolsRow: null };
-    turn.scrollIntoView({ behavior: "smooth", block: "nearest" });
     return cur;
   }
   function addText(author, text) {
@@ -63,16 +96,18 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     cur = null;
     toolBadges = {};
     maxStep = -1;
+    proc = procBody = procLabel = procSpin = null;
+    buildProc();
     stepperEl.classList.remove("hidden");
     stepper = makeStepper(stepperEl, steps);
     if (kind === "monthly") {
       toStep(iPrep);
-      status.setPhase("前月の積み重ねを集計しています", "working");
+      phase("前月の積み重ねを集計しています", "working");
     } else {
       stepper.set(0, "done");
       maxStep = 0;
       toStep(iColl);
-      status.setPhase("下書きを準備しています", "working");
+      phase("下書きを準備しています", "working");
     }
     button.disabled = true;
     try {
@@ -85,6 +120,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       } else {
         banner(area, "err", "エラー: " + e.message);
       }
+      procStop("中断しました");
       status.clearPhase();
     } finally {
       button.disabled = false;
@@ -111,20 +147,20 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
               const a = (it.author || "").toLowerCase();
               if (a.includes("prep")) {
                 toStep(iPrep);
-                status.setPhase("前月の積み重ねを集計しています", "working");
+                phase("前月の積み重ねを集計しています", "working");
               } else if (a.includes("review")) {
                 toStep(iReview);
-                status.setPhase("別の視点で点検しています", "working");
+                phase("別の視点で点検しています", "working");
               } else {
                 toStep(iDraft);
-                status.setPhase("下書きを作成しています", "working");
+                phase("下書きを作成しています", "working");
               }
             }
           } else if (it.kind === "call") {
             const badge = addTool(it.author, it.name);
             if (it.id) toolBadges[it.id] = badge;
             toStep(iColl);
-            status.setPhase(toolMeta(it.name).label + "…", "working");
+            phase(toolMeta(it.name).label + "…", "working");
             if (it.name === "ask_caregiver" && it.longRunning) {
               pending = { id: it.id, question: it.args.question, choices: it.args.choices, invId };
             }
@@ -137,7 +173,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     );
     if (pending) {
       stepper.advanceTo(maxStep < 0 ? 0 : maxStep, "wait");
-      status.setPhase("あなたの確認を待っています", "waiting");
+      phase("あなたの確認を待っています", "waiting");
       askCard(sessionId, pending);
       return;
     }
@@ -158,7 +194,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
         `<div class="turn-body"><div class="turn-who caregiver">${iconHTML("caregiver")}保育士（あなた）</div><div class="turn-text">${esc(answer)}</div></div>`;
       area.appendChild(turn);
       cur = null;
-      status.setPhase("回答を受けて再開しています", "working");
+      phase("回答を受けて再開しています", "working");
       await drive(
         sessionId,
         adk.functionResponseMessage(pending.id, "ask_caregiver", { answer, status: "answered" }),
@@ -195,17 +231,19 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const st = s.state || {};
     cur = null;
 
+    // 前月集計は「AI が何を踏まえたか」の経過なので畳んだログ側に入れる（前面は最終下書きだけ）。
     if (showDigest && st.prev_month_digest != null) {
       const txt =
         typeof st.prev_month_digest === "string" ? st.prev_month_digest : JSON.stringify(st.prev_month_digest, null, 2);
       const dp = renderDocPanel({ titleIcon: "chart", title: "前月の積み重ね（自動集計・L2 還流）", formatted: txt });
-      area.appendChild(dp);
+      procBody.appendChild(dp);
     }
 
     const doc = st.final_document;
     if (!doc) {
+      procStop("生成に失敗しました");
       banner(area, "err", "下書きを生成できませんでした（" + (st.finalize_parse_error || "原因不明") + "）。");
-      status.setPhase("生成に失敗しました", "waiting");
+      phase("生成に失敗しました", "waiting");
       return;
     }
 
@@ -226,8 +264,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     approveBar(sessionId, st, panel);
     area.appendChild(panel);
 
+    procStop("AI のやりとり（経過）");
     stepper.allDone();
-    status.setPhase("保育士の確定をお待ちしています", "waiting");
+    phase("保育士の確定をお待ちしています", "waiting");
   }
 
   function approveBar(sessionId, st, panel) {
@@ -254,7 +293,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
             : "承認を記録（caregiver_approved）。Memory Bank 未接続のため書き戻しは降格。",
         ),
       );
-      status.setPhase("確定・承認しました", "done");
+      phase("確定・承認しました", "done");
     };
     bar.appendChild(btn);
     if (st.awaiting_caregiver_approval) bar.appendChild(el("span", "persist-note", "保育士の確定をお待ちしています"));

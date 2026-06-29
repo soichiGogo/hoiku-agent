@@ -1,8 +1,9 @@
 """月案 作成AI（中身の決定＝agentic 層・責務②）。
 
 設計コンテキスト §3「月案は日誌の集積に乗せる」/ §6（作成AI＝単一 LlmAgent）/ §10（L2 還流）。
-日誌の作成AI（author_agent.py）と対称に、月案も**単一 LlmAgent**で構築する（LoopAgent に包まない・
-多層化しない＝§4/§6）。違いは instruction（月案スキーマ）と、前月集積（L2 還流）を読む点だけ。
+日誌の作成AI（author_agent.py）と対称に、月案も**単一 LlmAgent**で構築する（内部を多層化しない＝§4/§6。
+巡回＝再作成は harness の `build_authoring_loop` が日誌と共用で担う）。違いは instruction（月案スキーマ）と、
+前月集積（L2 還流）を読む点だけ。
 
 前段（harness の MonthlyPrepAgent）が前月日誌を child_id 別に決定的集計し、その人間可読テキストを
 直前イベントとして提示する。月案 author はそれと recall_child_history を突き合わせ「前月の子どもの姿／
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 
 
 def build_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
-    """月案 作成AI（単一 LlmAgent）を構築して返す。LoopAgent では包まない（§6）。
+    """月案 作成AI（単一 LlmAgent）を構築して返す。巡回（再作成）は harness の authoring_loop が担う（§6/§7）。
 
     Args:
         model: 使用するモデル。既定（None）は build_model()（settings.gemini_model を
