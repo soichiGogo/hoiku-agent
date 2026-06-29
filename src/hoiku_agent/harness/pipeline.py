@@ -166,6 +166,10 @@ class FinalizeAgent(BaseAgent):
 
         state_delta = {
             "final_document": result.formatted,
+            # 確定した書類を**構造化エントリ（dict）でも**残す。保育士の編集UI（web/）がこれを欄ごとの
+            # 編集フォームに描き、編集後は finalize_entry で harness の検査/整形を再実行する（§11 presentation）。
+            "final_entry": result.entry.model_dump(mode="json") if result.entry else None,
+            "final_doc_kind": self.kind,
             "validation": result.problems,
             "finalize_parse_error": result.parse_error,
             # 最終OKは人（§7）：確定下書きは出来たが、確定は保育士の承認を待つ。
