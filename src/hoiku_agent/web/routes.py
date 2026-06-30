@@ -2,7 +2,7 @@
 
 ここに置くのは「ADK ネイティブ REST では賄えない最小限」だけ：
 - `GET /api/config`  … フロントが起動時に読む（app_name・既定ユーザ・接続状況・パスコード要否）。
-- `GET /api/policy`  … 育つ指針（`knowledge/文書作成指針.md`）の現物。改善ダッシュボードの before 表示用。
+- `GET /api/policy`  … 育つ指針＝構造化カード＋変更履歴（「指針を育てる」タブの閲覧・§8/§9）。
 - `POST /api/gate`   … 簡易パスコードの検証＋cookie 発行（配布リンクのコスト/濫用対策）。
 - `POST /api/improve`… improver（二階）を SSE 駆動（実体は `improver_stream` ＝別エントリの原則を保つ）。
 
@@ -12,7 +12,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
 
@@ -22,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..config import settings
+from ..harness import policy_store
 from ..harness.finalize import finalize_entry
 from ..schemas import FiveDomains, TenNoSugata, ThreeViewpoint
 
@@ -29,7 +29,6 @@ from ..schemas import FiveDomains, TenNoSugata, ThreeViewpoint
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
 _REPO_ROOT = _WEB_DIR.parents[2]
-_GUIDELINE_PATH = _REPO_ROOT / "knowledge" / "文書作成指針.md"
 
 # ADK の app_name＝agents_dir(src) 配下のパッケージ名（GET /list-apps と一致）。
 APP_NAME = "hoiku_agent"
@@ -101,24 +100,17 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     @app.get("/api/policy")
     async def web_policy() -> dict:
-        """育つ文書作成指針の現物（improver ダッシュボードの before 表示・§9）。"""
-        if _GUIDELINE_PATH.exists():
-            return {"markdown": _GUIDELINE_PATH.read_text(encoding="utf-8")}
-        return {"markdown": "（文書作成指針は未整備）"}
+        """育つ文書作成指針＝構造化カード＋変更履歴（「指針を育てる」タブの閲覧・§8/§9）。
 
-    @app.get("/api/eval-baseline")
-    async def web_eval_baseline():
-        """committed `eval/baseline.json`（main の eval 基準）。改善ダッシュボードの常時表示用。
-
-        コンテナでは eval/ が除外され得るため不在は許容（null 返し＝降格・偽の数字を出さない）。
+        ストア未配線/壊れは {cards:[], history:[], store:"unavailable"} で降格（偽の中身を出さない）。
+        store は永続性を正直に示す（persistent / ephemeral=Cloud Run 揮発 / unavailable）。
         """
-        path = _REPO_ROOT / "eval" / "baseline.json"
-        if not path.exists():
-            return JSONResponse(None)
         try:
-            return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, ValueError):
-            return JSONResponse(None)
+            view = policy_store.book_view(policy_store.load_book())
+            view["store"] = policy_store.store_status()
+            return view
+        except Exception:  # noqa: BLE001  未配線/壊れは閲覧降格（偽の中身を出さない）
+            return {"cards": [], "history": [], "store": "unavailable"}
 
     @app.get("/api/form-meta")
     async def web_form_meta() -> dict:

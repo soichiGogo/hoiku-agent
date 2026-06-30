@@ -53,12 +53,14 @@
 2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）＝**単一 LlmAgent**（内部を
    多層化しない。巡回＝再作成は harness の `build_authoring_loop` が [作成→レビュー→ゲート] に包んで担う＝
    NEEDS_REVISION で author が指摘点を再作成）、reviewer＝Evaluator（日誌/月案共用）。巡回制御・早期終了は harness 側。
-3. **improver/（二階・回す）** — 修正差分→育つ指針の更新を自走提案。**HITL＋評価ゲート経由でのみ取り込む**
-   （保育士OK ≠ マージOK）。git は harness/git_ops 経由。
+3. **improver/（二階・回す）** — 修正メモ→育つ指針カードの追加/改訂を自走提案。**既存カードとの意味的競合を
+   精査し、競合は保育士に比較相談、保育士の決定で即反映**（add/supersede。番人＝意味的競合精査＋保育士決定）。
+   指針編集の決定的実体は harness/policy_store、git 証拠 commit は harness/git_ops。**eval は取り込みから外す**
+   （CI の品質回帰として温存＝decouple）。
 
 **メモリ3分類**: 子ども長期記憶＝Agent Engine Memory Bank（repo外）／ 育つ指針＝git
-`knowledge/文書作成指針.md`（agent は読み取り・HEAD 参照、improver が編集）／ 静的知識＝Vertex RAG
-（`knowledge/保育所保育指針/` は gitignore のRAGソース）。「全部ファイルベース」にしない。
+`knowledge/文書作成指針.json`（構造化カード・agent は読み取り＝`read_policy`、improver が保育士決定で即反映）／
+静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。「全部ファイルベース」にしない。
 
 # コード規約（このリポジトリ固有）
 
@@ -82,20 +84,22 @@
 - **実装済み（コード）**: レビュー APPROVED 早期終了（`ApprovalGate`/`is_approved`）/ 確定処理（`FinalizeAgent(kind)`＋
   `harness/finalize.py`・日誌/月案）/ **月案パス＋L2 還流**（`MonthlyPrepAgent`→`prev_month_digest`→`monthly_author`）/
   HITL（`ask_caregiver`・`awaiting_caregiver_approval`）/ Memory Bank 配線＋**真の承認ゲート**（書き戻しは
-  `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/ `git_ops`/ improver/
-  **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格）/
+  `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/
+  **育つ指針＝構造化カード（§8 v1）**（`policy_store`＝決定的 CRUD/render/完全重複ガード/履歴・`git_ops.commit_policy_book`＝証拠 commit・
+  improver は read→propose（意味的競合の申告）→ask（比較相談）→commit（保育士決定で即反映）の4ツール・eval は decouple）/
+  **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格・**CI 品質回帰専用**）/
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
   **eval ケース 16 件**（架空児のみ）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
 - **標準様式への準拠＋制度用語是正**: `write_draft`/`write_monthly_draft` をネット調査で裏取りした 0–2 個別の標準様式へ
   （養護2本柱の分離・個別の生活記録＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。3つの視点/10の姿の
   文言誤り2件を告示準拠に是正。`LifeRecord` スキーマ＋年齢分岐は validate/draft/finalize/E2E/eval16件まで同調・テスト済み（§18・§10）。
-- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/回す）。日誌/月案は ADK ネイティブ REST を
+- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/**指針を育てる**）。日誌/月案は ADK ネイティブ REST を
   フロントが直接駆動（HITL は `function_response` 再送で再開）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
   保育士が欄ごとに自由に編集**でき、保存時 `/api/finalize-edit`（harness `finalize_entry` 中継）で再検査・再整形→承認（`PATCH`
-  で `caregiver_approved`）。タグ語彙は `/api/form-meta`（schemas Enum が SSOT）。improver は `/api/improve` の SSE 中継。
-  `DEMO_PASSCODE` で LLM を回す口のみゲート。実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）／非LLM面は
-  `tests/test_web.py`。規約は `web/CLAUDE.md`。
+  で `caregiver_approved`）。タグ語彙は `/api/form-meta`（schemas Enum が SSOT）。**改善エージェント（指針を育てる＝`policy.js`）は
+  `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。
+  実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。既定モデル＝`gemini-3.5-flash`は
   Vertex の **global 専用**なので、生成モデルだけ `MODEL_LOCATION`（既定 global）に固定し、RAG/Memory は
   `GOOGLE_CLOUD_LOCATION`（regional・global 不可）のまま分離する（`models.build_model`＝§11）。eval の本採点は

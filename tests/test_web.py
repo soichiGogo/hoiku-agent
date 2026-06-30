@@ -35,7 +35,7 @@ def test_static_ui_served() -> None:
         "adk.js",
         "docflow.js",
         "docedit.js",
-        "improver.js",
+        "policy.js",
         "ui.js",
         "styles.css",
     ):
@@ -49,15 +49,18 @@ def test_root_lands_on_app() -> None:
     assert r.headers["location"] == "/app/"
 
 
-def test_policy_and_baseline_routes() -> None:
+def test_policy_route_returns_cards_and_history() -> None:
+    """/api/policy は育つ指針＝構造化カード＋変更履歴＋store を返す（閲覧・素通し）。"""
     c = _client()
-    assert c.get("/api/policy").status_code == 200
-    assert "markdown" in c.get("/api/policy").json()
-    base = c.get("/api/eval-baseline")
-    assert base.status_code == 200
-    data = base.json()
-    # repo には committed baseline があるので mean を持つ（コンテナで不在なら None 降格も許容）。
-    assert data is None or "mean" in data
+    r = c.get("/api/policy")
+    assert r.status_code == 200
+    body = r.json()
+    assert isinstance(body.get("cards"), list)
+    assert isinstance(body.get("history"), list)
+    assert body.get("store") in ("persistent", "ephemeral", "unavailable")
+    # seed（共通/月案）が読める環境ではカードが入る。カード形（doc_type/body）も確認。
+    if body["cards"]:
+        assert {"id", "body", "doc_type", "doc_label"} <= body["cards"][0].keys()
 
 
 def test_list_apps_has_root_agent() -> None:
@@ -72,6 +75,8 @@ def test_passcode_gate_blocks_cost_endpoints(monkeypatch) -> None:
     assert c.post("/api/improve", json={"diff": "x"}).status_code == 401
     assert c.get("/api/config").status_code == 200
     assert c.get("/api/config").json()["passcode_required"] is True
+    # 閲覧（指針カードの読み取り）はパスコード無でも素通し（コストが発生しない）。
+    assert c.get("/api/policy").status_code == 200
     # 正しいパスコードはゲートを開ける（中身のバリデーション 422 になり、401 にはならない）。
     opened = c.post("/run_sse", json={}, headers={"X-Demo-Passcode": "secret"})
     assert opened.status_code != 401

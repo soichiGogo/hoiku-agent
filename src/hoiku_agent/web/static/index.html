@@ -41,7 +41,7 @@
     <nav class="tabs" role="tablist" aria-label="作成する書類">
       <button class="tab is-active" data-tab="diary" role="tab" id="tabbtn-diary" aria-controls="tab-diary" aria-selected="true"><span data-ic="diary"></span><span class="tab-label">保育日誌</span></button>
       <button class="tab" data-tab="monthly" role="tab" id="tabbtn-monthly" aria-controls="tab-monthly" aria-selected="false"><span data-ic="calendar"></span><span class="tab-label">個別月案</span></button>
-      <button class="tab" data-tab="improve" role="tab" id="tabbtn-improve" aria-controls="tab-improve" aria-selected="false"><span data-ic="refresh"></span><span class="tab-label">回す（改善）</span></button>
+      <button class="tab" data-tab="policy" role="tab" id="tabbtn-policy" aria-controls="tab-policy" aria-selected="false"><span data-ic="sprout"></span><span class="tab-label">指針を育てる</span></button>
     </nav>
   </header>
 
@@ -103,43 +103,36 @@
       <div id="monthly-flow" class="flow-area"></div>
     </section>
 
-    <!-- ───────── 回す（改善エージェント） ───────── -->
-    <section id="tab-improve" class="panel" role="tabpanel" aria-labelledby="tabbtn-improve" tabindex="0">
+    <!-- ───────── 指針を育てる（改善エージェント） ───────── -->
+    <section id="tab-policy" class="panel" role="tabpanel" aria-labelledby="tabbtn-policy" tabindex="0">
       <div class="hero">
-        <h1>保育士の修正 → 育つ「文書作成指針」</h1>
-        <p>現場の直しや 👍👎 を、指針の更新提案へ。競合は二択で確認し、評価ゲート（main 比 非劣化＆must_fix 0）を通ったものだけ取り込みます。<b>これが「回す」の本体。</b></p>
+        <h1>保育士の気づき → 育つ「文書作成指針」</h1>
+        <p>現場の直しや気づきを、AI が指針カードへ整理します。既にある勘所と意味が重なるときは、該当カードを並べて相談。あなたの判断でそのまま指針に反映します。</p>
       </div>
 
+      <!-- 上：閲覧（現在の指針＋履歴） -->
       <div class="card">
-        <label class="field-label" for="improve-diff">保育士の修正差分・フィードバック</label>
-        <textarea id="improve-diff" class="memo" rows="3" placeholder="例）感触遊びは『感触語＋表情』を併記したい。ただし断定的な評価表現は避けたい。"></textarea>
+        <div class="card-title"><span data-ic="clipboard"></span>いまの指針カード</div>
+        <div id="policy-grid" class="policy-grid"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span data-ic="clock"></span>変更履歴（だれの気づきで・何が増えたか）</div>
+        <div id="policy-history" class="phist"></div>
+      </div>
+
+      <!-- 下：提案フロー -->
+      <div class="card">
+        <label class="field-label" for="policy-memo">保育士の修正メモ・気づき</label>
+        <textarea id="policy-memo" class="memo" rows="3" placeholder="例）感触遊びは『感触語＋そのときの表情』を併記したい。ただし断定的な評価表現は避けたい。"></textarea>
         <div class="samples">
           <span class="samples-label">サンプル</span>
-          <div id="improve-samples" class="chips chips-sm"></div>
+          <div id="policy-samples" class="chips chips-sm"></div>
         </div>
-        <button id="improve-run" class="btn btn-primary btn-block"><span data-ic="refresh"></span>改善を提案する</button>
+        <button id="policy-run" class="btn btn-primary btn-block"><span data-ic="sprout"></span>指針に反映する案を作る</button>
       </div>
 
-      <div class="console" id="improve-console">
-        <div class="console-label"><span data-ic="refresh"></span>回す — 提案 → 競合チェック → 評価ゲート → PR</div>
-        <div class="pipe" id="improve-pipe"></div>
-        <div class="console-grid">
-          <div class="console-pane">
-            <div class="pane-label">① 提案の差分 / ② 競合チェック</div>
-            <div id="pane-flow" class="console-empty">修正差分から、どの見出しに何を足すかを提案します。競合があれば保育士が正を選びます。</div>
-          </div>
-          <div class="console-pane">
-            <div class="pane-label">③ 評価ゲート（3軸 / main 比）</div>
-            <div id="pane-eval" class="console-empty">指針整合・10の姿・保護者向け表現の3軸で採点。main 比で非劣化かつ must_fix 0 なら緑。</div>
-          </div>
-        </div>
-        <div class="console-pane" style="margin-top:16px">
-          <div class="pane-label">④ PR（取り込み）</div>
-          <div id="pane-pr" class="console-empty">緑なら PR を起票（既定 dry_run）。採否は CI 評価ゲートが決めます。</div>
-        </div>
-      </div>
-
-      <div id="improve-log" class="flow-area"></div>
+      <div id="policy-stepper" class="stepper hidden"></div>
+      <div id="policy-flow" class="flow-area"></div>
     </section>
 
   </main>

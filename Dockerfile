@@ -17,10 +17,10 @@ RUN uv sync --frozen --no-dev
 
 # アプリ本体（入口＋実行時に読むファイル）。
 # - server.py … uvicorn の入口。
-# - knowledge/文書作成指針.md … read_policy が実行時に読む育つ指針（HEAD 参照＝§9）。
+# - knowledge/文書作成指針.json … read_policy / 改善エージェントが読む育つ指針＝構造化カードストア（§8/§9）。
 #   保育所保育指針/（RAG ソース）は gitignore 済みで実行時不要（RAG は Vertex 経由）＝含めない。
 COPY server.py ./
-COPY knowledge/文書作成指針.md ./knowledge/文書作成指針.md
+COPY knowledge/文書作成指針.json ./knowledge/文書作成指針.json
 
 # .venv の実行ファイルを優先。
 ENV PATH="/app/.venv/bin:$PATH"

@@ -2,7 +2,7 @@
 
 中核に DAG/分類器/RAG を詰め込まない。決定的ロジック（validate_fields/write_draft）の実体は
 harness/ にあり、ここはそれを呼ぶ薄いラッパ（二重実装しない＝§5）。improver 固有のツール
-（propose_policy_change/run_eval）は improver/tools.py に分離する（一階の tools/ と混ぜない）。
+（read_policy_cards/propose_policy_card/commit_policy_card）は improver/tools.py に分離する（一階の tools/ と混ぜない）。
 """
 
 # ask_caregiver の公開シンボルは LongRunningFunctionTool インスタンス（HITL＝§6）。

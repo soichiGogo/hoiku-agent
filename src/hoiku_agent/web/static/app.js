@@ -2,7 +2,7 @@
 import * as adk from "./adk.js";
 import { el, esc, iconHTML, hydrateIcons } from "./ui.js";
 import { makeDocFlow } from "./docflow.js";
-import { makeImprover } from "./improver.js";
+import { makePolicy } from "./policy.js";
 
 const CHILDREN = ["架空児A", "架空児B", "架空児C"];
 
@@ -12,7 +12,7 @@ const DIARY_SAMPLES = [
   "午前のおやつで自分でコップを持って飲もうとした。少しこぼれたが満足そう。午睡はぐっすり。",
 ];
 
-const IMPROVE_SAMPLES = [
+const POLICY_SAMPLES = [
   "感触遊びは『感触語＋そのときの表情』を併記したい。ただし断定的な評価表現は避けたい。",
   "保護者向けの一文は、できた事実だけでなく『次への意欲』が伝わる表現にしたい。",
 ];
@@ -254,17 +254,25 @@ async function main() {
     monthlyFlow.run(seed, `${month} の ${child} の個別月案を作成してください。`);
   };
 
-  // ── 回す ──
-  sampleChips($("improve-samples"), IMPROVE_SAMPLES, (s) => ($("improve-diff").value = s));
-  const improver = makeImprover({ button: $("improve-run"), log: $("improve-log"), status });
-  await improver.init();
-  $("improve-run").onclick = () => {
-    const diff = $("improve-diff").value.trim();
-    if (!diff) {
-      $("improve-diff").focus();
+  // ── 指針を育てる ──
+  sampleChips($("policy-samples"), POLICY_SAMPLES, (s) => ($("policy-memo").value = s));
+  const policy = makePolicy({
+    grid: $("policy-grid"),
+    history: $("policy-history"),
+    flow: $("policy-flow"),
+    button: $("policy-run"),
+    stepper: $("policy-stepper"),
+    status,
+  });
+  await policy.init();
+  $("policy-run").onclick = () => {
+    const memo = $("policy-memo").value.trim();
+    if (!memo) {
+      $("policy-memo").focus();
       return;
     }
-    improver.run(diff, null);
+    status.setSubject(null);
+    policy.run(memo);
   };
 }
 

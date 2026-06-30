@@ -33,8 +33,8 @@
 ## デザイン規約（刷新後・崩さない）
 
 UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質**（透明性・状態可視化・HITL・
-正直な降格・作業の可視化）を保育士語に翻訳して載せる。方針＝**ハイブリッド**：日誌/月案＝温かく・
-回す（improver）＝コンソール調を、**単一デザインシステム**で橋渡しする。
+正直な降格・作業の可視化）を保育士語に翻訳して載せる。方針＝**日誌/月案・指針を育てる（improver）を
+すべて温かく**、**単一デザインシステム**で統一する（v1 でコンソール調は撤去）。
 
 - **色は意味で割り当てる**＝`styles.css` の `:root` トークンが SSOT（面/文字/actor/状態/ゲート/diff）。
   ハードコード色を散らさない。色相を増やさず明度/彩度で差を付ける。状態チップ/ステップのテキストは
@@ -45,27 +45,28 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - **a11y**＝本文 4.5:1・タッチ 44px・`:focus-visible` 全要素・`prefers-reduced-motion`・状態は
   色だけに依存させず語＋アイコン併記・モーダルは dialog セマンティクス＋背後 inert。
 - **エージェントの可視化**＝actor lane（作成AI/レビューAI/前月の集計/保育士/改善）・計画ステッパー・
-  ツールバッジ（call→response で完了表示）・書類パネル（AI下書き→承認で公式記録）・回すはパイプライン
-  （提案→競合→評価ゲート→PR、ゲートは PR バッジ色）。**降格/非成功は偽の緑を出さない**（スピナーを止める）。
-- **過程は畳む（progressive disclosure）**＝日誌/月案では作成AI/レビューAI/finalize の散文・ツールバッジ・
-  前月集計を既定で `<details class="proc">` に収め、**前面に出すのは「不足の確認（HITL の askCard）」と
-  「最終下書き＝標準様式の編集フォーム（`docedit.js`）＋不足内容（validation）」だけ**。確定下書きは読み取り専用ではなく
-  **保育士が欄ごとに編集できる**（整形テキストはコピー・印刷用に畳んで添える）。保育士が確認・編集すべきものに集中させ、
-  進行状況はステッパー＋ステータスラインで示す（経過は開けば全部見られる＝透明性は保つ）。回す（improver）は
-  コンソール調なので畳まない。
+  ツールバッジ（call→response で完了表示）・書類パネル（AI下書き→**標準様式の編集フォームで保育士が欄ごとに編集**→承認で公式記録）。
+  **指針を育てる**は 指針カード閲覧＋変更履歴／提案カード（確認前→反映済み）→意味的競合の比較相談（`.compare` で既存↔新）→
+  保育士決定で即反映（ステッパー＝修正メモ→競合を精査→整合→反映）。**降格/非成功は偽の緑を出さない**
+  （スピナーを止める・store の永続性は `store`＝persistent/ephemeral/unavailable で正直表示）。
+- **過程は畳む（progressive disclosure）**＝日誌/月案・指針を育てる いずれも作成/レビュー/改善の散文・ツールバッジを
+  既定で `<details class="proc">` に収める。日誌/月案で前面に出すのは「不足の確認（HITL の askCard）」と
+  「最終下書き＝**標準様式の編集フォーム（`docedit.js`）**＋validation」だけ（確定下書きは読み取り専用でなく**保育士が欄ごとに編集できる**・
+  整形テキストはコピー/印刷用に畳んで添える）。指針を育てるの前面は「確認（askCard・比較相談）」と「指針カード」だけ。
+  進行はステッパー＋ステータスラインで示す（経過は開けば全部見られる＝透明性は保つ）。
 - whoOf の分岐順は `prep` を `author/monthly` より先に判定（`monthly_prep` の誤分類防止。docflow の
   ステッパー routing と一致させる）。
 
 ## 物理マッピング
 
-- `routes.py` … `register_web_ui(app)`（server.py が1回呼ぶ）。`/api/config`・`/api/policy`・
-  `/api/eval-baseline`・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
-  harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）＋パスコード middleware。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `improver_stream.py` … `/api/improve`・`/api/improve/resume`（improver を SSE 駆動・resume 用に
-  プロセス内 session 保持。スケールアウト時は共有ストアが要る＝v0 の既知の制限）。
+- `routes.py` … `register_web_ui(app)`（server.py が1回呼ぶ）。`/api/config`・`/api/policy`（**指針カード＋履歴＋store**・
+  `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
+  harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
+- `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
+  プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
 - `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント）／`docflow.js`（日誌・月案 共通フロー）／
   `docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝欄ごと入力・タグ多選択・collect()→entry）／
-  `improver.js`（回すダッシュボード）／`ui.js`・`app.js`・`styles.css`・`index.html`。
+  `policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`ui.js`・`app.js`・`styles.css`・`index.html`。
 
 ## 入口
 

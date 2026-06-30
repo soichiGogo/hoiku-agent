@@ -11,9 +11,9 @@
 | ① 型の保証（§5） | `harness/` | 必須欄・年齢分岐・順序・集積・doc_type分岐・git適用。決定ロジックの唯一実装 | 決定的 |
 | ② 中身の決定・作成AI（§6） | `agents/author_agent.py`（日誌）/ `agents/monthly_author_agent.py`（月案）＝単一 `LlmAgent`＋tools | 情報収集（Agentic RAG）・質問生成・「姿→ねらい/評価」変換・前月集積の要約 | Agentic |
 | ② レビューAI（§7） | `agents/review_agent.py`（`LlmAgent`・日誌/月案で共用） | 別視点で点検・APPROVED まで巡回（制御は harness） | Agentic |
-| ③ 改善エージェント（§8） | `improver/`（別エントリ・手動起動） | 修正差分→指針更新を自走提案・競合は保育士に二択 | Agentic |
-| 番人（最終）（§12） | `eval/`（cases/・judges/・`test_config.json`・`run_gate.py`） | 3軸 rubric で採点→main 比 非劣化＆must_fix 0 のみ取り込み | 決定的（CI） |
-| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`static/`＝`docflow.js`/`docedit.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形、improver だけ SSE 中継 | 中継・描画 |
+| ③ 改善エージェント（§8） | `improver/`（別エントリ・手動起動） | 修正メモ→指針カードの追加/改訂を自走提案・**意味的競合を精査**し保育士の決定で**即反映**（番人＝意味的競合精査＋保育士決定） | Agentic |
+| 品質回帰の番人（§12） | `eval/`（cases/・judges/・`test_config.json`・`run_gate.py`） | 3軸 rubric で採点→main 比 非劣化＆must_fix 0。**CI の品質回帰テスト専用（prompt/モデル/指針の変更を守る）。improver の取り込みには関与しない＝decouple** | 決定的（CI） |
+| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
 
 ## harness 内訳（§5 物理マッピング）
 
@@ -26,7 +26,8 @@
 | `harness/draft.py` | `write_draft` / `write_monthly_draft` | pydantic（DiaryEntry/MonthlyPlan）→ **標準様式テキスト**へ整形（ネット調査で裏取りした 0–2 個別の章立て・順序。日誌＝本日のねらい→主な活動→個別の記録（姿＋生活記録）→…、月案＝**養護2本柱（生命の保持/情緒の安定）→教育**の順）。10の姿/3つの視点/5領域タグ明示 |
 | `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `finalize_entry` / `parse_draft_to_entry` / `parse_draft_to_plan` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用）。`finalize_entry(dict)` は**編集UI用**＝保育士が編集した entry を JSON 抽出を飛ばして直接 validate/write 再実行（決定的実体は harness に1つ＝web から中継）。日誌の **date（記録日）は harness が所有する決定的メタデータ**＝`doc_date` で復元前に注入し author 出力を上書き（LLM に日付を生成させない＝雛形 echo 耐性。clock を持たず純関数を保つため現在日付の解決は `pipeline.FinalizeAgent`） |
 | `harness/aggregate.py` | `aggregate_by_child` / `prev_month_digest` / `format_digest_for_prompt` | 月⇔日の集積（child_id 別）と L2 還流の state 用 digest・人間可読テキスト。要約生成は月案 author |
-| `harness/git_ops.py` | `apply_structured_edit` / `list_section_bullets` / `open_pr` | 構造化編集の適用・競合検出入力・branch/PR（プロダクトの git 操作。open_pr 既定 dry_run） |
+| `harness/policy_store.py` | `load_book`/`save_book` / `add_card`/`supersede_card`/`remove_card` / `render_to_text` / `find_exact_duplicate` / `card_view`/`history_view`/`book_view` / `store_status` | 育つ指針＝構造化カードストア（`knowledge/文書作成指針.json`）の決定的 CRUD・完全重複ガード（安全網）・履歴・テキスト再生・API view。**指針編集の決定的実体はここに1つ**（improver/read_policy は薄いラッパ）。clock は外部注入 |
+| `harness/git_ops.py` | `commit_policy_book` | 即反映済みカード JSON の git 証拠 commit（プロダクトの git 操作。既定 dry_run・降格付き） |
 
 ## ツール（§6・4–8個のプリミティブ）
 
@@ -38,15 +39,16 @@ reviewer＝`read_policy`・`search_guideline`・`recall_child_history` のみ。
 `validate_fields`・`write_draft` の決定的実体は harness（§5）で、最終の確定 validation・整形出力は harness が末尾で実行する＝
 `write_draft` は agent tool ではない。`search_past_documents`(過去書類アーカイブ＝ローカル架空児記録ストア)は v0 では **agent に未配線**
 （継続把握は `recall_child_history` に一本化＝§9。過去書類の引用が実需になれば復活。月⇄日集積は決定的に `aggregate_by_child`）。
-improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / `run_eval`→`eval/run_gate.py`、
-`open_pr` は harness 経由）。GCP 系（RAG/Memory）は config 未設定時に安全に降格する。
+improver 固有: `improver/tools.py`（`read_policy_cards`／`propose_policy_card`＋意味的競合の申告＋完全重複ガード／
+`commit_policy_card`＝保育士決定で即反映・`policy_store` と `git_ops.commit_policy_book` を呼ぶ薄いラッパ）。
+**run_eval/open_pr は撤去**（eval は CI 専用に decouple）。GCP 系（RAG/Memory）は config 未設定時に安全に降格する。
 
 ## メモリ3分類（§9）
 
 | 対象 | 置き場 | 参照 |
 |---|---|---|
 | 子ども別 長期メモリ | Agent Engine Memory Bank（repo外） | 読み＝`recall_child_history`／書き戻し＝`persist_visit_to_memory`（pipeline の `after_agent_callback`・**保育士の明示承認＝`caregiver_approved` ＋型成立**でのみ発火＝真の承認ゲート）。配線は `--memory_service_uri=agentengine://<id>`（`config.memory_service_uri`／`server.py`）。未設定で降格 |
-| 育つ文書作成指針 | git `knowledge/文書作成指針.md` | agent は読み取り（HEAD）／improver が編集（HITL+ゲート） |
+| 育つ文書作成指針 | git `knowledge/文書作成指針.json`（構造化カード） | agent は読み取り（`read_policy`＝`render_to_text`）／improver が**保育士の決定で即反映**（add/supersede・`policy_store`） |
 | 静的ナレッジ（指針解説・10の姿） | Vertex RAG（`knowledge/保育所保育指針/` は gitignore のソース） | `search_guideline` |
 
 ## データフロー
@@ -76,7 +78,9 @@ improver 固有: `improver/tools.py`（`propose_policy_change`＋競合検出 / 
        │
        └─[after_agent_callback] persist_visit_to_memory … **保育士の明示承認（caregiver_approved）＋型成立**の
                                   ときのみ来園を子の Memory Bank へ書き戻す（真の承認ゲート＝§9/§13。未配線/未承認は降格・保留）
-出力（確定書類）＋ 保育士の修正差分 → eval（層B・run_gate＝3軸 rubric）→ improver が指針へ還元（HITL+ゲート）
+出力（確定書類）＋ 保育士の修正メモ → 改善エージェント（別エントリ）が指針カードを提案 → 意味的競合は
+                                  保育士に比較相談 → 保育士の決定で即反映（policy_store・「回した証拠」＝カード履歴）
+  ［別系統］eval（層B・run_gate＝3軸 rubric）＝CI の品質回帰テスト（prompt/モデル/指針の変更を守る・improver とは decouple）
 ```
 
 ## 実装状況（v0）と残課題
@@ -98,7 +102,7 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
 - **保育士の編集UI（標準様式の見た目）**：`FinalizeAgent` が `final_entry`（構造化）も state に出し、`docedit.js` が欄ごとの
   編集フォームに描画→ `/api/finalize-edit`（`finalize_entry` 中継）で再 validate/整形→承認（`/api/form-meta` がタグ語彙の SSOT）。
 - 出力の最終 validation／整形（`FinalizeAgent(kind)`＋`harness/finalize.py`。日誌/月案で `_finalize` を共用）。
-- `git_ops`（構造化編集の適用・競合入力・branch/PR＝既定 dry_run）、`improver`（propose＋競合検出／run_eval／open_pr）。
+- **育つ指針＝構造化カード（§8 v1）**：`policy_store`（決定的 CRUD/render/完全重複ガード/履歴）＋`git_ops.commit_policy_book`（証拠 commit・既定 dry_run）。`improver` は4ツール（`read_policy_cards`→`propose_policy_card`＝意味的競合の申告→`ask_caregiver`＝比較相談→`commit_policy_card`＝保育士決定で即反映）。eval は取り込みから decouple（CI 専用）。
 - **決定論E2E（結合テスト）**：`tests/test_e2e/`。`FakeLlm` 注入で日誌/月案パイプラインを実 ADK ランタイムに
   end-to-end で通し、連結・APPROVED 早期終了・**NEEDS_REVISION での再作成（2枚目が確定）**・巡回上限・確定3経路・
   HITL 不発火・**真の承認ゲートの書き戻し**・**L2 還流/ルータ分岐**を creds 不要・決定的に検証（品質採点は層B eval＝別系統）。起動は `/e2e` skill。
@@ -133,14 +137,15 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
 - **保育士向け配布 UI（`web/`・B-full）**：`server.py` が `register_web_ui(app)` で `get_fast_api_app` に同居させる。
   保育士 SPA＝`/app/`（`/` も着地）、dev UI＝`/dev-ui/`、自前 API＝`/api/*`。日誌/月案はフロントが ADK ネイティブ REST
   （`/run_sse`・session 作成で月案 seed・`PATCH` 承認・`function_response` で HITL 再開）を直接駆動（自前 Runner なし＝§9）。
-  improver は `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動（別エントリ維持）し、
-  「回す」全体（提案 diff→競合二択→評価ゲート3軸＋main 基準→PR）をダッシュボードに描く。LLM を回す口だけ
-  `DEMO_PASSCODE` でゲート（配布リンクのコスト/濫用対策）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
-  保育士が欄ごとに自由に編集**でき（出欠/個別記録/教育ねらいは追加削除可・タグは年齢に応じ `/api/form-meta` の Enum 語彙から
-  多選択・記録日/対象月は read-only）、保存時に `/api/finalize-edit`（harness の `finalize_entry` 中継）で再 validate/整形→
-  state へ反映、承認で公式記録にロック（型成立ゲートは編集後も有効）。**実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）**：
-  日誌 HITL 発火→`function_response` 再開→確定、月案 L2 還流、improver 提案→run_eval→open_pr(dry_run)。
-  非LLM面（配線・静的配信・コストゲート・`/` 着地・`form-meta`/`finalize-edit`）は `tests/test_web.py` で決定論検証。`web/CLAUDE.md` に規約。
+  **確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で保育士が欄ごとに自由に編集**でき（出欠/個別記録/教育ねらいは
+  追加削除可・タグは年齢に応じ `/api/form-meta` の Enum 語彙から多選択・記録日/対象月は read-only）、保存時に
+  `/api/finalize-edit`（harness の `finalize_entry` 中継）で再 validate/整形→state へ反映、承認で公式記録にロック（型成立ゲートは編集後も有効）。
+  **改善エージェント（指針を育てる）**は `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動（別エントリ維持）し、
+  `policy.js`（温かい1タブ）が「指針カード閲覧＋変更履歴／提案→意味的競合の比較相談→保育士決定で即反映」をライブに描く（`/api/policy`＝カード＋履歴＋store）。
+  LLM を回す口（`/api/improve`）だけ `DEMO_PASSCODE` でゲート（配布リンクのコスト/濫用対策）。
+  **実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）**：日誌 HITL 発火→`function_response` 再開→確定、月案 L2 還流、編集フォーム保存→再 validate。
+  **指針を育てる（即反映）の live creds スモークは未実施**（非LLM面は検証済み）。非LLM面（配線・静的配信・コストゲート・`/api/policy` 形・
+  `/` 着地・`form-meta`/`finalize-edit`）は `tests/test_web.py` で決定論検証。`web/CLAUDE.md` に規約。
 
 残課題（**外部リソース・実データ・各自 GCP 設定に依存。コードは降格付きで配線済み**＝コードだけでは閉じられない）:
 - **各自 GCP のプロビジョニング＋ env 設定**（コード・スクリプトは実機検証済み）:

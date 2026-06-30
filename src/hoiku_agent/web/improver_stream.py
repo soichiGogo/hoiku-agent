@@ -41,12 +41,12 @@ class ImproveResumeRequest(BaseModel):
 
 
 def _build_input(diff: str, feedback: str | None) -> str:
-    parts = [f"保育士の修正差分:\n{diff}"]
+    parts = [f"保育士の修正メモ:\n{diff}"]
     if feedback:
         parts.append(f"\nフィードバック(👍👎):\n{feedback}")
     parts.append(
-        "\n上記から育つ指針の更新を構造化編集で提案し、競合があれば二択を仰ぎ、run_eval の回帰チェックを"
-        "経て open_pr（dry_run）で起票してください。"
+        "\n上記から育つ指針カードの追加/改訂案を作り、既存カードと意味的に競合しないか精査してください。"
+        "競合があれば該当カードと比較相談し、保育士の決定で即反映（commit_policy_card）してください。"
     )
     return "\n".join(parts)
 
