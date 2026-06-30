@@ -86,15 +86,39 @@ class ChildAttendance(BaseModel):
     reason: str | None = None  # 欠席理由
 
 
+class LifeRecord(BaseModel):
+    """0–2 個別の生活記録（養護＝生命の保持の中核）。標準様式調査（川口市等の自治体様式）では、
+    0–2 日誌は児ごとに食事・睡眠・排泄・機嫌/体調（視診）を記録するのが標準（§10）。各欄は空可で、
+    validate_fields が「4 欄すべて空＝生活記録が未記入」を1件報告する（1欄でも記入があれば型成立）。
+    """
+
+    meal: _BlankableStr = ""  # 食事（授乳・離乳食・量）
+    sleep: _BlankableStr = ""  # 睡眠（午睡時間・寝つき）
+    toilet: _BlankableStr = ""  # 排泄
+    mood_health: _BlankableStr = ""  # 機嫌・体調・視診
+
+    def is_blank(self) -> bool:
+        """4 欄すべてが空（未記入）か。validate_fields の「生活記録が未記入」判定に使う。"""
+        return not any(v.strip() for v in (self.meal, self.sleep, self.toilet, self.mood_health))
+
+
 class IndividualNote(BaseModel):
     """個別日誌（特記事項／個人記録）。0–2 個別の本体（§10・個別日誌系統）。"""
 
     child_id: str
+    # 月齢（◯歳◯か月・任意）。0–2 は月齢で発達を見るが、架空児は生年月日が無く自動導出できないため
+    # 保育士が編集する自由記述（必須化しない・LLM が文脈/メモリから補ってもよい）。
+    age_months: _BlankableStr = ""
     observed_state: _BlankableStr = (
         ""  # 当日の観察＝子どもの姿（空は validate_fields が未記入で報告）
     )
     # タグ要件は年齢で分岐（0–2＝ThreeViewpoint / 3–5＝FiveDomains）。分岐の強制は validate_fields。
     tags: list[TenNoSugata | ThreeViewpoint | FiveDomains] = Field(default_factory=list)
+    # 0–2 養護の中核＝個別の生活記録（食事・睡眠・排泄・機嫌/体調）。validate_fields が存在を要求する。
+    life_record: LifeRecord = Field(default_factory=LifeRecord)
+    individual_aim: _BlankableStr = Field(
+        default="", description="個人のねらい（任意・個別指導計画と連動）"
+    )
 
 
 class DiaryEvaluation(BaseModel):
@@ -117,6 +141,10 @@ class DiaryEntry(BaseModel):
     weather: _BlankableStr = (
         ""  # 必須欄。空/None は validate_fields が「天候が未記入」で報告（クラッシュさせない）
     )
+    daily_aim: _BlankableStr = Field(
+        default="",
+        description="本日のねらい（養護面・教育面。日案←週案←月案と連動・任意・標準様式）",
+    )
     attendance: list[ChildAttendance]  # クラス日誌
     health_notes: str | None = None  # クラス日誌
     practice_record: _BlankableStr = Field(  # クラス日誌（←日案←週案←月案ねらいにトップダウン一貫）
@@ -136,7 +164,7 @@ class DiaryEntry(BaseModel):
 class MonthlyEducationNote(BaseModel):
     """月案「教育」のねらい・内容（年齢分岐タグ付き）。0–2＝3つの視点 / 3–5＝5領域（§10）。
 
-    養護（生命の保持・情緒の安定）は MonthlyPlan.nurturing に分離して持つ。ここは「教育」側で、
+    養護（生命の保持・情緒の安定）は MonthlyPlan.nurturing_life / nurturing_emotion に分離して持つ。ここは「教育」側で、
     年齢で枠組みが変わる（0–2＝3つの視点・3–5＝5領域・§10）ため個別記録と同型のタグ要件を課す。
     """
 
@@ -155,11 +183,17 @@ class MonthlyPlan(BaseModel):
     month: str = Field(description="対象月（YYYY-MM）")
     age_band: AgeBand
     child_id: str  # 架空児のみ（§14）。0–2 個別＝個別月案
+    # 月齢（◯歳◯か月・任意）。0–2 は月齢で発達を見るが架空児は生年月日が無く自動導出不可＝保育士編集。
+    age_months: _BlankableStr = ""
     prev_child_state: str = Field(
         description="前月の子どもの姿（前月日誌の集積＋前月評価反省に依存＝L2 還流・§10）"
     )
-    nurturing: str = Field(
-        description="養護（生命の保持・情緒の安定）。年齢に依らず必須＝§10「養護／教育」"
+    # 養護2本柱は0–2標準様式で「生命の保持」「情緒の安定」を必ず分けて持つ（§10・標準様式調査）。
+    nurturing_life: str = Field(
+        description="養護：生命の保持（安全・健康・生理的欲求の充足）。年齢に依らず必須＝§10"
+    )
+    nurturing_emotion: str = Field(
+        description="養護：情緒の安定（応答的関わり・信頼関係・愛着形成）。年齢に依らず必須＝§10"
     )
     education: list[MonthlyEducationNote] = Field(
         description="教育のねらい・内容（年齢分岐タグ必須＝0–2は3つの視点/3–5は5領域・§10）"

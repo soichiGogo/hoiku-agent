@@ -77,7 +77,8 @@ def _monthly_plan() -> dict:
         "age_band": "0-2",
         "child_id": "架空児A",
         "prev_child_state": "前月は砂遊びに繰り返し関わり感触を楽しんだ",
-        "nurturing": "情緒の安定を図り安心して過ごせるようにする",
+        "nurturing_life": "睡眠・授乳のリズムを整え健康に過ごせるようにする",
+        "nurturing_emotion": "情緒の安定を図り安心して過ごせるようにする",
         "education": [
             {"aim": "身近な素材に触れ感覚を働かせる", "tags": ["身近なものと関わり感性が育つ"]}
         ],
@@ -169,7 +170,8 @@ def test_router_defaults_to_diary_when_doc_type_unset():
             {
                 "child_id": "架空児A",
                 "observed_state": "花を見つめた",
-                "tags": ["健やかに伸び伸び育つ"],
+                "tags": ["健やかに伸び伸びと育つ"],
+                "life_record": {"meal": "完食", "sleep": "午睡2時間"},
             }
         ],
         "evaluation": {"child_focus": "興味を示した", "self_review": "環境は適切だった"},

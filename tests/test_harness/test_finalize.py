@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 from hoiku_agent.harness.finalize import (
     extract_json_block,
     finalize_document,
+    finalize_entry,
     parse_draft_to_entry,
 )
 
@@ -21,7 +23,7 @@ _VALID_JSON = """\
   "attendance": [{"child_id": "架空児A", "present": true}],
   "practice_record": "砂遊び",
   "individual_notes": [
-    {"child_id": "架空児A", "observed_state": "砂の感触を確かめた", "tags": ["身近なものと関わり感性が育つ"]}
+    {"child_id": "架空児A", "observed_state": "砂の感触を確かめた", "tags": ["身近なものと関わり感性が育つ"], "life_record": {"meal": "完食", "sleep": "午睡2時間", "toilet": "3回", "mood_health": "機嫌よし"}}
   ],
   "evaluation": {"child_focus": "集中していた", "self_review": "道具が適切"}
 }
@@ -66,7 +68,7 @@ def test_finalize_document_ok_path():
     assert result.ok is True
     assert result.parse_error is None
     assert result.problems == []
-    assert "保育の実践記録" in result.formatted
+    assert "主な活動" in result.formatted
 
 
 def test_finalize_document_reports_validation_problems():
@@ -159,3 +161,55 @@ def test_parse_draft_to_entry_injects_doc_date():
     placeholder = _VALID_JSON.replace('"date": "2026-06-25"', '"date": "YYYY-MM-DD"')
     entry = parse_draft_to_entry(_fenced(placeholder), doc_date=date(2026, 6, 27))
     assert entry.date == date(2026, 6, 27)
+
+
+# ──────────── finalize_entry：編集UI（保育士の編集フォーム）から dict を直接確定処理する（§6） ────────────
+
+
+def test_finalize_entry_diary_roundtrip_and_validates():
+    """編集後の dict を直接 finalize（検査→整形）できる。記録日は doc_date で上書きする（機械メタ）。"""
+    data = json.loads(_VALID_JSON)
+    result = finalize_entry(data, kind="diary", doc_date=date(2026, 6, 27))
+    assert result.ok is True
+    assert result.entry.date == date(2026, 6, 27)
+    assert "主な活動" in result.formatted
+
+
+def test_finalize_entry_surfaces_validation_problems():
+    """編集で生活記録を空にしたら不足を報告する（編集後も型成立ゲートが効く）。"""
+    data = json.loads(_VALID_JSON)
+    data["individual_notes"][0]["life_record"] = {
+        "meal": "",
+        "sleep": "",
+        "toilet": "",
+        "mood_health": "",
+    }
+    result = finalize_entry(data, kind="diary", doc_date=date(2026, 6, 27))
+    assert result.parse_error is None
+    assert any("生活記録" in p for p in result.problems)
+    assert not result.ok
+
+
+def test_finalize_entry_monthly():
+    """月案の編集 dict も finalize_entry(kind=monthly) で養護2本柱の様式に整形される。"""
+    plan = {
+        "month": "2026-07",
+        "age_band": "0-2",
+        "child_id": "架空児A",
+        "prev_child_state": "前月は砂遊びを楽しんだ",
+        "nurturing_life": "睡眠・授乳のリズムを整える",
+        "nurturing_emotion": "情緒の安定を図る",
+        "education": [{"aim": "感覚を働かせる", "tags": ["身近なものと関わり感性が育つ"]}],
+        "monthly_goals": "感触遊びを広げる",
+        "environment_support": "素材を用意する",
+        "evaluation_reflection": "おおむね沿っていた",
+    }
+    result = finalize_entry(plan, kind="monthly")
+    assert result.ok is True
+    assert "養護：生命の保持" in result.formatted
+
+
+def test_finalize_entry_rejects_non_dict():
+    result = finalize_entry("文字列は不可", kind="diary")  # type: ignore[arg-type]
+    assert result.parse_error is not None
+    assert not result.ok

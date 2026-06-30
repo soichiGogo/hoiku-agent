@@ -91,10 +91,15 @@
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
   **eval ケース 16 件**（架空児のみ）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
+- **標準様式への準拠＋制度用語是正**: `write_draft`/`write_monthly_draft` をネット調査で裏取りした 0–2 個別の標準様式へ
+  （養護2本柱の分離・個別の生活記録＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。3つの視点/10の姿の
+  文言誤り2件を告示準拠に是正。`LifeRecord` スキーマ＋年齢分岐は validate/draft/finalize/E2E/eval16件まで同調・テスト済み（§18・§10）。
 - **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/**指針を育てる**）。日誌/月案は ADK ネイティブ REST を
-  フロントが直接駆動（HITL は `function_response` 再送で再開・承認は `PATCH` で `caregiver_approved`）、改善エージェント
-  （指針を育てる＝`policy.js`）は `/api/improve` の SSE 中継＋`/api/policy`（カード＋履歴の閲覧）。`DEMO_PASSCODE` で LLM を回す口のみゲート。実機検証済み（creds 有・gemini-2.5-pro＋
-  Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
+  フロントが直接駆動（HITL は `function_response` 再送で再開）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
+  保育士が欄ごとに自由に編集**でき、保存時 `/api/finalize-edit`（harness `finalize_entry` 中継）で再検査・再整形→承認（`PATCH`
+  で `caregiver_approved`）。タグ語彙は `/api/form-meta`（schemas Enum が SSOT）。**改善エージェント（指針を育てる＝`policy.js`）は
+  `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。
+  実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。既定モデル＝`gemini-3.5-flash`は
   Vertex の **global 専用**なので、生成モデルだけ `MODEL_LOCATION`（既定 global）に固定し、RAG/Memory は
   `GOOGLE_CLOUD_LOCATION`（regional・global 不可）のまま分離する（`models.build_model`＝§11）。eval の本採点は
@@ -103,8 +108,8 @@
 - **残課題（コードだけでは閉じられない＝外部依存）**: ① 各自 GCP のプロビジョニング＋env 設定（RAG corpus＝`RAG_CORPUS` /
   Memory Bank＝`AGENT_ENGINE_ID`。スクリプトは実機検証済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化
   （GCP の WIF 設定＋リポジトリ変数。未設定なら job は skip。**baseline 保存・比較はコード実装済み**＝committed
-  `eval/baseline.json`・WIF 有効化で nightly が初回採点して埋める）/ ③ 実様式入手による様式確定（§18）/ ④ 現場の修正差分による
-  eval ケースの質的拡充（PII 非コミットを守る）。詳細は architecture.md。
+  `eval/baseline.json`・WIF 有効化で nightly が初回採点して埋める）/ ③ 特定園の実様式による微調整（§18・標準様式準拠まではコード到達済み・
+  残るは欄差のヒアリング確定）/ ④ 現場の修正差分による eval ケースの質的拡充（PII 非コミットを守る）。詳細は architecture.md。
 - 新たにスタブを足すときは**場当たりで埋めない**（`docs/設計コンテキスト.md` の該当節＋既存レイヤに沿う）。
   決定的ロジックの実体は harness/eval に1つ・tools は薄いラッパ（§5）を崩さない。
 

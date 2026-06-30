@@ -37,6 +37,24 @@ export async function getPolicy() {
   }
 }
 
+// 編集フォームのタグ選択肢（schemas Enum が SSOT）。一度読んだらキャッシュする。
+let _formMeta = null;
+export async function getFormMeta() {
+  if (_formMeta) return _formMeta;
+  _formMeta = await (await fetch("/api/form-meta")).json();
+  return _formMeta;
+}
+// 保育士の編集後 entry を harness で再検査・再整形する（決定的ロジックは harness 側）。
+export async function finalizeEdit(kind, entry, docDate) {
+  const r = await fetch("/api/finalize-edit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, entry, doc_date: docDate || null }),
+  });
+  if (!r.ok) throw new Error("再チェックに失敗 (" + r.status + ")");
+  return await r.json(); // { formatted, problems, parse_error, ok }
+}
+
 export async function createSession(state) {
   const r = await fetch(`/apps/${app()}/users/${uid()}/sessions`, {
     method: "POST",
@@ -57,7 +75,9 @@ export async function patchState(sessionId, stateDelta) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ state_delta: stateDelta }),
   });
-  return r.ok;
+  // 他のセッション系ヘルパと同様、失敗は throw する（握りつぶして偽の成功＝偽の緑を出さない）。
+  if (!r.ok) throw new Error("状態の保存に失敗 (" + r.status + ")");
+  return true;
 }
 
 // 汎用 SSE POST：data: 行ごとに onItem(parsedJson) を呼ぶ。401 は PasscodeError。

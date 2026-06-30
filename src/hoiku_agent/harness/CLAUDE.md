@@ -17,10 +17,11 @@
 
 - `schema_check.py` … `validate_fields`（日誌）/ `validate_monthly_fields`（月案）：必須欄＋年齢分岐
   （0–2＝3つの視点 / 3–5＝5領域）。分岐の実体は `_required_tag_type` に1つ（日誌・月案で共用）。
-- `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）：pydantic → 様式整形。確定出力は
-  pipeline 末尾で実行。
+- `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）：pydantic → **標準様式テキスト**へ整形
+  （ネット調査で裏取りした 0–2 個別の章立て・順序＝養護2本柱/生活記録/養護→教育）。確定出力は pipeline 末尾で実行。
 - `finalize.py` … `finalize_document`（日誌）/ `finalize_monthly_document`（月案）：復元→検査→整形。
-  汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。
+  汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。`finalize_entry(dict)` は
+  編集UI用＝編集後 entry を直接 validate/write 再実行（web から中継・実体はここに1つ）。
 - `aggregate.py` … `aggregate_by_child`（Counter 版）/ `prev_month_digest`（state 用 serializable）/
   `format_digest_for_prompt`（L2 還流の人間可読テキスト）。要約生成は月案 author に委ねる（§10）。
 - `pipeline.py` … 日誌：authoring_loop（作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御
