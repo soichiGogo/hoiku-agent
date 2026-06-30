@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -21,6 +22,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..config import settings
+from ..harness.finalize import finalize_entry
+from ..schemas import FiveDomains, TenNoSugata, ThreeViewpoint
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
@@ -40,6 +43,17 @@ _GATED_PREFIX = ("/api/improve",)
 
 class GateRequest(BaseModel):
     passcode: str
+
+
+class FinalizeEditRequest(BaseModel):
+    """保育士の編集フォームから来る再確定リクエスト（編集UI・§11 presentation）。
+
+    生成・採点ロジックは持たず、harness の finalize_entry を中継するだけ（決定的実体は harness に1つ＝§5）。
+    """
+
+    kind: str = "diary"  # "diary" / "monthly"
+    entry: dict  # 編集後の DiaryEntry / MonthlyPlan 相当の dict
+    doc_date: str | None = None  # 記録日（日誌・ISO 文字列。機械メタなので harness が上書き）
 
 
 def _is_authed(request: Request) -> bool:
@@ -105,6 +119,37 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return JSONResponse(json.loads(path.read_text(encoding="utf-8")))
         except (OSError, ValueError):
             return JSONResponse(None)
+
+    @app.get("/api/form-meta")
+    async def web_form_meta() -> dict:
+        """編集フォームのタグ選択肢（年齢枠組みの語彙）。schemas の Enum が SSOT（JS で二重定義しない）。"""
+        return {
+            "three_viewpoint": [e.value for e in ThreeViewpoint],
+            "five_domains": [e.value for e in FiveDomains],
+            "ten_no_sugata": [e.value for e in TenNoSugata],
+        }
+
+    @app.post("/api/finalize-edit")
+    async def web_finalize_edit(req: FinalizeEditRequest) -> dict:
+        """保育士が編集した書類エントリを harness で**再検査・再整形**する（編集UIの保存・§5/§11）。
+
+        決定的ロジックは持ち込まず harness の finalize_entry を中継するだけ。state は書かず（フロントが
+        ADK の PATCH で final_entry/final_document/validation を更新する）、結果だけ返す。LLM 非課金なので
+        パスコード非ゲート。
+        """
+        doc_date: date | None = None
+        if req.doc_date:
+            try:
+                doc_date = date.fromisoformat(req.doc_date)
+            except ValueError:
+                doc_date = None
+        result = finalize_entry(req.entry, kind=req.kind, doc_date=doc_date)
+        return {
+            "formatted": result.formatted,
+            "problems": result.problems,
+            "parse_error": result.parse_error,
+            "ok": result.ok,
+        }
 
     @app.post("/api/gate")
     async def web_gate(req: GateRequest):

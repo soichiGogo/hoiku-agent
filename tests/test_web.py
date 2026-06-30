@@ -30,7 +30,15 @@ def test_static_ui_served() -> None:
     c = _client()
     # SPA 本体と各 ES モジュールが配信される。
     assert c.get("/app/").status_code == 200
-    for asset in ("app.js", "adk.js", "docflow.js", "improver.js", "ui.js", "styles.css"):
+    for asset in (
+        "app.js",
+        "adk.js",
+        "docflow.js",
+        "docedit.js",
+        "improver.js",
+        "ui.js",
+        "styles.css",
+    ):
         assert c.get(f"/app/{asset}").status_code == 200, asset
 
 
@@ -75,3 +83,70 @@ def test_no_passcode_means_open(monkeypatch) -> None:
     assert c.get("/api/config").json()["passcode_required"] is False
     # ゲート無効時は /run_sse がミドルウェアで 401 にはならない（バリデーション 422）。
     assert c.post("/run_sse", json={}).status_code != 401
+
+
+# ──────────────────── 編集UI backend（form-meta / finalize-edit・harness 中継） ────────────────────
+
+
+def _edit_diary_entry() -> dict:
+    """編集フォームが送る DiaryEntry 相当の dict（型を通す good 例）。"""
+    return {
+        "date": "2026-06-25",
+        "age_band": "0-2",
+        "weather": "晴れ",
+        "daily_aim": "安心して好きな遊びに関わる",
+        "attendance": [{"child_id": "架空児A", "present": True, "reason": None}],
+        "health_notes": None,
+        "practice_record": "園庭で砂遊びを行った。",
+        "individual_notes": [
+            {
+                "child_id": "架空児A",
+                "observed_state": "砂の感触を確かめた",
+                "tags": ["身近なものと関わり感性が育つ"],
+                "life_record": {"meal": "完食", "sleep": "午睡2時間"},
+            }
+        ],
+        "evaluation": {"child_focus": "感触に集中", "self_review": "道具が適切"},
+        "parent_contact": None,
+    }
+
+
+def test_form_meta_exposes_enum_vocab() -> None:
+    """タグ選択肢は schemas の Enum が SSOT（告示準拠の正しい文言を含む）。"""
+    body = _client().get("/api/form-meta").json()
+    assert "健やかに伸び伸びと育つ" in body["three_viewpoint"]  # 告示準拠（「と」入り）
+    assert body["five_domains"] == ["健康", "人間関係", "環境", "言葉", "表現"]
+    assert "数量や図形、標識や文字などへの関心・感覚" in body["ten_no_sugata"]
+
+
+def test_finalize_edit_diary_revalidates_and_formats() -> None:
+    """編集後の dict を harness で再検査・再整形して返す（標準様式の見出し・型成立）。"""
+    r = _client().post("/api/finalize-edit", json={"kind": "diary", "entry": _edit_diary_entry()})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["problems"] == []
+    assert "主な活動" in body["formatted"] and "個別の記録" in body["formatted"]
+
+
+def test_finalize_edit_surfaces_validation_after_edit() -> None:
+    """編集で生活記録を空にしたら不足を返す（編集後も型成立ゲートが効く）。"""
+    entry = _edit_diary_entry()
+    entry["individual_notes"][0]["life_record"] = {
+        "meal": "",
+        "sleep": "",
+        "toilet": "",
+        "mood_health": "",
+    }
+    body = _client().post("/api/finalize-edit", json={"kind": "diary", "entry": entry}).json()
+    assert body["ok"] is False
+    assert any("生活記録" in p for p in body["problems"])
+
+
+def test_finalize_edit_not_passcode_gated(monkeypatch) -> None:
+    """編集の再確定は LLM 非課金なのでパスコードでゲートしない（読み取り同様素通し）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert c.get("/api/form-meta").status_code == 200
+    r = c.post("/api/finalize-edit", json={"kind": "diary", "entry": _edit_diary_entry()})
+    assert r.status_code == 200 and r.json()["ok"] is True

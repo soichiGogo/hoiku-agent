@@ -96,6 +96,13 @@ def _valid_entry() -> dict:
                 "child_id": "架空児A",
                 "observed_state": "スコップで砂をすくい、感触を確かめるように繰り返した。",
                 "tags": ["身近なものと関わり感性が育つ"],  # ThreeViewpoint
+                # 0–2 養護の中核＝生活記録（1欄以上記入で型成立）
+                "life_record": {
+                    "meal": "完食",
+                    "sleep": "午睡2時間",
+                    "toilet": "排尿3回",
+                    "mood_health": "機嫌よく過ごす",
+                },
             }
         ],
         "evaluation": {

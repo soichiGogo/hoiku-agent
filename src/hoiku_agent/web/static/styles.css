@@ -351,6 +351,66 @@ a{color:var(--primary-d)}
 .persist-note{font-size:var(--fs-caption);color:var(--muted);flex:1 1 200px;min-width:0}
 
 /* ============================================================
+   編集フォーム（確定書類を保育士が標準様式の見た目で自由に編集）
+   ============================================================ */
+.docedit .docp-body{padding:0}
+.de-body{display:flex;flex-direction:column}
+.de-sec{border-top:1px solid var(--line);padding:12px 16px}
+.de-sec:first-child{border-top:none}
+.de-sec-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:var(--fs-caption);font-weight:800;
+  letter-spacing:.04em;color:var(--ink);margin-bottom:8px}
+.de-sec-b{display:flex;flex-direction:column;gap:10px}
+.de-hint{font-size:11px;font-weight:600;color:var(--muted)}
+
+.de-field{display:flex;flex-direction:column;gap:4px}
+.de-lab{font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.02em}
+.de-input{width:100%;border:1.5px solid var(--line-strong);border-radius:var(--r-sm);padding:8px 11px;
+  font-family:inherit;font-size:var(--fs-sm);line-height:1.7;color:var(--ink);background:var(--surface);resize:vertical}
+.de-input::placeholder{color:color-mix(in srgb,var(--muted) 70%,transparent)}
+.de-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+select.de-input{appearance:auto;min-height:38px}
+.de-ro{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--muted);
+  background:var(--surface-2);border:1px dashed var(--line-strong);border-radius:var(--r-sm);padding:7px 11px}
+.de-ro .ic{width:13px;height:13px}
+
+.de-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.de-grid-4{grid-template-columns:repeat(2,1fr)}
+
+.de-list{display:flex;flex-direction:column;gap:10px}
+.de-item{position:relative;border:1px solid var(--line);border-radius:var(--r-md);padding:11px 12px;background:var(--surface-2)}
+.de-rm{position:absolute;top:7px;right:7px;width:28px;height:28px;display:grid;place-items:center;border:none;
+  background:transparent;color:var(--muted);cursor:pointer;border-radius:var(--r-sm)}
+.de-rm:hover{color:var(--state-fail);background:var(--state-fail-soft)}
+.de-rm .ic{width:17px;height:17px}
+.de-add{display:inline-flex;align-items:center;gap:6px;align-self:flex-start;border:1px dashed var(--line-strong);
+  background:var(--surface);color:var(--primary-d);border-radius:var(--r-pill);padding:6px 14px;font-family:inherit;
+  font-size:var(--fs-sm);font-weight:700;cursor:pointer;min-height:38px}
+.de-add:hover{border-color:var(--primary);background:var(--primary-soft)}
+.de-add .ic{width:14px;height:14px}
+.de-note{display:flex;flex-direction:column;gap:9px;padding-right:26px}
+.de-sub{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:var(--actor-prep);letter-spacing:.03em;margin-top:2px}
+.de-sub .ic{width:13px;height:13px}
+
+.de-tags{display:flex;flex-direction:column;gap:8px}
+.de-taggroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.de-taglabel{font-size:10.5px;font-weight:700;color:var(--muted);margin-right:2px;flex:0 0 auto}
+.de-tag{border:1.5px solid var(--line-strong);background:var(--surface);color:var(--ink-soft);
+  border-radius:var(--r-pill);padding:5px 11px;font-family:inherit;font-size:12px;cursor:pointer;transition:.15s}
+.de-tag:hover{border-color:var(--actor-prep)}
+.de-tag.on{background:color-mix(in srgb,var(--actor-prep) 14%,var(--surface));border-color:var(--actor-prep);
+  color:var(--actor-prep);font-weight:700}
+.de-tag[disabled],.de-input:disabled,.de-add[disabled],.de-rm[disabled]{opacity:.6;cursor:default}
+
+.de-body > .validation{margin:11px 16px 4px}
+.de-body > .approve-bar{margin:0 16px 14px}
+.de-body > .de-preview{margin:0 16px 12px}
+.de-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:var(--fs-sm);line-height:1.85;margin:0;color:var(--ink)}
+
+@media (max-width:680px){
+  .de-grid,.de-grid-4{grid-template-columns:1fr}
+}
+
+/* ============================================================
    回す ＝ コンソール調（沈んだ面・情報密度）
    ============================================================ */
 .console{background:var(--console);border:1px solid var(--console-line);border-radius:var(--r-lg);

@@ -70,6 +70,13 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
             problems.append(
                 f"child_id={note.child_id}: {entry.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
+        # 0–2 養護の中核＝個別の生活記録（食事・睡眠・排泄・機嫌/体調）。4 欄すべて空なら未記入扱い
+        # （1欄でも記入があれば型成立。標準様式調査＝§10）。
+        if note.life_record.is_blank():
+            problems.append(
+                f"child_id={note.child_id}: 生活記録（食事・睡眠・排泄・機嫌/体調）が未記入"
+                "（0–2 養護の中核＝§10）"
+            )
 
     return problems
 
@@ -94,8 +101,10 @@ def validate_monthly_fields(plan: MonthlyPlan) -> list[str]:
         problems.append("対象月（month）が未記入")
     if not plan.prev_child_state.strip():
         problems.append("前月の子どもの姿が未記入（L2 還流の入力＝§10）")
-    if not plan.nurturing.strip():
-        problems.append("養護（生命の保持・情緒の安定）が未記入（§10「養護／教育」）")
+    if not plan.nurturing_life.strip():
+        problems.append("養護：生命の保持が未記入（0–2 は養護2本柱を分ける＝§10）")
+    if not plan.nurturing_emotion.strip():
+        problems.append("養護：情緒の安定が未記入（0–2 は養護2本柱を分ける＝§10）")
     if not plan.monthly_goals.strip():
         problems.append("今月のねらい・内容が未記入（§10）")
     if not plan.environment_support.strip():

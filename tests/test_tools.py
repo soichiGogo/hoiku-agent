@@ -65,7 +65,7 @@ _VALID_DRAFT_JSON = """\
   "attendance": [{"child_id": "架空児A", "present": true}],
   "practice_record": "砂遊び",
   "individual_notes": [
-    {"child_id": "架空児A", "observed_state": "砂の感触を確かめた", "tags": ["身近なものと関わり感性が育つ"]}
+    {"child_id": "架空児A", "observed_state": "砂の感触を確かめた", "tags": ["身近なものと関わり感性が育つ"], "life_record": {"meal": "完食", "sleep": "午睡2時間"}}
   ],
   "evaluation": {"child_focus": "集中していた", "self_review": "道具が適切"}
 }

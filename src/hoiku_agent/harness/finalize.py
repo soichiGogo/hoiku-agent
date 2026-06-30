@@ -211,3 +211,47 @@ def finalize_monthly_document(text: str, template_ref: str | None = None) -> Fin
         write=write_monthly_draft,
         template_ref=template_ref,
     )
+
+
+def finalize_entry(
+    data: dict,
+    *,
+    kind: str = "diary",
+    doc_date: date | None = None,
+    template_ref: str | None = None,
+) -> FinalizedDocument:
+    """構造化エントリ（保育士が編集フォームで直した dict）を確定処理（検査→整形）する（編集UI用・§6）。
+
+    finalize_document / finalize_monthly_document が author のテキスト（```json フェンス）から復元するのに対し、
+    こちらは編集後の entry dict を直接受け、harness の validate_* / write_* を**再実行**する。決定的ロジックの
+    実体は harness に1つ（§5）＝web の編集UIからはこれを中継するだけで、検査・整形を再実装しない。
+
+    日誌の記録日（date）は harness 所有の機械メタ（§5）。doc_date が与えられればここで上書きしてから検証する
+    （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案の型・検査・整形を切替。
+
+    Args:
+        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan の JSON 相当の dict）。
+        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）。
+        doc_date: 記録日（日誌のみ・与えられれば上書き）。
+        template_ref: 様式参照（あれば write_* に渡す）。
+
+    Returns:
+        FinalizedDocument（entry / problems / formatted / parse_error）。
+    """
+    if not isinstance(data, dict):
+        return FinalizedDocument(parse_error="編集エントリが JSON オブジェクトでない")
+    if kind == "monthly":
+        model_cls: type[BaseModel] = MonthlyPlan
+        validate, write, label = validate_monthly_fields, write_monthly_draft, "MonthlyPlan"
+    else:
+        model_cls = DiaryEntry
+        validate, write, label = validate_fields, write_draft, "DiaryEntry"
+        if doc_date is not None:
+            data = {**data, "date": doc_date.isoformat()}
+    try:
+        entry = model_cls.model_validate(data)
+    except ValidationError as e:
+        return FinalizedDocument(parse_error=f"{label} のスキーマ検証に失敗: {e}")
+    problems = validate(entry)  # type: ignore[arg-type]
+    formatted = write(entry, template_ref=template_ref)  # type: ignore[arg-type]
+    return FinalizedDocument(entry=entry, problems=problems, formatted=formatted)

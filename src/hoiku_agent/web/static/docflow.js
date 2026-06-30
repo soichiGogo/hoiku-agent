@@ -6,6 +6,7 @@
 
 import * as adk from "./adk.js";
 import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner } from "./ui.js";
+import { renderEditableDoc } from "./docedit.js";
 
 const DOC_META = {
   diary: { title: "保育日誌", icon: "diary" },
@@ -240,64 +241,149 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     }
 
     const doc = st.final_document;
-    if (!doc) {
+    const entry = st.final_entry;
+    if (!doc || !entry) {
+      // parse 失敗等＝構造化エントリが無い。編集フォームは出せないので正直に失敗表示（偽の緑を出さない）。
       procStop("生成に失敗しました");
       banner(area, "err", "下書きを生成できませんでした（" + (st.finalize_parse_error || "原因不明") + "）。");
       phase("生成に失敗しました", "waiting");
       return;
     }
 
-    const meta = DOC_META[kind] || DOC_META.diary;
-    const panel = renderDocPanel({
-      titleIcon: meta.icon,
-      title: meta.title,
-      labelHTML: `<span class="label-draft">${iconHTML("ask")}AI下書き（確認前）</span>`,
-      formatted: doc,
-    });
+    // 標準様式の見た目の「編集フォーム」で前面に出す（保育士が自由に直せる＝要望の核）。
+    let formMeta = {};
+    try {
+      formMeta = await adk.getFormMeta();
+    } catch {
+      /* タグ語彙の取得に失敗しても編集自体は可能（既存タグはそのまま保持） */
+    }
+    const docKind = st.final_doc_kind || kind;
+    const editor = renderEditableDoc({ kind: docKind, entry, formMeta });
 
-    const val = st.validation || [];
-    const v = el("div", "validation " + (val.length ? "ng" : "ok"));
-    v.innerHTML = val.length
-      ? `${iconHTML("alert")}必須項目の不足: ${esc(val.join(" / "))}`
-      : `${iconHTML("check")}必須項目を満たしています`;
-    panel._body.appendChild(v);
-    approveBar(sessionId, st, panel);
-    area.appendChild(panel);
+    const v = el("div", "validation");
+    setValidation(v, st.validation || []);
+    editor.panel._body.appendChild(v);
+
+    const preview = renderPreview(doc); // 整形テキスト（コピー・印刷用）は畳んで添える
+    editor.panel._body.appendChild(preview);
+
+    editBar(sessionId, st, editor, v, preview, docKind);
+    area.appendChild(editor.panel);
 
     procStop("AI のやりとり（経過）");
     stepper.allDone();
-    phase("保育士の確定をお待ちしています", "waiting");
+    phase("保育士の確認・編集をお待ちしています", "waiting");
   }
 
-  function approveBar(sessionId, st, panel) {
+  // validation チップの中身を（保存後も）更新する。
+  function setValidation(node, problems) {
+    node.className = "validation " + (problems.length ? "ng" : "ok");
+    node.innerHTML = problems.length
+      ? `${iconHTML("alert")}必須項目の不足: ${esc(problems.join(" / "))}`
+      : `${iconHTML("check")}必須項目を満たしています`;
+  }
+
+  // 整形テキスト（write_draft の出力）をコピー・印刷用に畳んで添える。
+  function renderPreview(formatted) {
+    const d = el("details", "proc de-preview");
+    const sum = el("summary", "proc-sum");
+    sum.innerHTML = `<span class="proc-label">整形テキスト（コピー・印刷用）</span><span class="proc-hint">開く</span>`;
+    const body = el("div", "proc-body");
+    const pre = el("pre", "de-pre");
+    pre.textContent = formatted;
+    body.appendChild(pre);
+    d.append(sum, body);
+    d._pre = pre;
+    return d;
+  }
+
+  // 確定・承認後に編集を凍結し「公式記録」表示にする。
+  function lockEditor(panel) {
+    panel.querySelectorAll("input, textarea, select, .de-tag, .de-add, .de-rm").forEach((n) => {
+      n.setAttribute("disabled", "");
+      n.classList.add("locked");
+    });
+    const lbl = panel.querySelector(".label-draft");
+    if (lbl) {
+      lbl.className = "label-final";
+      lbl.innerHTML = `${iconHTML("check")}公式記録`;
+    }
+  }
+
+  // 編集バー：保存して再チェック（harness で再 validate/整形）＋ 確定・承認（真の承認ゲート）。
+  function editBar(sessionId, st, editor, vNode, preview, docKind) {
     const bar = el("div", "approve-bar");
     const mem = adk.config().memory_connected;
-    const btn = el("button", "btn btn-approve", `${iconHTML("check")}この内容で確定・承認する`);
-    btn.type = "button";
-    btn.onclick = async () => {
-      btn.disabled = true;
-      await adk.patchState(sessionId, { caregiver_approved: true });
-      const lbl = panel.querySelector(".label-draft");
-      if (lbl) {
-        lbl.className = "label-final";
-        lbl.innerHTML = `${iconHTML("check")}公式記録`;
+    const note = el("span", "persist-note", "編集して「保存して再チェック」または「確定・承認」を押せます");
+
+    // 編集後 entry を harness で再検査・再整形し、結果を state へ反映する（型成立ゲートを編集後も効かせる）。
+    async function save() {
+      const entry = editor.collect();
+      const res = await adk.finalizeEdit(docKind, entry, entry.date || null);
+      if (res.parse_error) {
+        // 構造化に失敗（通常の編集フォームでは到達しないが、偽の緑を出さず正直に失敗を出す）。
+        vNode.className = "validation ng";
+        vNode.innerHTML = `${iconHTML("alert")}保存できませんでした: ${esc(res.parse_error)}`;
+        throw new Error(res.parse_error);
       }
-      clear(bar);
-      bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
-      bar.appendChild(
-        el(
-          "span",
-          "persist-note",
-          mem
-            ? "承認を記録（caregiver_approved）。来園の Memory Bank 書き戻しは確定パイプラインの承認ゲートで発火します。"
-            : "承認を記録（caregiver_approved）。Memory Bank 未接続のため書き戻しは降格。",
-        ),
-      );
-      phase("確定・承認しました", "done");
+      const problems = res.problems || [];
+      // 先に state へ反映する（patchState は失敗時 throw＝UI を緑にしない）。型成立ゲートは編集後の値で評価される。
+      await adk.patchState(sessionId, {
+        final_entry: entry,
+        final_document: res.formatted,
+        validation: problems,
+      });
+      setValidation(vNode, problems);
+      if (preview._pre && res.formatted) preview._pre.textContent = res.formatted;
+      return res;
+    }
+
+    const saveBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("check")}保存して再チェック`);
+    saveBtn.type = "button";
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      try {
+        const res = await save();
+        note.textContent = res.ok
+          ? "保存しました（必須項目OK）。よければ「確定・承認」へ。"
+          : "保存しました。必須項目に不足があります（確定はできますが、確認をおすすめします）。";
+      } catch (e) {
+        banner(area, "err", "再チェックに失敗: " + e.message);
+      } finally {
+        saveBtn.disabled = false;
+      }
     };
-    bar.appendChild(btn);
-    if (st.awaiting_caregiver_approval) bar.appendChild(el("span", "persist-note", "保育士の確定をお待ちしています"));
-    panel._body.appendChild(bar);
+
+    const approveBtn = el("button", "btn btn-approve", `${iconHTML("check")}この内容で確定・承認する`);
+    approveBtn.type = "button";
+    approveBtn.onclick = async () => {
+      approveBtn.disabled = true;
+      saveBtn.disabled = true;
+      try {
+        await save(); // 直前の編集を必ず保存・再検査してから承認する
+        await adk.patchState(sessionId, { caregiver_approved: true });
+        lockEditor(editor.panel);
+        clear(bar);
+        bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
+        bar.appendChild(
+          el(
+            "span",
+            "persist-note",
+            mem
+              ? "承認を記録（caregiver_approved）。来園の Memory Bank 書き戻しは確定パイプラインの承認ゲートで発火します。"
+              : "承認を記録（caregiver_approved）。Memory Bank 未接続のため書き戻しは降格。",
+          ),
+        );
+        phase("確定・承認しました", "done");
+      } catch (e) {
+        approveBtn.disabled = false;
+        saveBtn.disabled = false;
+        banner(area, "err", "確定に失敗: " + e.message);
+      }
+    };
+
+    bar.append(saveBtn, approveBtn, note);
+    editor.panel._body.appendChild(bar);
   }
 
   return { run };
