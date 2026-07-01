@@ -1,8 +1,13 @@
 """eval ケース集合の健全性テスト（LLM 非依存・§12/§14）。
 
-設計コンテキスト §12：評価セットは 15–30 ケース（数より質）。§14：架空児のみ・実名禁止。
+設計コンテキスト §12：評価セットは 15–30 ケース（数より質）。§14：架空の子のみ・実名禁止。
 ここでは「ケースが ADK evalset として整形されている／参照ドラフトが harness の型を通る／件数が下限以上／
 実名を埋め込んでいない」を決定的に検査する（採点の品質は層B eval＝要 LLM とは別）。
+
+§14 の PII ガードレール：eval ケースの子どもは**実在しない仮名の固定ロスター**（下の名前＋ちゃん/くん）で
+表す。「架空児A」のような記号名でなく現場の日誌に近い書き方にしつつ、child_id を下の `_FICTIONAL_ROSTER`
+allowlist に限定することで、実名の混入を機械的に落とす（ロスター外＝必ず fail＝実名/未知名を弾く）。
+新しい架空の子を eval に足すときは、実在し得ない仮名をこのロスターに追加してから使う。
 """
 
 from __future__ import annotations
@@ -17,6 +22,29 @@ from hoiku_agent.harness.finalize import parse_draft_to_entry
 
 _CASES_DIR = Path(__file__).resolve().parents[1] / "eval" / "cases"
 _EVALSETS = sorted(_CASES_DIR.glob("*.evalset.json"))
+
+# §14 allowlist：eval ケース／月案 seed で使ってよい架空の子（実在しない仮名）の固定ロスター。
+# ここに無い child_id は実名/未知名の疑いとして test_cases_use_only_fictional_children が落とす。
+_FICTIONAL_ROSTER: frozenset[str] = frozenset(
+    {
+        "はるとくん",
+        "ゆいちゃん",
+        "そうたくん",
+        "めいちゃん",
+        "りくくん",
+        "こはるちゃん",
+        "あおいちゃん",
+        "ゆうまくん",
+        "さくらちゃん",
+        "れんくん",
+        "ももかちゃん",
+        "かえでちゃん",
+        "みおちゃん",
+        "そうすけくん",
+        "ひなたちゃん",
+        "いっとくん",
+    }
+)
 
 
 def _all_cases() -> list[tuple[str, dict]]:
@@ -52,11 +80,14 @@ def test_reference_draft_passes_type_check(eval_id: str, case: dict):
 
 @pytest.mark.parametrize("eval_id,case", _all_cases(), ids=[c[0] for c in _all_cases()])
 def test_cases_use_only_fictional_children(eval_id: str, case: dict):
-    """§14：架空児のみ（child_id が「架空児…」で表される＝実名を埋め込まない）。"""
+    """§14：架空の子のみ（全 child_id が実在しない仮名の固定ロスター＝実名を埋め込まない）。"""
     text = case["conversation"][0]["final_response"]["parts"][0]["text"]
     entry = parse_draft_to_entry(text)
     child_ids = [a.child_id for a in entry.attendance] + [
         n.child_id for n in entry.individual_notes
     ]
     for cid in child_ids:
-        assert cid.startswith("架空児"), f"{eval_id}: 架空児以外の child_id={cid}"
+        assert cid in _FICTIONAL_ROSTER, (
+            f"{eval_id}: ロスター外の child_id={cid}（実名/未知名の疑い＝§14）。"
+            "架空の子なら実在しない仮名を _FICTIONAL_ROSTER に追加してから使う"
+        )

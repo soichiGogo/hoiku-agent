@@ -35,7 +35,7 @@
 - lint: `ruff check .` / `ruff format .`（line-length=100, target=py311。`.` 指定は .py のみ整形）
 - 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
 - 月案（doc_type=月案・L2 還流）は前月日誌を seed して回す専用入口 `uv run python scripts/run_monthly.py
-  --child-id 架空児A --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
+  --child-id はるとくん --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
 - 配信（層A）: `Dockerfile`＝`uvicorn server:app`（Cloud Run・scale-to-zero）。デプロイ＝
   `.github/workflows/deploy.yml`（WIF）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
 - 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
@@ -89,7 +89,7 @@
   improver は read→propose（意味的競合の申告）→ask（比較相談）→commit（保育士決定で即反映）の4ツール・eval は decouple）/
   **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格・**CI 品質回帰専用**）/
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
-  **eval ケース 16 件**（架空児のみ）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
+  **eval ケース 16 件**（実在しない仮名ロスターのみ・現場に即した内容）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
 - **標準様式への準拠＋制度用語是正**: `write_draft`/`write_monthly_draft` をネット調査で裏取りした 0–2 個別の標準様式へ
   （養護2本柱の分離・個別の生活記録＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。3つの視点/10の姿の
@@ -118,7 +118,9 @@
 - **実データ（個人情報を含みうる保育書類・園データ）は絶対にコミットしない**。`data/`・`samples/private/`・
   `knowledge/保育所保育指針/*` は gitignore 済み。新たな実データ置き場は先に gitignore する。
 - `.env`・サービスアカウント鍵（`*-key.json` 等）はコミットしない（gitignore 済み）。
-- **生成書類・eval ケースに子ども・保護者の実名を書かない**（仮名・属性で表す＝架空児のみ）。
+- **生成書類・eval ケースに子ども・保護者の実名を書かない**（仮名・属性で表す＝架空の子のみ）。
+  eval seed／月案 seed の子どもは現場の日誌に寄せた**実在しない仮名の固定ロスター**（下の名前＋ちゃん/くん）を使い、
+  `tests/test_eval_cases.py` の allowlist で機械的に担保する（記号名「架空児A」には戻さない）。
 - 補足: CLAUDE.md は強制でなく文脈。PII 非コミットを確実化するなら `PreToolUse` hook が本筋（将来 `.claude/` で）。
 
 # ブランチ・コミット・PR

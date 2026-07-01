@@ -134,7 +134,9 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   据え置き）で、nightly/手動の main eval-gate がこれを実行しコミットバックする（`eval-gate.yml`・`contents: write`）。
   **live 採点で実値シード済み（main mean≈0.95・must_fix 0）**。load/write/降格・file 優先順位は
   `tests/test_eval_gate.py` で LLM 非依存に検証。
-- **eval ケース**：`eval/cases/diary_0_2.evalset.json` を 16 件（架空児のみ・現場の多様な状況）に拡充。
+- **eval ケース**：`eval/cases/diary_0_2.evalset.json` を 16 件（実在しない仮名ロスターのみ・現場の多様な状況）に拡充。
+  子どもは現場の日誌に寄せた仮名（下の名前＋ちゃん/くん）＋月齢・数量化した生活記録・具体的な姿で、`tests/test_eval_cases.py`
+  の `_FICTIONAL_ROSTER` allowlist が実名/未知名の混入を機械的に落とす（§14）。
   件数≥15・参照ドラフトが型を通る・実名なしを `tests/test_eval_cases.py` で決定論検査。
 - **配信（層A）**：`Dockerfile`＋`.dockerignore`（`uvicorn server:app`・scale-to-zero。指針ファイル＋`eval/baseline.json` のみ同梱）、
   `.github/workflows/deploy.yml`（WIF で `gcloud run deploy --source .`）、`.github/workflows/eval-gate.yml`
@@ -172,7 +174,7 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   標準様式**（章立て・順序・養護2本柱・生活記録・制度用語）に準拠済み。残るのは特定園の欄差（午睡ブレスチェック間隔欄の
   型化要否・家庭連携/食育/健康の分割粒度・0歳=3つの視点 vs 旧式 0歳5領域など）をヒアリングで確定する微調整のみ＝
   **現場依存で、コードだけでは閉じられない**（標準様式準拠まではコードで到達済み）。
-- **現場の修正差分による eval ケースの質的拡充**（§12）：v0 は架空児 16 件。現場の👍👎・修正差分で「リアルな失敗」を
+- **現場の修正差分による eval ケースの質的拡充**（§12）：v0 は実在しない仮名ロスター 16 件。現場の👍👎・修正差分で「リアルな失敗」を
   足すのは現場との運用依存（PII 非コミットを守りつつ＝§14）。
 - **rubric 文面の echo 安定化**（§12）：ADK は judge の echo テキストで rubric を照合するため、長い軸 rubric
   （axis_guideline_alignment）は judge の言い換えで照合漏れし一部ケースでその軸が欠落する（mustfix は不影響・
