@@ -70,7 +70,7 @@ adk run src/hoiku_agent      # CLI 対話（日誌＝既定 doc_type）
 adk web src                  # ブラウザ UI（agents dir = src/。root で叩くと dropdown に出ない）
 
 # 月案（L2 還流・前月日誌を seed して回す専用入口）
-uv run python scripts/run_monthly.py --child-id 架空児A --month 2026-07
+uv run python scripts/run_monthly.py --child-id はるとくん --month 2026-07
 
 # 本番入口（Cloud Run と同じ）／配信
 uvicorn server:app           # get_fast_api_app。AGENT_ENGINE_ID 未設定は InMemory 降格
