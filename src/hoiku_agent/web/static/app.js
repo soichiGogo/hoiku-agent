@@ -121,20 +121,13 @@ function setupTheme() {
    ステータスライン（ambient：モデル・対象児・進行・降格）
    ============================================================ */
 let slEls = {};
-function buildStatusline(cfg) {
+function buildStatusline() {
   const sl = $("statusline");
   sl.innerHTML = "";
-  const model = el("span", "sl-item", `<span class="dotc" style="background:var(--state-done)"></span><b>${esc(cfg.model || "Gemini")}</b>`);
   const subject = el("span", "sl-item hidden");
   const phase = el("span", "sl-item hidden");
-  sl.append(model, subject, phase, el("span", "sl-sep"));
-  connPart(sl, "指針RAG", cfg.rag_connected, "未接続");
-  connPart(sl, "メモリ", cfg.memory_connected, "未接続・確認を厚めに");
-  slEls = { dot: model.querySelector(".dotc"), subject, phase };
-}
-function connPart(sl, label, ok, deg) {
-  if (ok) sl.append(el("span", "sl-item", `<span class="dotc" style="background:var(--state-done)"></span>${esc(label)}`));
-  else sl.append(el("span", "chip-deg", `${iconHTML("alert")}${esc(label + " " + deg)}`));
+  sl.append(subject, phase);
+  slEls = { dot: null, subject, phase };
 }
 const status = {
   setSubject(name) {
@@ -252,7 +245,7 @@ async function main() {
     $("statusline").textContent = "設定の読込に失敗";
     return;
   }
-  buildStatusline(cfg);
+  buildStatusline();
   setupGate(cfg);
 
   // ── 日誌 ──
