@@ -99,7 +99,7 @@
   保育士が欄ごとに自由に編集**でき、保存時 `/api/finalize-edit`（harness `finalize_entry` 中継）で再検査・再整形→承認（`PATCH`
   で `caregiver_approved`）。タグ語彙は `/api/form-meta`（schemas Enum が SSOT）。**現場でそのまま綴じる最終形＝園の帳票PDF**は
   「帳票PDFをダウンロード」→ `/api/export-pdf`（`web/chohyo_pdf.py`＝ReportLab で A4 罫線帳票・日誌/月案・欄順は標準様式に一致・
-  **描画のみ／型の保証は harness**・日本語は IPAex ゴシック `web/fonts/ipaexg.ttf` を埋め込み＝閲覧側フォント非依存・純 pip で Dockerfile 不変・非ゲート）。
+  **末尾に確認印欄（担任/主任/園長）**・**描画のみ／型の保証は harness**・日本語は IPAex ゴシック `web/fonts/ipaexg.ttf` を埋め込み＝閲覧側フォント非依存・純 pip で Dockerfile 不変・非ゲート）。
   **改善エージェント（指針を育てる＝`policy.js`）は
   `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。
   実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
