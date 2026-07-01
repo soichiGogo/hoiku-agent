@@ -398,6 +398,8 @@ select.de-input{appearance:auto;min-height:38px}
 .de-body > .validation{margin:11px 16px 4px}
 .de-body > .approve-bar{margin:0 16px 14px}
 .de-body > .de-preview{margin:0 16px 12px}
+.doc-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.de-body > .doc-actions{margin:0 16px 12px}
 .de-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:var(--fs-sm);line-height:1.85;margin:0;color:var(--ink)}
 
 @media (max-width:680px){
