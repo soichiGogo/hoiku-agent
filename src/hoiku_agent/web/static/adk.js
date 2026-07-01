@@ -55,6 +55,29 @@ export async function finalizeEdit(kind, entry, docDate) {
   return await r.json(); // { formatted, problems, parse_error, ok }
 }
 
+// 確定 entry を園の帳票PDFに描いて受け取る（現場でそのまま綴じる最終形）。{ blob, filename } を返す。
+export async function exportPdf(kind, entry) {
+  const r = await fetch("/api/export-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, entry }),
+  });
+  if (!r.ok) throw new Error("帳票PDFの生成に失敗 (" + r.status + ")");
+  const blob = await r.blob();
+  // Content-Disposition の filename*（RFC5987・UTF-8）からダウンロード名を取り出す。
+  let filename = kind === "monthly" ? "月案.pdf" : "保育日誌.pdf";
+  const cd = r.headers.get("content-disposition") || "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (m) {
+    try {
+      filename = decodeURIComponent(m[1]);
+    } catch {
+      /* 壊れていれば既定名で保存する */
+    }
+  }
+  return { blob, filename };
+}
+
 export async function createSession(state) {
   const r = await fetch(`/apps/${app()}/users/${uid()}/sessions`, {
     method: "POST",

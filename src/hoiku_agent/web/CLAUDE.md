@@ -27,7 +27,11 @@
 - **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`）だけを
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
-  外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
+  **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
+  （帳票PDF のサーバ生成＝`chohyo_pdf.py` はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
+  日本語フォントは `web/fonts/ipaexg.ttf` を**同梱**して埋め込む＝実行時に外部取得しない＝ローカル完結は保つ。）
+- **帳票PDF（現場でそのまま綴じる最終形＝§18）は presentation**：確定 entry を園の様式に近い罫線帳票へ描くだけ
+  （型の保証・validation は harness＝§5・ここは描画のみ）。欄順は `write_draft`/`write_monthly_draft`（標準様式）と一致させる。
 - **実名を出さない**（架空の子のみ＝§14）。対象児・サンプル投入は現場の日誌に寄せた**実在しない仮名**
   （下の名前＋ちゃん/くん・`app.js` の `CHILDREN`）と仮メモのみ（記号名「架空児A」には戻さない）。
 
@@ -62,12 +66,16 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 
 - `routes.py` … `register_web_ui(app)`（server.py が1回呼ぶ）。`/api/config`・`/api/policy`（**指針カード＋履歴＋store**・
   `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
-  harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
+  harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
+  `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・A4 罫線帳票・日誌/月案）。
+  日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
-- `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント）／`docflow.js`（日誌・月案 共通フロー）／
-  `docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝欄ごと入力・タグ多選択・collect()→entry）／
-  `policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`ui.js`・`app.js`・`styles.css`・`index.html`。
+- `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得）／`docflow.js`（日誌・月案 共通フロー・
+  確定エリアに「帳票PDFをダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
+  欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`ui.js`・`app.js`・`styles.css`・`index.html`。
+- `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
 
 ## 入口
 

@@ -267,6 +267,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const preview = renderPreview(doc); // 整形テキスト（コピー・印刷用）は畳んで添える
     editor.panel._body.appendChild(preview);
 
+    pdfDownloadRow(editor, docKind); // 園の帳票PDF（現場でそのまま綴じる最終形）は承認後も残す
     editBar(sessionId, st, editor, v, preview, docKind);
     area.appendChild(editor.panel);
 
@@ -281,6 +282,38 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     node.innerHTML = problems.length
       ? `${iconHTML("alert")}必須項目の不足: ${esc(problems.join(" / "))}`
       : `${iconHTML("check")}必須項目を満たしています`;
+  }
+
+  // 園の帳票PDF（現場でそのまま綴じる最終形）をダウンロードする永続アクション行。
+  // editBar は承認時に clear されるため、ここは別行にして下書き段でも承認後でも押せるようにする。
+  function pdfDownloadRow(editor, docKind) {
+    const row = el("div", "doc-actions");
+    const btn = el("button", "btn btn-ghost btn-sm", `${iconHTML("download")}帳票PDFをダウンロード`);
+    btn.type = "button";
+    btn.title = "園の様式（帳票）の PDF を保存します";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const orig = btn.innerHTML;
+      btn.innerHTML = `<span class="spinner"></span>PDFを作成中…`;
+      try {
+        const { blob, filename } = await adk.exportPdf(docKind, editor.collect());
+        const url = URL.createObjectURL(blob);
+        const a = el("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (e) {
+        banner(area, "err", "帳票PDFの作成に失敗: " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }
+    };
+    row.appendChild(btn);
+    editor.panel._body.appendChild(row);
   }
 
   // 整形テキスト（write_draft の出力）をコピー・印刷用に畳んで添える。

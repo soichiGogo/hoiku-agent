@@ -14,8 +14,9 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -24,6 +25,7 @@ from ..config import settings
 from ..harness import policy_store
 from ..harness.finalize import finalize_entry
 from ..schemas import FiveDomains, TenNoSugata, ThreeViewpoint
+from .chohyo_pdf import render_pdf
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
@@ -53,6 +55,26 @@ class FinalizeEditRequest(BaseModel):
     kind: str = "diary"  # "diary" / "monthly"
     entry: dict  # 編集後の DiaryEntry / MonthlyPlan 相当の dict
     doc_date: str | None = None  # 記録日（日誌・ISO 文字列。機械メタなので harness が上書き）
+
+
+class ExportPdfRequest(BaseModel):
+    """帳票PDF 出力リクエスト（現場でそのまま綴じる最終形・§11/§18 presentation）。
+
+    現在の（編集後の）確定 entry を園の様式に近い帳票PDFへ描くだけ。描画は web/chohyo_pdf に1つ、
+    型検査はしない（型の保証は harness の責務＝§5）。LLM 非課金なのでパスコード非ゲート。
+    """
+
+    kind: str = "diary"  # "diary" / "monthly"
+    entry: dict  # 帳票に描く DiaryEntry / MonthlyPlan 相当の dict
+
+
+def _pdf_filename(kind: str, entry: dict) -> str:
+    """帳票PDF のダウンロード名（日本語。RFC5987 で Content-Disposition に載せる）。"""
+    if kind == "monthly":
+        stem = f"月案_{entry.get('month') or ''}_{entry.get('child_id') or ''}".rstrip("_")
+    else:
+        stem = f"保育日誌_{entry.get('date') or ''}".rstrip("_")
+    return f"{stem or '書類'}.pdf"
 
 
 def _is_authed(request: Request) -> bool:
@@ -142,6 +164,25 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "parse_error": result.parse_error,
             "ok": result.ok,
         }
+
+    @app.post("/api/export-pdf")
+    async def web_export_pdf(req: ExportPdfRequest):
+        """確定 entry を園の帳票PDFに描いて返す（現場でそのまま綴じる最終形・§11/§18）。
+
+        描画のみ（型の保証は harness）。kind/entry 不正は 400（握りつぶさず可視化）。LLM 非課金で非ゲート。
+        """
+        try:
+            pdf = render_pdf(req.kind, req.entry)
+        except ValueError as e:
+            return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
+        filename = _pdf_filename(req.kind, req.entry)
+        # ASCII フォールバック＋RFC5987（UTF-8）で日本語ファイル名を両載せする。
+        disposition = f"attachment; filename=\"document.pdf\"; filename*=UTF-8''{quote(filename)}"
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": disposition},
+        )
 
     @app.post("/api/gate")
     async def web_gate(req: GateRequest):

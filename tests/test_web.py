@@ -155,3 +155,64 @@ def test_finalize_edit_not_passcode_gated(monkeypatch) -> None:
     assert c.get("/api/form-meta").status_code == 200
     r = c.post("/api/finalize-edit", json={"kind": "diary", "entry": _edit_diary_entry()})
     assert r.status_code == 200 and r.json()["ok"] is True
+
+
+# ──────────────────── 帳票PDF 出力（/api/export-pdf・現場でそのまま綴じる最終形） ────────────────────
+
+
+def _edit_monthly_entry() -> dict:
+    """月案の編集フォーム相当 dict（帳票PDF 描画の入力）。"""
+    return {
+        "month": "2026-07",
+        "age_band": "0-2",
+        "child_id": "架空児A",
+        "age_months": "1歳3か月",
+        "prev_child_state": "前月は感触遊びに集中していた",
+        "nurturing_life": "安全と生理的欲求の充足",
+        "nurturing_emotion": "応答的関わりで安心を支える",
+        "education": [{"aim": "素材に親しむ", "tags": ["身近なものと関わり感性が育つ"]}],
+        "monthly_goals": "夏の遊びを楽しむ",
+        "environment_support": "水遊びの環境を整える",
+        "events_family_food": None,
+        "evaluation_reflection": "翌月へつなげる",
+    }
+
+
+def _assert_is_pdf(r) -> None:
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:4] == b"%PDF"
+    # 日本語ファイル名を RFC5987 で載せる（ダウンロード名が化けない）。
+    assert "filename*=UTF-8''" in r.headers.get("content-disposition", "")
+
+
+def test_export_pdf_diary_returns_pdf() -> None:
+    r = _client().post("/api/export-pdf", json={"kind": "diary", "entry": _edit_diary_entry()})
+    _assert_is_pdf(r)
+
+
+def test_export_pdf_monthly_returns_pdf() -> None:
+    r = _client().post("/api/export-pdf", json={"kind": "monthly", "entry": _edit_monthly_entry()})
+    _assert_is_pdf(r)
+
+
+def test_export_pdf_sparse_entry_still_renders() -> None:
+    """空欄多めの entry でも帳票は出る（型検査はしない＝描画のみ・型の保証は harness）。"""
+    r = _client().post(
+        "/api/export-pdf",
+        json={"kind": "diary", "entry": {"age_band": "0-2", "individual_notes": [{}]}},
+    )
+    _assert_is_pdf(r)
+
+
+def test_export_pdf_invalid_kind_400() -> None:
+    r = _client().post("/api/export-pdf", json={"kind": "weekly", "entry": _edit_diary_entry()})
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_request"
+
+
+def test_export_pdf_not_passcode_gated(monkeypatch) -> None:
+    """帳票PDF 出力は LLM 非課金なのでパスコードでゲートしない（読み取り同様素通し）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    r = _client().post("/api/export-pdf", json={"kind": "diary", "entry": _edit_diary_entry()})
+    _assert_is_pdf(r)

@@ -13,7 +13,7 @@
 | ② レビューAI（§7） | `agents/review_agent.py`（`LlmAgent`・日誌/月案で共用） | 別視点で点検・APPROVED まで巡回（制御は harness） | Agentic |
 | ③ 改善エージェント（§8） | `improver/`（別エントリ・手動起動） | 修正メモ→指針カードの追加/改訂を自走提案・**意味的競合を精査**し保育士の決定で**即反映**（番人＝意味的競合精査＋保育士決定） | Agentic |
 | 品質回帰の番人（§12） | `eval/`（cases/・judges/・`test_config.json`・`run_gate.py`） | 3軸 rubric で採点→main 比 非劣化＆must_fix 0。**CI の品質回帰テスト専用（prompt/モデル/指針の変更を守る）。improver の取り込みには関与しない＝decouple** | 決定的（CI） |
-| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
+| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`chohyo_pdf.py`・`fonts/`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。**現場でそのまま綴じる最終形＝園の帳票PDF**は `/api/export-pdf`（`chohyo_pdf.py`＝ReportLab・IPAex 埋め込み・描画のみ）。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
 
 ## harness 内訳（§5 物理マッピング）
 
@@ -148,6 +148,10 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   **確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で保育士が欄ごとに自由に編集**でき（出欠/個別記録/教育ねらいは
   追加削除可・タグは年齢に応じ `/api/form-meta` の Enum 語彙から多選択・記録日/対象月は read-only）、保存時に
   `/api/finalize-edit`（harness の `finalize_entry` 中継）で再 validate/整形→state へ反映、承認で公式記録にロック（型成立ゲートは編集後も有効）。
+  **現場でそのまま綴じる最終形＝園の帳票PDF**：確定/編集後の `final_entry` を「帳票PDFをダウンロード」で保存できる（`/api/export-pdf`→
+  `chohyo_pdf.render_pdf`＝ReportLab で A4 罫線帳票・日誌/月案・欄順は標準様式に一致・**描画のみで型検査は harness**）。日本語は
+  IPAex ゴシックを埋め込むため閲覧側の CJK フォントに依存せず化けない（Heisei CID 非埋め込みの空白化を回避）。生成は純 pip・
+  システムライブラリ不要でフォントは同梱＝**Dockerfile 不変**。LLM 非課金なので非ゲート。§18「園の様式で出す一段」に対応（標準様式まで到達・特定園の欄差は現場依存で残課題）。
   **改善エージェント（指針を育てる）**は `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動（別エントリ維持）し、
   `policy.js`（温かい1タブ）が「指針カード閲覧＋変更履歴／提案→意味的競合の比較相談→保育士決定で即反映」をライブに描く（`/api/policy`＝カード＋履歴＋store）。
   LLM を回す口（`/api/improve`）だけ `DEMO_PASSCODE` でゲート（配布リンクのコスト/濫用対策）。
