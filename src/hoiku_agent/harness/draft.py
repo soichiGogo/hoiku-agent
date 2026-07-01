@@ -79,9 +79,15 @@ def write_draft(entry: DiaryEntry, template_ref: str | None = None) -> str:
         if entry.individual_notes
         else "  （個別記録なし）"
     )
+    # ヘッダ（記録日・天候は常時／気温・組は標準様式の任意欄＝記入時のみ添える・§10）
+    header_meta = f"記録日: {entry.date}　天候: {entry.weather or '（未記入）'}"
+    if entry.temperature.strip():
+        header_meta += f"　気温: {entry.temperature}"
+    if entry.class_name.strip():
+        header_meta += f"　組: {entry.class_name}"
     lines = [
         f"■ 保育日誌（{entry.age_band.value} 歳児クラス・個別）",
-        f"記録日: {entry.date}　天候: {entry.weather or '（未記入）'}",
+        header_meta,
         "",
         "【本日のねらい（養護・教育）】",
         f"  {entry.daily_aim or '（未記入）'}",

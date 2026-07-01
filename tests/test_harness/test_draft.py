@@ -74,3 +74,20 @@ def test_write_draft_summarizes_attendance():
 
 def test_write_draft_template_ref_noted():
     assert "様式X" in write_draft(_entry(), template_ref="様式X")
+
+
+def test_write_draft_includes_temperature_and_class_when_present():
+    """気温・組名（標準様式ヘッダの任意欄）は記入時にヘッダへ添える。"""
+    entry = _entry()
+    entry.temperature = "26℃"
+    entry.class_name = "ひよこ組"
+    text = write_draft(entry)
+    assert "気温: 26℃" in text
+    assert "組: ひよこ組" in text
+
+
+def test_write_draft_omits_temperature_and_class_when_blank():
+    """既定（空）ではヘッダに気温/組ラベルを出さない（任意欄・記入時のみ）。"""
+    text = write_draft(_entry())
+    assert "気温:" not in text
+    assert "　組:" not in text

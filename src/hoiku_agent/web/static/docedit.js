@@ -213,10 +213,14 @@ function buildDiary(body, entry, formMeta) {
   const basic = section("基本情報");
   const brow = el("div", "de-grid");
   const weather = inp(entry.weather, "天候（例：晴れ）");
+  const temperature = inp(entry.temperature, "気温（例：26℃）");
+  const className = inp(entry.class_name, "組名（例：ひよこ組）");
   brow.append(
     roField("記録日", entry.date),
     field("天候", weather),
+    field("気温", temperature),
     roField("クラス", AGE_LABEL[ageBand] || ageBand),
+    field("組", className),
   );
   basic._b.appendChild(brow);
   body.appendChild(basic);
@@ -272,6 +276,8 @@ function buildDiary(body, entry, formMeta) {
     date: entry.date,
     age_band: ageBand,
     weather: weather.value,
+    temperature: temperature.value,
+    class_name: className.value,
     daily_aim: aim.value,
     attendance: att._collect(),
     health_notes: health.value.trim() || null,

@@ -94,9 +94,13 @@ def _section(label: str, content) -> Table:
 
 
 def _life_record_table(lr: dict) -> Table:
-    """0–2 養護の中核＝生活記録（食事/睡眠/排泄/機嫌・体調）を4列の小表で描く。"""
+    """0–2 養護の中核＝生活記録（食事/睡眠/排泄/機嫌・体調）を4列の小表で描く。
+
+    幅は本文全幅（_CONTENT_W）を4等分し、他のセクション行と左端・右端をそろえる。ReportLab の Table は
+    既定で hAlign="CENTER"（中央寄せ）なので、幅が本文未満だと帳票の罫線がズレて見える。全幅＋LEFT で固定する。
+    """
     lr = lr or {}
-    w = (_CONTENT_W - _LABEL_W) / 4
+    w = _CONTENT_W / 4
     tbl = Table(
         [
             [
@@ -127,6 +131,7 @@ def _life_record_table(lr: dict) -> Table:
             ]
         )
     )
+    tbl.hAlign = "LEFT"
     return tbl
 
 
@@ -186,14 +191,57 @@ def _attendance_text(attendance: list) -> str:
     return " ／ ".join(parts)
 
 
+def _signoff_block() -> KeepTogether:
+    """確認印欄（担任／主任／園長）。公式記録として押印・確認のための空欄を設ける（描画のみ・型検査なし）。
+
+    日誌/月案の末尾に共通で置く。3列＝担任/主任/園長、下段は押印・署名用の余白セル。園差で欄名は変わりうるが、
+    標準様式（自治体様式）で確認印3欄が一般的なためこれを既定にする（現場の実様式が来たら欄名を寄せる＝§18）。
+    """
+    w = _CONTENT_W / 3
+    tbl = Table(
+        [
+            [_P("担任", _LABEL), _P("主任", _LABEL), _P("園長", _LABEL)],
+            ["", "", ""],
+        ],
+        colWidths=[w, w, w],
+        rowHeights=[None, 16 * mm],
+    )
+    tbl.hAlign = "LEFT"
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+                ("BACKGROUND", (0, 0), (-1, 0), _HEADER_BG),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    return KeepTogether([Spacer(1, 4 * mm), _P("確認", _LABEL), Spacer(1, 1.5 * mm), tbl])
+
+
 def _diary_story(entry: dict) -> list:
     age = entry.get("age_band") or "0-2"
+    # ヘッダのメタ（記録日・天候は常時／気温・組は記入時のみ添える）。_P が全体を1回だけ XML エスケープするため、
+    # ここでは生値を渡す（f-string 内で _t すると二重エスケープになる）。
+    meta_bits = [
+        f"記録日: {entry.get('date') or ''}",
+        f"天候: {entry.get('weather') or ''}",
+    ]
+    temperature = str(entry.get("temperature") or "").strip()
+    if temperature:
+        meta_bits.append(f"気温: {temperature}")
+    meta_bits.append(f"クラス: {_AGE_LABEL.get(age, age)}")
+    class_name = str(entry.get("class_name") or "").strip()
+    if class_name:
+        meta_bits.append(f"組: {class_name}")
     story: list = [
         _P(f"保育日誌（{_AGE_LABEL.get(age, age)}・個別）", _TITLE),
-        _P(
-            f"記録日: {_t(entry.get('date'))}　　天候: {_t(entry.get('weather'))}　　クラス: {_AGE_LABEL.get(age, age)}",
-            _META,
-        ),
+        _P("　　".join(meta_bits), _META),
         Spacer(1, 3 * mm),
         _section("本日のねらい", _P(entry.get("daily_aim"))),
         _section("出欠", _P(_attendance_text(entry.get("attendance")))),
@@ -216,6 +264,7 @@ def _diary_story(entry: dict) -> list:
     ev = entry.get("evaluation") or {}
     story.append(_section("評価・反省 (a) 子どもに焦点", _P(ev.get("child_focus"))))
     story.append(_section("評価・反省 (b) 自分の保育の適否", _P(ev.get("self_review"))))
+    story.append(_signoff_block())
     return story
 
 
@@ -227,7 +276,8 @@ def _monthly_story(entry: dict) -> list:
         subject = f"{subject}（{months}）"
     story: list = [
         _P(f"月案（個別・{_AGE_LABEL.get(age, age)}）", _TITLE),
-        _P(f"対象月: {_t(entry.get('month'))}　　対象児: {_t(subject)}", _META),
+        # _P が1回だけエスケープするため生値を渡す（f-string 内 _t は二重エスケープになる）。
+        _P(f"対象月: {entry.get('month') or ''}　　対象児: {subject}", _META),
         Spacer(1, 3 * mm),
         _section("前月の子どもの姿", _P(entry.get("prev_child_state"))),
         _section("今月のねらい・内容", _P(entry.get("monthly_goals"))),
@@ -257,6 +307,7 @@ def _monthly_story(entry: dict) -> list:
             _section("評価・反省", _P(entry.get("evaluation_reflection"))),
         ]
     )
+    story.append(_signoff_block())
     return story
 
 

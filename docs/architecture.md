@@ -13,7 +13,7 @@
 | ② レビューAI（§7） | `agents/review_agent.py`（`LlmAgent`・日誌/月案で共用） | 別視点で点検・APPROVED まで巡回（制御は harness） | Agentic |
 | ③ 改善エージェント（§8） | `improver/`（別エントリ・手動起動） | 修正メモ→指針カードの追加/改訂を自走提案・**意味的競合を精査**し保育士の決定で**即反映**（番人＝意味的競合精査＋保育士決定） | Agentic |
 | 品質回帰の番人（§12） | `eval/`（cases/・judges/・`test_config.json`・`run_gate.py`） | 3軸 rubric で採点→main 比 非劣化＆must_fix 0。**CI の品質回帰テスト専用（prompt/モデル/指針の変更を守る）。improver の取り込みには関与しない＝decouple** | 決定的（CI） |
-| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`chohyo_pdf.py`・`fonts/`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。**現場でそのまま綴じる最終形＝園の帳票PDF**は `/api/export-pdf`（`chohyo_pdf.py`＝ReportLab・IPAex 埋め込み・描画のみ）。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
+| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`chohyo_pdf.py`・`fonts/`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。**現場でそのまま綴じる最終形＝園の帳票PDF**は `/api/export-pdf`（`chohyo_pdf.py`＝ReportLab・IPAex 埋め込み・確認印欄（担任/主任/園長）付き・描画のみ）。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
 
 ## harness 内訳（§5 物理マッピング）
 
@@ -23,7 +23,7 @@
 | `harness/pipeline.py` | `build_document_pipeline` / `build_authoring_loop` / `ApprovalGate` / `FinalizeAgent`(kind) / `is_approved` / `persist_visit_to_memory`(+`_should_persist_visit`) / `mark_caregiver_approved`(+`CAREGIVER_APPROVAL_KEY`) | 日誌：authoring_loop（[author→reviewer→ApprovalGate] を巡回・NEEDS_REVISION で author が再作成・APPROVED 早期終了）→ finalize の順序制御。FinalizeAgent は `final_document`（整形テキスト）に加え **`final_entry`（構造化エントリ dict）＋`final_doc_kind`** も state に残す（編集UIが欄ごとの編集フォームに描く）。`after_agent_callback`＝**保育士の明示承認＋型成立**のときのみ来園を Memory Bank へ書き戻す（真の承認ゲート＝§9/§13） |
 | `harness/monthly.py` | `MonthlyPrepAgent` / `build_monthly_pipeline` | 月案：前月日誌を child_id 別に決定的集計（L2 還流）→ 月案 author の authoring_loop（日誌と共用・再作成）→ finalize(kind="monthly")（§3/§4/§10） |
 | `harness/schema_check.py` | `validate_fields` / `validate_monthly_fields`(+`_required_tag_type`) | 必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域）。日誌/月案で分岐の実体を共用 |
-| `harness/draft.py` | `write_draft` / `write_monthly_draft` | pydantic（DiaryEntry/MonthlyPlan）→ **標準様式テキスト**へ整形（ネット調査で裏取りした 0–2 個別の章立て・順序。日誌＝本日のねらい→主な活動→個別の記録（姿＋生活記録）→…、月案＝**養護2本柱（生命の保持/情緒の安定）→教育**の順）。10の姿/3つの視点/5領域タグ明示 |
+| `harness/draft.py` | `write_draft` / `write_monthly_draft` | pydantic（DiaryEntry/MonthlyPlan）→ **標準様式テキスト**へ整形（ネット調査で裏取りした 0–2 個別の章立て・順序。日誌＝ヘッダ（記録日・天候・気温/組の任意欄）→本日のねらい→主な活動→個別の記録（姿＋生活記録）→…、月案＝**養護2本柱（生命の保持/情緒の安定）→教育**の順）。10の姿/3つの視点/5領域タグ明示 |
 | `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `finalize_entry` / `parse_draft_to_entry` / `parse_draft_to_plan` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用）。`finalize_entry(dict)` は**編集UI用**＝保育士が編集した entry を JSON 抽出を飛ばして直接 validate/write 再実行（決定的実体は harness に1つ＝web から中継）。日誌の **date（記録日）は harness が所有する決定的メタデータ**＝`doc_date` で復元前に注入し author 出力を上書き（LLM に日付を生成させない＝雛形 echo 耐性。clock を持たず純関数を保つため現在日付の解決は `pipeline.FinalizeAgent`） |
 | `harness/aggregate.py` | `aggregate_by_child` / `prev_month_digest` / `format_digest_for_prompt` | 月⇔日の集積（child_id 別）と L2 還流の state 用 digest・人間可読テキスト。要約生成は月案 author |
 | `harness/policy_store.py` | `load_book`/`save_book` / `add_card`/`supersede_card`/`remove_card` / `render_to_text` / `find_exact_duplicate` / `card_view`/`history_view`/`book_view` / `store_status` | 育つ指針＝構造化カードストア（`knowledge/文書作成指針.json`）の決定的 CRUD・完全重複ガード（安全網）・履歴・テキスト再生・API view。**指針編集の決定的実体はここに1つ**（improver/read_policy は薄いラッパ）。clock は外部注入 |
@@ -149,7 +149,9 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   追加削除可・タグは年齢に応じ `/api/form-meta` の Enum 語彙から多選択・記録日/対象月は read-only）、保存時に
   `/api/finalize-edit`（harness の `finalize_entry` 中継）で再 validate/整形→state へ反映、承認で公式記録にロック（型成立ゲートは編集後も有効）。
   **現場でそのまま綴じる最終形＝園の帳票PDF**：確定/編集後の `final_entry` を「帳票PDFをダウンロード」で保存できる（`/api/export-pdf`→
-  `chohyo_pdf.render_pdf`＝ReportLab で A4 罫線帳票・日誌/月案・欄順は標準様式に一致・**描画のみで型検査は harness**）。日本語は
+  `chohyo_pdf.render_pdf`＝ReportLab で A4 罫線帳票・日誌/月案・欄順は標準様式に一致・**描画のみで型検査は harness**）。**末尾に確認印欄
+  （担任/主任/園長）を置き公式記録の体裁を満たす**。生活記録（食事/睡眠/排泄/機嫌・体調）の4列表は本文全幅で他行と罫線をそろえる
+  （ReportLab の Table 既定 hAlign=CENTER によるズレを LEFT＋全幅で是正）。ヘッダは気温・組（`DiaryEntry` の任意欄）を記入時のみ添える。日本語は
   IPAex ゴシックを埋め込むため閲覧側の CJK フォントに依存せず化けない（Heisei CID 非埋め込みの空白化を回避）。生成は純 pip・
   システムライブラリ不要でフォントは同梱＝**Dockerfile 不変**。LLM 非課金なので非ゲート。§18「園の様式で出す一段」に対応（標準様式まで到達・特定園の欄差は現場依存で残課題）。
   **改善エージェント（指針を育てる）**は `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動（別エントリ維持）し、

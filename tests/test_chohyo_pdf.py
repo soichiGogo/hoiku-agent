@@ -70,6 +70,15 @@ def test_render_monthly_pdf():
     assert b[:4] == b"%PDF"
 
 
+def test_render_diary_with_temperature_and_class():
+    """気温・組名（標準様式ヘッダの任意欄）を含む entry でも例外なく %PDF を返す。"""
+    entry = {**_DIARY, "temperature": "26℃", "class_name": "ひよこ組"}
+    b = render_pdf("diary", entry)
+    assert b[:4] == b"%PDF"
+    # 確認印欄（担任/主任/園長）を末尾に描くため、最小 entry より確実に大きい。
+    assert len(b) > 10_000
+
+
 def test_render_sparse_entry_does_not_raise():
     """空欄多め・タグ空・個別記録空 dict でも描画は落ちない（型検査は harness の責務）。"""
     b = render_pdf("diary", {"age_band": "0-2", "individual_notes": [{}], "evaluation": {}})

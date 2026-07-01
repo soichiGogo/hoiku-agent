@@ -70,6 +70,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・A4 罫線帳票・日誌/月案）。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
+  **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
+  （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
 - `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得）／`docflow.js`（日誌・月案 共通フロー・
