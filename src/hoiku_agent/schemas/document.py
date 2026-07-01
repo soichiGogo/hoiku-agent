@@ -141,6 +141,12 @@ class DiaryEntry(BaseModel):
     weather: _BlankableStr = (
         ""  # 必須欄。空/None は validate_fields が「天候が未記入」で報告（クラッシュさせない）
     )
+    # 気温・組名は 0–2 標準様式のヘッダにある任意欄（園差・§10）。天候と対で持ち、必須化しない
+    # （validate は要求しない）。空可＝保育士が編集フォームで補える／LLM が観察メモから補ってもよい。
+    temperature: _BlankableStr = ""  # 気温（例: 26℃・任意）。天候と対で標準様式ヘッダに置く
+    class_name: _BlankableStr = (
+        ""  # 組名（例: ひよこ組・任意）。園様式は個別記録でも組名を持つことが多い
+    )
     daily_aim: _BlankableStr = Field(
         default="",
         description="本日のねらい（養護面・教育面。日案←週案←月案と連動・任意・標準様式）",
