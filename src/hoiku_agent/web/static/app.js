@@ -4,7 +4,8 @@ import { el, esc, iconHTML, hydrateIcons } from "./ui.js";
 import { makeDocFlow } from "./docflow.js";
 import { makePolicy } from "./policy.js";
 
-const CHILDREN = ["架空児A", "架空児B", "架空児C"];
+// 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
+const CHILDREN = ["はるとくん", "ゆいちゃん", "そうたくん"];
 
 const DIARY_SAMPLES = [
   "戸外で砂遊び。スコップで砂をすくって繰り返し感触を確かめていた。友だちが来ると場所を空けていた。",
@@ -17,21 +18,66 @@ const POLICY_SAMPLES = [
   "保護者向けの一文は、できた事実だけでなく『次への意欲』が伝わる表現にしたい。",
 ];
 
+// 前月日誌の仮名サンプル（L2 還流のデモ seed）。現場に即した複数日（感触遊び/歩行/絵本）＝月齢・
+// 数量化した生活記録・具体的な姿。scripts/run_monthly.py の _sample_prev_entries と同趣旨（§14）。
 function samplePrevEntries(childId) {
-  return [24, 25, 26].map((day) => ({
-    date: `2026-06-${day}`,
+  const days = [
+    {
+      date: "2026-06-24",
+      weather: "晴れ",
+      practice_record: "園庭の砂場で感触遊びを行った。",
+      observed_state: "砂場でスコップに砂をすくっては空ける動作を繰り返し、こぼれる様子をじっと見つめた",
+      tags: ["身近なものと関わり感性が育つ"],
+      meal: "完了期の給食を8割摂取、麦茶80ml",
+      sleep: "12:15〜14:20 午睡",
+      toilet: "排尿4回・排便1回",
+      mood_health: "視診で体温36.5℃、機嫌よく変化なし",
+      child_focus: "素材の感触に繰り返し関わっていた",
+      self_review: "スコップやカップを人数分用意できた",
+    },
+    {
+      date: "2026-06-26",
+      weather: "くもり",
+      practice_record: "室内で歩行や移動を促す環境を整えた。",
+      observed_state: "両手を広げてバランスを取りながら数歩歩き、保育者のもとへ進もうとした",
+      tags: ["健やかに伸び伸びと育つ"],
+      meal: "完了期の給食を9割摂取",
+      sleep: "12:20〜14:30 ぐっすり午睡",
+      toilet: "排尿5回・排便1回",
+      mood_health: "視診で体温36.6℃、活発で気になる点なし",
+      child_focus: "自分から体を動かそうとする意欲が高まっていた",
+      self_review: "転倒に備えマットと広い動線を用意できた",
+    },
+    {
+      date: "2026-06-30",
+      weather: "晴れ",
+      practice_record: "少人数で絵本を読み、指さしや発声に応じた。",
+      observed_state: "絵本の動物を指さして声を出し、保育者に見せようとした",
+      tags: ["身近な人と気持ちが通じ合う"],
+      meal: "完了期の給食を全量摂取、麦茶90ml",
+      sleep: "12:15〜14:10 午睡",
+      toilet: "排尿4回・排便1回",
+      mood_health: "視診で体温36.6℃、機嫌よく変化なし",
+      child_focus: "好きなものを見つけ、伝えたい気持ちが育っていた",
+      self_review: "発見に共感的に応答し、繰り返しを楽しめるようにした",
+    },
+  ];
+  return days.map((d) => ({
+    date: d.date,
     age_band: "0-2",
-    weather: "晴れ",
+    weather: d.weather,
     attendance: [{ child_id: childId, present: true, reason: null }],
-    practice_record: "園庭で感触遊びを行った。",
+    practice_record: d.practice_record,
     individual_notes: [
       {
         child_id: childId,
-        observed_state: `6月${day}日：砂をすくって感触を確かめ、笑顔が見られた`,
-        tags: ["身近なものと関わり感性が育つ"],
+        age_months: "1歳3か月",
+        observed_state: d.observed_state,
+        tags: d.tags,
+        life_record: { meal: d.meal, sleep: d.sleep, toilet: d.toilet, mood_health: d.mood_health },
       },
     ],
-    evaluation: { child_focus: "感触に繰り返し関わっていた", self_review: "素材を十分用意できた" },
+    evaluation: { child_focus: d.child_focus, self_review: d.self_review },
   }));
 }
 

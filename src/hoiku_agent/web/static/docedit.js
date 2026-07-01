@@ -120,7 +120,7 @@ function listSection(label, hint, items, renderItem, makeEmpty, addLabel) {
 /* ---- 出欠 1件 ---- */
 function attendanceItem(a) {
   a = a || {};
-  const cid = inp(a.child_id, "架空児A");
+  const cid = inp(a.child_id, "はるとくん");
   const present = el("select", "de-input de-sel");
   for (const [val, lab] of [
     ["true", "出席"],
@@ -149,7 +149,7 @@ function noteItem(formMeta, ageBand) {
   return (n) => {
     n = n || {};
     const lr = n.life_record || {};
-    const cid = inp(n.child_id, "架空児A");
+    const cid = inp(n.child_id, "はるとくん");
     const months = inp(n.age_months, "1歳3か月（任意）");
     const obs = ta(n.observed_state, 2, "今日の子どもの姿");
     const tags = tagEditor(n.tags, formMeta, ageBand);
@@ -287,7 +287,7 @@ function buildMonthly(body, entry, formMeta) {
   const ageBand = entry.age_band || "0-2";
 
   const basic = section("基本情報");
-  const child = inp(entry.child_id, "架空児A");
+  const child = inp(entry.child_id, "はるとくん");
   const months = inp(entry.age_months, "1歳3か月（任意）");
   const brow = el("div", "de-grid");
   brow.append(roField("対象月", entry.month), field("対象児", child), field("月齢", months));
