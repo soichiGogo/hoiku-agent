@@ -46,5 +46,19 @@ class Settings(BaseSettings):
         """
         return f"agentengine://{self.agent_engine_id}" if self.agent_engine_id else None
 
+    @property
+    def session_service_uri(self) -> str | None:
+        """セッション永続化の接続 URI（ADK の --session_service_uri 互換）。
+
+        未指定だと ADK は InMemorySessionService＝各インスタンスのメモリ内に降格する。Cloud Run は
+        複数インスタンス＋scale-to-zero でメモリが揮発するため、作成したセッションが別インスタンス／
+        再起動で失われ `/apps/.../sessions/{id}` が 404 になる（ローカル単一プロセスでは顕在化しない）。
+        子ども長期記憶と同じ Agent Engine を共有セッションストアに流用し（`agentengine://<id>`＝ADK が
+        `VertexAiSessionService` を自動構築）、インスタンス跨ぎでもセッションを保持する（§9：ADK ネイティブに
+        委ね自前 Runner を組まない）。memory_service_uri と同じく agent_engine_id が唯一の変換元。未設定なら
+        None＝ADK が InMemory に降格する（ローカルは問題なし）。
+        """
+        return f"agentengine://{self.agent_engine_id}" if self.agent_engine_id else None
+
 
 settings = Settings()
