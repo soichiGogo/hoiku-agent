@@ -110,6 +110,12 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   入口 `server.py`（ADK の `--memory_service_uri` 自動配線）。読み＝`recall_child_history`、書き戻し＝
   `persist_visit_to_memory`（`after_agent_callback`）。書き戻しは **保育士の明示承認（`caregiver_approved=True`＝
   `mark_caregiver_approved`）＋型成立**でのみ発火（型成立を承認の代理にしない＝§9/§13）。発火/保留/降格を決定論E2E で検証。
+- **セッション永続化の配線（Cloud Run のインスタンス跨ぎ）**：`config.session_service_uri`（`agentengine://<id>`＝
+  子ども長期記憶と同じ Agent Engine を共有セッションストアに流用）→ 入口 `server.py`（ADK が
+  `VertexAiSessionService` を自動構築）。未指定だと ADK は InMemorySessionService＝各インスタンスのメモリ内で、
+  Cloud Run（複数インスタンス＋scale-to-zero でメモリ揮発）だと作成セッションが別インスタンス／再起動で失われ
+  `/apps/.../sessions/{id}` が 404 になる（ローカル単一プロセスでは顕在化しない）。memory と同じく
+  `AGENT_ENGINE_ID` 未設定は InMemory 降格（§9：ADK ネイティブに委ね自前 Runner を組まない）。
 - **eval ゲートの本採点（3軸 rubric 配線）**：`eval/test_config.json` が ADK ネイティブの
   `rubric_based_final_response_quality_v1` に3軸（`axis_*`）＋must_fix（`mustfix_*`）を rubric として載せる。
   `eval/run_gate.py` が rubric 採点 → `aggregate_rubric_scores`（軸平均＝ケーススコア／mustfix の no＝違反）→
