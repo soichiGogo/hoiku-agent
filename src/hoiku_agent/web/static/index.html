@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#faf6ef">
-  <title>保育士サポート — 書類づくり</title>
+  <title>HOIKUAGENT — 書類づくり</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -28,8 +28,7 @@
       <div class="brand">
         <span data-ic="brand"></span>
         <div>
-          <div class="brand-title">保育士サポート</div>
-          <div class="brand-sub">勘所を吸収し、書類づくりを軽くする</div>
+          <div class="brand-title">HOIKUAGENT</div>
         </div>
       </div>
       <div id="statusline" class="statusline" aria-live="polite"></div>
@@ -49,11 +48,6 @@
 
     <!-- ───────── 保育日誌 ───────── -->
     <section id="tab-diary" class="panel is-active" role="tabpanel" aria-labelledby="tabbtn-diary" tabindex="0">
-      <div class="hero">
-        <h1>今日の様子をメモ → 保育日誌の下書き</h1>
-        <p>気づいたことを書くだけ。不足は AI が確認し、保育所保育指針・園の指針に沿って整えます。最終確定は保育士（あなた）です。</p>
-      </div>
-
       <div class="card">
         <label class="field-label">対象児（仮名）</label>
         <div id="diary-children" class="chips"></div>
@@ -74,11 +68,6 @@
 
     <!-- ───────── 個別月案 ───────── -->
     <section id="tab-monthly" class="panel" role="tabpanel" aria-labelledby="tabbtn-monthly" tabindex="0">
-      <div class="hero">
-        <h1>前月の積み重ね → 個別月案の下書き</h1>
-        <p>前月の日誌を集めて「前月の姿」を要約し、今月のねらいへつなげます（L2 還流）。</p>
-      </div>
-
       <div class="card">
         <label class="field-label">対象児（仮名）</label>
         <div id="monthly-children" class="chips"></div>
@@ -138,7 +127,7 @@
   </main>
 
   <footer class="app-footer">
-    harness（型の保証）／ agents（中身）／ improver（回す）の3責務分離。生成は ADK ＋ Gemini。実名は扱いません（架空の子・仮名のみ）。
+    実名は扱いません（架空の子・仮名のみ）。
   </footer>
 
   <script type="module" src="./app.js"></script>
