@@ -5,7 +5,7 @@
 巡回＝再作成は harness の `build_authoring_loop` が日誌と共用で担う）。違いは instruction（月案スキーマ）と、
 前月集積（L2 還流）を読む点だけ。
 
-前段（harness の MonthlyPrepAgent）が前月日誌を child_id 別に決定的集計し、その人間可読テキストを
+前段（harness の DigestPrepAgent（monthly_prep））が前月日誌を child_id 別に決定的集計し、その人間可読テキストを
 直前イベントとして提示する。月案 author はそれと recall_child_history を突き合わせ「前月の子どもの姿／
 評価・反省」を要約する（集計＝harness／要約＝author の責務分離・§10）。
 

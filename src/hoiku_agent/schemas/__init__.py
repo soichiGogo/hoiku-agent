@@ -2,6 +2,8 @@
 
 from .document import (
     ChildAttendance,
+    ChildRecord,
+    DevelopmentNote,
     DiaryEntry,
     DiaryEvaluation,
     DocumentSpec,
@@ -37,6 +39,8 @@ __all__ = [
     "DiaryEntry",
     "MonthlyEducationNote",
     "MonthlyPlan",
+    "DevelopmentNote",
+    "ChildRecord",
     # enums
     "AgeBand",
     "Lineage",

@@ -19,9 +19,28 @@ def test_continuity_tool_wiring_author_and_reviewer():
     """継続把握は recall_child_history に一本化、search_past_documents は agent から外す（§9・B）。"""
     pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync で有効化）")
     from hoiku_agent.agents.author_agent import build_author_agent
+    from hoiku_agent.agents.child_record_author_agent import build_child_record_author_agent
+    from hoiku_agent.agents.monthly_author_agent import build_monthly_author_agent
     from hoiku_agent.agents.review_agent import build_review_agent
 
-    for build in (build_author_agent, build_review_agent):
+    for build in (
+        build_author_agent,
+        build_monthly_author_agent,
+        build_child_record_author_agent,
+        build_review_agent,
+    ):
         names = _tool_names(build())
         assert "recall_child_history" in names, names
         assert "search_past_documents" not in names, names
+
+
+def test_child_record_author_shape():
+    """児童票 author は単一 LlmAgent・output_key="draft"（日誌/月案と共通の受け渡し＝§6/§19）。"""
+    pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync で有効化）")
+    from hoiku_agent.agents.child_record_author_agent import build_child_record_author_agent
+
+    agent = build_child_record_author_agent()
+    assert agent.name == "child_record_author"
+    assert agent.output_key == "draft"
+    # 自己点検ツール（validate_fields＝DiaryEntry 用）は配線しない（確定検査は harness が末尾実行）。
+    assert "validate_fields" not in _tool_names(agent)

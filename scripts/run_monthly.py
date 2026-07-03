@@ -7,7 +7,7 @@
 このスクリプトは:
 1. 前月日誌（`--prev-entries-file` の JSON 配列。無ければ同梱の仮名サンプル）を読む。
 2. session state に doc_type="月案" と prev_month_entries を seed して root_agent（DocTypeRouter）を回す。
-3. MonthlyPrepAgent が child_id 別に集計（state["prev_month_digest"]）→ 月案 author が要約・ねらい化
+3. DigestPrepAgent（monthly_prep）が child_id 別に集計（state["prev_month_digest"]）→ 月案 author が要約・ねらい化
    → reviewer → 月案 finalize（MonthlyPlan を検査・整形）。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:

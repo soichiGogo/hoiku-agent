@@ -52,8 +52,8 @@ class FinalizeEditRequest(BaseModel):
     生成・採点ロジックは持たず、harness の finalize_entry を中継するだけ（決定的実体は harness に1つ＝§5）。
     """
 
-    kind: str = "diary"  # "diary" / "monthly"
-    entry: dict  # 編集後の DiaryEntry / MonthlyPlan 相当の dict
+    kind: str = "diary"  # "diary" / "monthly" / "child_record"
+    entry: dict  # 編集後の DiaryEntry / MonthlyPlan / ChildRecord 相当の dict
     doc_date: str | None = None  # 記録日（日誌・ISO 文字列。機械メタなので harness が上書き）
 
 
@@ -64,14 +64,16 @@ class ExportPdfRequest(BaseModel):
     型検査はしない（型の保証は harness の責務＝§5）。LLM 非課金なのでパスコード非ゲート。
     """
 
-    kind: str = "diary"  # "diary" / "monthly"
-    entry: dict  # 帳票に描く DiaryEntry / MonthlyPlan 相当の dict
+    kind: str = "diary"  # "diary" / "monthly" / "child_record"
+    entry: dict  # 帳票に描く DiaryEntry / MonthlyPlan / ChildRecord 相当の dict
 
 
 def _pdf_filename(kind: str, entry: dict) -> str:
     """帳票PDF のダウンロード名（日本語。RFC5987 で Content-Disposition に載せる）。"""
     if kind == "monthly":
         stem = f"月案_{entry.get('month') or ''}_{entry.get('child_id') or ''}".rstrip("_")
+    elif kind == "child_record":
+        stem = f"児童票_{entry.get('period') or ''}_{entry.get('child_id') or ''}".rstrip("_")
     else:
         stem = f"保育日誌_{entry.get('date') or ''}".rstrip("_")
     return f"{stem or '書類'}.pdf"

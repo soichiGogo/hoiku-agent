@@ -23,10 +23,10 @@ def test_root_agent_builds():
 
     from hoiku_agent import root_agent
 
-    # root_agent は doc_type 分岐ルータ（既定＝保育日誌）。子に日誌・月案の両パイプラインを持つ。
+    # root_agent は doc_type 分岐ルータ（既定＝保育日誌）。子に日誌・月案・児童票のパイプラインを持つ。
     assert root_agent.name == "hoiku_root"
     sub_names = {a.name for a in root_agent.sub_agents}
-    assert sub_names == {"document_pipeline", "monthly_plan_pipeline"}
+    assert sub_names == {"document_pipeline", "monthly_plan_pipeline", "child_record_pipeline"}
 
 
 def test_memory_service_uri_from_config():

@@ -18,6 +18,7 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
 from google.adk.utils.context_utils import Aclosing
 
+from .child_record import build_child_record_pipeline
 from .monthly import build_monthly_pipeline
 from .pipeline import build_document_pipeline
 
@@ -26,18 +27,24 @@ if TYPE_CHECKING:
 
 _DIARY = "document_pipeline"
 _MONTHLY = "monthly_plan_pipeline"
+_CHILD_RECORD = "child_record_pipeline"
 
 
 class DocTypeRouter(BaseAgent):
-    """state["doc_type"] で日誌／月案パイプラインを振り分ける（決定的・§10）。
+    """state["doc_type"] で日誌／月案／児童票パイプラインを振り分ける（決定的・§10/§19）。
 
-    既定は保育日誌（doc_type 未設定＝既存デモの挙動）。doc_type=="月案" のときだけ月案パイプラインへ。
-    選んだサブパイプラインの確定処理（after_agent_callback の書き戻し含む）はそのまま委譲する。
+    既定は保育日誌（doc_type 未設定＝既存デモの挙動）。doc_type=="月案" は月案、"児童票" は児童票の
+    パイプラインへ。選んだサブパイプラインの確定処理（after_agent_callback の書き戻し含む）はそのまま委譲する。
     """
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         doc_type = (ctx.session.state.get("doc_type") or "").strip()
-        target_name = _MONTHLY if doc_type == "月案" else _DIARY
+        if doc_type == "月案":
+            target_name = _MONTHLY
+        elif doc_type == "児童票":
+            target_name = _CHILD_RECORD
+        else:
+            target_name = _DIARY
         target = next(a for a in self.sub_agents if a.name == target_name)
         async with Aclosing(target.run_async(ctx)) as agen:
             async for event in agen:
@@ -48,11 +55,12 @@ def build_root_agent(
     author_model: str | BaseLlm | None = None,
     reviewer_model: str | BaseLlm | None = None,
 ) -> DocTypeRouter:
-    """doc_type 分岐ルータ（root_agent の実体）を構築する（§10）。
+    """doc_type 分岐ルータ（root_agent の実体）を構築する（§10/§19）。
 
-    日誌・月案の両パイプラインを子に持ち、doc_type で選ぶ。author_model/reviewer_model は通常 None
-    （実 Gemini）。テストでは FakeLlm を両パイプラインへ注入できる。
+    日誌・月案・児童票のパイプラインを子に持ち、doc_type で選ぶ。author_model/reviewer_model は
+    通常 None（実 Gemini）。テストでは FakeLlm を各パイプラインへ注入できる。
     """
     diary = build_document_pipeline(author_model, reviewer_model)
     monthly = build_monthly_pipeline(author_model, reviewer_model)
-    return DocTypeRouter(name="hoiku_root", sub_agents=[diary, monthly])
+    child_record = build_child_record_pipeline(author_model, reviewer_model)
+    return DocTypeRouter(name="hoiku_root", sub_agents=[diary, monthly, child_record])

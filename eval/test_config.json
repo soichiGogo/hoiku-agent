@@ -19,7 +19,7 @@
           "rubric_id": "axis_ten_no_sugata",
           "type": "FINAL_RESPONSE_QUALITY",
           "rubric_content": {
-            "text_property": "各記述（individual_notes の observed_state とタグ／月案の education）が、age_band に応じた枠組み（0–2＝3つの視点 / 3–5＝5領域、10の姿は併記可）に妥当にマッピングされており、こじつけ・誤タグでない。"
+            "text_property": "各記述（individual_notes の observed_state とタグ／月案の education／児童票の development_notes）が、age_band に応じた枠組み（0–2＝3つの視点 / 3–5＝5領域、10の姿は併記可）に妥当にマッピングされており、こじつけ・誤タグでない。"
           }
         },
         {

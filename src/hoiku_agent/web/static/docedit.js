@@ -247,7 +247,9 @@ function buildDiary(body, entry, formMeta) {
 
   const notes = listSection(
     "個別の記録（子ども一人ひとり）",
-    "0–2 の本体。姿・タグ・生活記録（養護）を記録します",
+    ageBand === "3-5"
+      ? "姿・タグ（5領域）を記録します。生活記録は任意"
+      : "0–2 の本体。姿・タグ・生活記録（養護）を記録します",
     entry.individual_notes,
     noteItem(formMeta, ageBand),
     () => ({}),
@@ -348,9 +350,77 @@ function buildMonthly(body, entry, formMeta) {
   });
 }
 
+/* ---- 発達の経過 1件（児童票） ---- */
+function developmentItem(formMeta, ageBand) {
+  return (n) => {
+    n = n || {};
+    const desc = ta(n.description, 2, "その期の発達・生活の経過（叙述）");
+    const tags = tagEditor(n.tags, formMeta, ageBand);
+    const node = el("div", "de-note");
+    node.append(field("経過（叙述）", desc), field("対応する姿・領域（タグ）", tags));
+    return { node, collect: () => ({ description: desc.value, tags: tags._get() }) };
+  };
+}
+
+/* ---- 児童票フォーム（期ごとの保育経過記録） ---- */
+function buildChildRecord(body, entry, formMeta) {
+  const ageBand = entry.age_band || "0-2";
+
+  const basic = section("基本情報");
+  const child = inp(entry.child_id, "はるとくん");
+  const months = inp(entry.age_months, "1歳6か月（任意）");
+  const brow = el("div", "de-grid");
+  brow.append(
+    roField("対象期間", entry.period),
+    field("対象児", child),
+    field("月齢・年齢", months),
+    roField("クラス", AGE_LABEL[ageBand] || ageBand),
+  );
+  basic._b.appendChild(brow);
+  body.appendChild(basic);
+
+  const dev = listSection(
+    "発達の経過（領域別の叙述）",
+    ageBand === "3-5" ? "5領域でタグ付け" : "3つの視点でタグ付け",
+    entry.development_notes,
+    developmentItem(formMeta, ageBand),
+    () => ({}),
+    "経過を追加",
+  );
+  body.appendChild(dev);
+
+  const care = ta(entry.care_notes, 2, "個別配慮・医療的ケアの経過など（任意）");
+  const family = ta(entry.family_liaison, 2, "保護者とのやりとり・家庭との共有（任意）");
+  const overall = ta(entry.overall_note, 3, "その期の育ちの総括（開示前提＝肯定的・断定しない表現で）");
+  const next = ta(entry.next_aims, 2, "次期に向けての課題・ねらい（任意）");
+
+  const simple = (label, control, hint) => {
+    const s = section(label, hint);
+    s._b.appendChild(control);
+    body.appendChild(s);
+  };
+  simple("配慮事項・特記", care);
+  simple("家庭との連携", family);
+  simple("総合所見", overall, "保護者に開示され得ます（肯定的・非断定で）");
+  simple("次期に向けて", next);
+
+  return () => ({
+    period: entry.period,
+    age_band: ageBand,
+    child_id: child.value.trim(),
+    age_months: months.value.trim(),
+    development_notes: dev._collect(),
+    care_notes: care.value,
+    family_liaison: family.value,
+    overall_note: overall.value,
+    next_aims: next.value,
+  });
+}
+
 const META = {
   diary: { title: "保育日誌", icon: "diary", build: buildDiary },
   monthly: { title: "個別月案", icon: "calendar", build: buildMonthly },
+  child_record: { title: "児童票", icon: "chart", build: buildChildRecord },
 };
 
 // 編集フォーム panel と collect()（編集後 entry dict）を返す。

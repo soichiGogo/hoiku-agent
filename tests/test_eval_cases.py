@@ -17,11 +17,17 @@ from pathlib import Path
 
 import pytest
 
-from hoiku_agent.harness import validate_fields
-from hoiku_agent.harness.finalize import parse_draft_to_entry
+from hoiku_agent.harness import validate_child_record_fields, validate_fields
+from hoiku_agent.harness.finalize import parse_draft_to_child_record, parse_draft_to_entry
 
 _CASES_DIR = Path(__file__).resolve().parents[1] / "eval" / "cases"
 _EVALSETS = sorted(_CASES_DIR.glob("*.evalset.json"))
+
+
+# evalset ファイル名 → 書類種別（参照ドラフトの型）。児童票（ChildRecord）は diary と検査を分岐する。
+def _kind_of(path: Path) -> str:
+    return "child_record" if path.name.startswith("child_record") else "diary"
+
 
 # §14 allowlist：eval ケース／月案 seed で使ってよい架空の子（実在しない仮名）の固定ロスター。
 # ここに無い child_id は実名/未知名の疑いとして test_cases_use_only_fictional_children が落とす。
@@ -52,6 +58,7 @@ def _all_cases() -> list[tuple[str, dict]]:
     for path in _EVALSETS:
         data = json.loads(path.read_text(encoding="utf-8"))
         for case in data["eval_cases"]:
+            case["_kind"] = _kind_of(path)  # 検査分岐用のメタ（evalset 本体には無いテスト内キー）
             out.append((case["eval_id"], case))
     return out
 
@@ -74,19 +81,33 @@ def test_eval_ids_are_unique():
 def test_reference_draft_passes_type_check(eval_id: str, case: dict):
     """各ケースの参照ドラフト（final_response）が harness の型（必須欄・年齢分岐）を通る good 例である。"""
     text = case["conversation"][0]["final_response"]["parts"][0]["text"]
+    if case["_kind"] == "child_record":
+        record = parse_draft_to_child_record(text)
+        assert validate_child_record_fields(record) == [], f"{eval_id}: 参照ドラフトが型違反"
+    else:
+        entry = parse_draft_to_entry(text)
+        assert validate_fields(entry) == [], f"{eval_id}: 参照ドラフトが型違反"
+
+
+def _child_ids_of(case: dict) -> list[str]:
+    """参照ドラフト＋seed（session_input.state）に現れる child_id を書類種別に応じて集める。"""
+    text = case["conversation"][0]["final_response"]["parts"][0]["text"]
+    if case["_kind"] == "child_record":
+        ids = [parse_draft_to_child_record(text).child_id]
+        # 児童票は期間日誌を seed するため、seed 側の仮名も検査対象にする（§14）。
+        state = (case.get("session_input") or {}).get("state") or {}
+        for e in state.get("period_entries") or []:
+            ids.extend(n.get("child_id", "") for n in e.get("individual_notes") or [])
+            ids.extend(a.get("child_id", "") for a in e.get("attendance") or [])
+        return ids
     entry = parse_draft_to_entry(text)
-    assert validate_fields(entry) == [], f"{eval_id}: 参照ドラフトが型違反"
+    return [a.child_id for a in entry.attendance] + [n.child_id for n in entry.individual_notes]
 
 
 @pytest.mark.parametrize("eval_id,case", _all_cases(), ids=[c[0] for c in _all_cases()])
 def test_cases_use_only_fictional_children(eval_id: str, case: dict):
     """§14：架空の子のみ（全 child_id が実在しない仮名の固定ロスター＝実名を埋め込まない）。"""
-    text = case["conversation"][0]["final_response"]["parts"][0]["text"]
-    entry = parse_draft_to_entry(text)
-    child_ids = [a.child_id for a in entry.attendance] + [
-        n.child_id for n in entry.individual_notes
-    ]
-    for cid in child_ids:
+    for cid in _child_ids_of(case):
         assert cid in _FICTIONAL_ROSTER, (
             f"{eval_id}: ロスター外の child_id={cid}（実名/未知名の疑い＝§14）。"
             "架空の子なら実在しない仮名を _FICTIONAL_ROSTER に追加してから使う"

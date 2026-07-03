@@ -29,8 +29,10 @@ allowed-tools: Bash, Read, Edit
    - **確定3経路**：① 成功（`validation` 空・`final_document` 生成）② parse 失敗（`finalize_parse_error`）
      ③ 検証不足（`validation` 非空でも確定下書きは生成される）
    - **HITL 関門**：`ask_caregiver` を発火させずに通る／確定段で `awaiting_caregiver_approval=True`
+   - **ルータ分岐と集積還流**：doc_type 未設定＝日誌（既定）／"月案"＝L2 還流（`test_monthly_e2e.py`）／
+     "児童票"＝L3 還流（`test_child_record_e2e.py`）。prep の集計→digest→確定と、seed 無しの降格も見る。
    - 不足経路があれば、それを **`FakeLlm` でスクリプト**した新規ケースを `tests/test_e2e/` に提案・追加する。
-3. **未配線の領域は対象外**（v0 スコープ＝§3）。年齢分岐 3–5（5領域）・月案パス・`aggregate_by_child` の配線は
-   次フェーズ。配線時に本E2Eへ対応ケースを足す（`docs/architecture.md` の残課題と同期）。
+3. **月案・児童票パスは配線済み＝本E2Eの対象**（§3/§19）。新しい doc_type を足したら対応 E2E も同時に足す
+   （`docs/architecture.md` の実装状況と同期）。
 
 注：このスキルは決定論層（無料・LLM非依存）専用。品質回帰は `/adk-eval`、ローカル実起動は `/run-pipeline`。

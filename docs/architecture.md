@@ -9,23 +9,24 @@
 | 責務 | コード | 役割 | 性質 |
 |---|---|---|---|
 | ① 型の保証（§5） | `harness/` | 必須欄・年齢分岐・順序・集積・doc_type分岐・git適用。決定ロジックの唯一実装 | 決定的 |
-| ② 中身の決定・作成AI（§6） | `agents/author_agent.py`（日誌）/ `agents/monthly_author_agent.py`（月案）＝単一 `LlmAgent`＋tools | 情報収集（Agentic RAG）・質問生成・「姿→ねらい/評価」変換・前月集積の要約 | Agentic |
-| ② レビューAI（§7） | `agents/review_agent.py`（`LlmAgent`・日誌/月案で共用） | 別視点で点検・APPROVED まで巡回（制御は harness） | Agentic |
+| ② 中身の決定・作成AI（§6） | `agents/author_agent.py`（日誌）/ `agents/monthly_author_agent.py`（月案）/ `agents/child_record_author_agent.py`（児童票・§19）＝単一 `LlmAgent`＋tools | 情報収集（Agentic RAG）・質問生成・「姿→ねらい/評価」変換・集積（前月/期間）の要約。児童票は**開示前提の肯定的・非断定的表現**も担う | Agentic |
+| ② レビューAI（§7） | `agents/review_agent.py`（`LlmAgent`・日誌/月案/児童票で共用） | 別視点で点検（開示前提の表現観点含む）・APPROVED まで巡回（制御は harness） | Agentic |
 | ③ 改善エージェント（§8） | `improver/`（別エントリ・手動起動） | 修正メモ→指針カードの追加/改訂を自走提案・**意味的競合を精査**し保育士の決定で**即反映**（番人＝意味的競合精査＋保育士決定） | Agentic |
 | 品質回帰の番人（§12） | `eval/`（cases/・judges/・`test_config.json`・`run_gate.py`） | 3軸 rubric で採点→main 比 非劣化＆must_fix 0。**CI の品質回帰テスト専用（prompt/モデル/指針の変更を守る）。improver の取り込みには関与しない＝decouple** | 決定的（CI） |
-| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`chohyo_pdf.py`・`fonts/`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。**現場でそのまま綴じる最終形＝園の帳票PDF**は `/api/export-pdf`（`chohyo_pdf.py`＝ReportLab・IPAex 埋め込み・確認印欄（担任/主任/園長）付き・描画のみ）。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
+| 配信UI（層A・§11） | `web/`（`routes.py`・`improver_stream.py`・`chohyo_pdf.py`・`fonts/`・`static/`＝`docflow.js`/`docedit.js`/`policy.js` 等） | 保育士向け配布 UI（`/app/`）。**4つ目の責務ではない presentation**：日誌/月案/児童票は ADK ネイティブ REST を直接駆動（自前 Runner なし）、確定下書きは**標準様式の見た目の編集フォーム**（`docedit.js`）で保育士が自由に編集→ `/api/finalize-edit` で harness が再検査・再整形。**現場でそのまま綴じる最終形＝園の帳票PDF**は `/api/export-pdf`（`chohyo_pdf.py`＝ReportLab・IPAex 埋め込み・確認印欄（担任/主任/園長）付き・描画のみ）。改善エージェント（指針を育てる＝`policy.js`）だけ SSE 中継 | 中継・描画 |
 
 ## harness 内訳（§5 物理マッピング）
 
 | ファイル | 関数 | 役割 |
 |---|---|---|
-| `harness/router.py` | `DocTypeRouter` / `build_root_agent` | `state["doc_type"]` で日誌/月案パイプラインを振り分ける決定的分岐（root_agent の実体・既定＝保育日誌＝§3） |
+| `harness/router.py` | `DocTypeRouter` / `build_root_agent` | `state["doc_type"]` で日誌/月案/児童票パイプラインを振り分ける決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§19） |
 | `harness/pipeline.py` | `build_document_pipeline` / `build_authoring_loop` / `ApprovalGate` / `FinalizeAgent`(kind) / `is_approved` / `persist_visit_to_memory`(+`_should_persist_visit`) / `mark_caregiver_approved`(+`CAREGIVER_APPROVAL_KEY`) | 日誌：authoring_loop（[author→reviewer→ApprovalGate] を巡回・NEEDS_REVISION で author が再作成・APPROVED 早期終了）→ finalize の順序制御。FinalizeAgent は `final_document`（整形テキスト）に加え **`final_entry`（構造化エントリ dict）＋`final_doc_kind`** も state に残す（編集UIが欄ごとの編集フォームに描く）。`after_agent_callback`＝**保育士の明示承認＋型成立**のときのみ来園を Memory Bank へ書き戻す（真の承認ゲート＝§9/§13） |
-| `harness/monthly.py` | `MonthlyPrepAgent` / `build_monthly_pipeline` | 月案：前月日誌を child_id 別に決定的集計（L2 還流）→ 月案 author の authoring_loop（日誌と共用・再作成）→ finalize(kind="monthly")（§3/§4/§10） |
-| `harness/schema_check.py` | `validate_fields` / `validate_monthly_fields`(+`_required_tag_type`) | 必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域）。日誌/月案で分岐の実体を共用 |
-| `harness/draft.py` | `write_draft` / `write_monthly_draft` | pydantic（DiaryEntry/MonthlyPlan）→ **標準様式テキスト**へ整形（ネット調査で裏取りした 0–2 個別の章立て・順序。日誌＝ヘッダ（記録日・天候・気温/組の任意欄）→本日のねらい→主な活動→個別の記録（姿＋生活記録）→…、月案＝**養護2本柱（生命の保持/情緒の安定）→教育**の順）。10の姿/3つの視点/5領域タグ明示 |
-| `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `finalize_entry` / `parse_draft_to_entry` / `parse_draft_to_plan` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用）。`finalize_entry(dict)` は**編集UI用**＝保育士が編集した entry を JSON 抽出を飛ばして直接 validate/write 再実行（決定的実体は harness に1つ＝web から中継）。日誌の **date（記録日）は harness が所有する決定的メタデータ**＝`doc_date` で復元前に注入し author 出力を上書き（LLM に日付を生成させない＝雛形 echo 耐性。clock を持たず純関数を保つため現在日付の解決は `pipeline.FinalizeAgent`） |
-| `harness/aggregate.py` | `aggregate_by_child` / `prev_month_digest` / `format_digest_for_prompt` | 月⇔日の集積（child_id 別）と L2 還流の state 用 digest・人間可読テキスト。要約生成は月案 author |
+| `harness/monthly.py` | `DigestPrepAgent`（旧 MonthlyPrepAgent を入出力キーで一般化） / `build_monthly_pipeline` | 月案：前月日誌を child_id 別に決定的集計（L2 還流）→ 月案 author の authoring_loop（日誌と共用・再作成）→ finalize(kind="monthly")（§3/§4/§10）。`DigestPrepAgent` は児童票（L3）と共用 |
+| `harness/child_record.py` | `build_child_record_pipeline` | 児童票（§19）：期間日誌（state["period_entries"]）を `DigestPrepAgent`（period_prep）で決定的集計（L3 還流）→ state["period_digest"] → 児童票 author の authoring_loop（共用）→ finalize(kind="child_record") |
+| `harness/schema_check.py` | `validate_fields` / `validate_monthly_fields` / `validate_child_record_fields`(+`_required_tag_type`) | 必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域）。日誌/月案/児童票で分岐の実体を共用。日誌の生活記録必須は **0–2 のみ**（3–5 は任意＝全年齢対応・§19） |
+| `harness/draft.py` | `write_draft` / `write_monthly_draft` / `write_child_record_draft` | pydantic（DiaryEntry/MonthlyPlan/ChildRecord）→ **標準様式テキスト**へ整形（ネット調査で裏取りした章立て・順序。日誌＝ヘッダ（記録日・天候・気温/組の任意欄）→本日のねらい→主な活動→個別の記録（姿＋生活記録＝0–2 常時/3–5 記入時のみ）→…、月案＝**養護2本柱（生命の保持/情緒の安定）→教育**の順、児童票＝ヘッダ（期・対象児）→発達の経過（領域別叙述）→配慮・特記→家庭連携→総合所見→次期に向けて＝§19）。10の姿/3つの視点/5領域タグ明示 |
+| `harness/finalize.py` | `finalize_document` / `finalize_monthly_document` / `finalize_child_record_document` / `finalize_entry` / `parse_draft_to_entry` / `parse_draft_to_plan` / `parse_draft_to_child_record` | author 出力（JSON）の復元 → 確定 validate/write（pipeline 末尾で実行する純ロジック・`_finalize` で共用）。`finalize_entry(dict)` は**編集UI用**＝保育士が編集した entry を JSON 抽出を飛ばして直接 validate/write 再実行（kind=diary/monthly/child_record・決定的実体は harness に1つ＝web から中継）。日誌の **date（記録日）は harness が所有する決定的メタデータ**＝`doc_date` で復元前に注入し author 出力を上書き（LLM に日付を生成させない＝雛形 echo 耐性。clock を持たず純関数を保つため現在日付の解決は `pipeline.FinalizeAgent`） |
+| `harness/aggregate.py` | `aggregate_by_child` / `prev_month_digest` / `format_digest_for_prompt`(label) | 日誌集積（child_id 別）の state 用 digest・人間可読テキスト。月案（L2＝前月）と児童票（L3＝期間）で共用（label で見出し切替）。要約生成は各 author |
 | `harness/policy_store.py` | `load_book`/`save_book` / `add_card`/`supersede_card`/`remove_card` / `render_to_text` / `find_exact_duplicate` / `card_view`/`history_view`/`book_view` / `store_status` | 育つ指針＝構造化カードストア（`knowledge/文書作成指針.json`）の決定的 CRUD・完全重複ガード（安全網）・履歴・テキスト再生・API view。**指針編集の決定的実体はここに1つ**（improver/read_policy は薄いラッパ）。clock は外部注入 |
 | `harness/git_ops.py` | `commit_policy_book` | 即反映済みカード JSON の git 証拠 commit（プロダクトの git 操作。既定 dry_run・降格付き） |
 
@@ -33,8 +34,9 @@
 
 `tools/`（agent が呼ぶプリミティブ）: `recall_child_history`(子の前回までの像＝Memory Bank・`tool_context.search_memory`・未接続で降格) /
 `search_guideline`(Vertex RAG・未設定で降格) / `read_policy`(育つ指針 HEAD) / `ask_caregiver`(HITL＝`LongRunningFunctionTool`) /
-`validate_fields`(生成途中の自己点検)。配線は author（日誌）＝上記全部 / monthly_author（月案）＝`recall_child_history`・
-`search_guideline`・`read_policy`・`ask_caregiver`（月案の確定 validation は harness の `validate_monthly_fields` が末尾実行・自己点検ツールは未配線）/
+`validate_fields`(生成途中の自己点検)。配線は author（日誌）＝上記全部 / monthly_author（月案）・
+child_record_author（児童票）＝`recall_child_history`・`search_guideline`・`read_policy`・`ask_caregiver`
+（確定 validation は harness の `validate_monthly_fields`／`validate_child_record_fields` が末尾実行・自己点検ツールは未配線）/
 reviewer＝`read_policy`・`search_guideline`・`recall_child_history` のみ。
 `validate_fields`・`write_draft` の決定的実体は harness（§5）で、最終の確定 validation・整形出力は harness が末尾で実行する＝
 `write_draft` は agent tool ではない。`search_past_documents`(過去書類アーカイブ＝ローカル架空児記録ストア)は v0 では **agent に未配線**
@@ -55,7 +57,7 @@ improver 固有: `improver/tools.py`（`read_policy_cards`／`propose_policy_car
 
 ```
 観察メモ（音声/手入力）＋ state["doc_type"]（既定＝保育日誌）
-  └─ harness: DocTypeRouter (root_agent) … doc_type で日誌/月案パイプラインを決定的に振り分け（§10）
+  └─ harness: DocTypeRouter (root_agent) … doc_type で日誌/月案/児童票パイプラインを決定的に振り分け（§10/§19）
        │
        ├─[日誌]─ document_pipeline (SequentialAgent)
        │    ├─ authoring_loop (LoopAgent: author→reviewer→approval_gate を最大3巡)
@@ -70,11 +72,19 @@ improver 固有: `improver/tools.py`（`read_policy_cards`／`propose_policy_car
        │                  （finalize_entry で再 validate/write）→ state 反映 → 承認（caregiver_approved）
        │
        └─[月案]─ monthly_plan_pipeline (SequentialAgent)
-            ├─ monthly_prep (BaseAgent) … 前月日誌（state["prev_month_entries"]）を child_id 別に集計（L2 還流）
+            ├─ monthly_prep (DigestPrepAgent) … 前月日誌（state["prev_month_entries"]）を child_id 別に集計（L2 還流）
             │                              → state["prev_month_digest"]＋集計テキストを提示
             ├─ authoring_loop （日誌と共用: monthly_author→reviewer→approval_gate を巡回・再作成）
             │    └─ monthly_author (LlmAgent) … 前月集積＋子メモリから「前月の姿/評価反省」を要約・ねらい化 → state["draft"]
             └─ finalize(kind=monthly) … 復元→validate_monthly_fields/write_monthly_draft → state["final_document"]
+       │
+       └─[児童票]─ child_record_pipeline (SequentialAgent・§19)
+            ├─ period_prep (DigestPrepAgent) … 期間日誌（state["period_entries"]）を child_id 別に集計（L3 還流）
+            │                              → state["period_digest"]＋集計テキストを提示
+            ├─ authoring_loop （共用: child_record_author→reviewer→approval_gate を巡回・再作成）
+            │    └─ child_record_author (LlmAgent) … 期間集積＋子メモリから「発達の経過/総合所見」を領域別に叙述
+            │                                        （開示前提＝肯定的・非断定的表現） → state["draft"]
+            └─ finalize(kind=child_record) … 復元→validate_child_record_fields/write_child_record_draft → state["final_document"]
        │
        └─[after_agent_callback] persist_visit_to_memory … **保育士の明示承認（caregiver_approved）＋型成立**の
                                   ときのみ来園を子の Memory Bank へ書き戻す（真の承認ゲート＝§9/§13。未配線/未承認は降格・保留）
@@ -85,12 +95,23 @@ improver 固有: `improver/tools.py`（`read_policy_cards`／`propose_policy_car
 
 ## 実装状況（v0）と残課題
 
-v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0–2・L2 還流）**（§3「日誌先行 → 月案は集積に乗せる」）。
+v0 で稼働する範囲は **保育日誌 ＋ 個別月案（L2 還流）＋ 児童票（期ごとの保育経過記録・L3 還流）**・
+**全年齢（0–2/3–5）**（§3「日誌先行 → 月案は集積に乗せる」＋ §19「ヒアリング反映 2026-07＝主戦場を
+蓄積の下流再構成へ・集積階層 日誌→月案→児童票→（将来）要録」）。
 実装済み（決定的部分はテスト済み・GCP/LLM 非依存で稼働）:
-- **doc_type 分岐 ＋ 月案パス ＋ L2 還流**：`DocTypeRouter`（root_agent）が doc_type で日誌/月案を振り分け、
-  月案は `MonthlyPrepAgent` が前月日誌を child_id 別に決定的集計（`prev_month_digest`）→ `monthly_author` が
+- **doc_type 分岐 ＋ 月案パス ＋ L2 還流**：`DocTypeRouter`（root_agent）が doc_type で日誌/月案/児童票を振り分け、
+  月案は `DigestPrepAgent`（monthly_prep）が前月日誌を child_id 別に決定的集計（`prev_month_digest`）→ `monthly_author` が
   要約・ねらい化 → `validate_monthly_fields`/`write_monthly_draft` で確定（§3/§4/§10）。`MonthlyPlan` スキーマ・
   月案決定論E2E（ルータ分岐/L2 還流/確定）まで実装・テスト済み。デモ入口＝`scripts/run_monthly.py`。
+- **児童票パス ＋ L3 還流（§19）**：`ChildRecord`/`DevelopmentNote` スキーマ（期・発達の経過＝領域別叙述・
+  配慮特記・家庭連携・総合所見・次期に向けて。越谷市公式様式＋実務解説で裏取りした③層＝叙述式経過記録のみを
+  生成対象に。原簿・発達チェックリストは AI 外）。`DigestPrepAgent`（period_prep・`period_entries`→`period_digest`）→
+  `child_record_author`（**開示前提の肯定的・非断定的表現**を instruction で担保・reviewer にも観点追加）→
+  finalize(kind="child_record")。E2E（ルータ分岐/L3 還流/確定/降格）・evalset 6件まで実装・テスト済み。
+  デモ入口＝`scripts/run_child_record.py`。期制（月次/3期/4期）の設定化は園差＝残課題（§18 と同枠）。
+- **全年齢対応（§19）**：0–2 限定を解除。年齢分岐は従来の `_required_tag_type`（0–2＝3つの視点/3–5＝5領域）を
+  全書類で共用し、日誌の生活記録必須は 0–2 のみに限定（3–5 は任意＝整形/帳票も記入時のみ）。プロンプト・UI
+  （年齢帯チップ・3–5 仮名児/サンプル）も全年齢化。AgeBand の 0/1–2 分割は v0 簡略化を維持（domain.py 注記）。
 - レビュー巡回（`build_authoring_loop`＝[作成→レビュー→ApprovalGate]）：NEEDS_REVISION で作成AIが指摘点を
   再作成し、APPROVED 早期終了（`ApprovalGate`／`is_approved`。判定は1行目の verdict＝prompts.py）。再質問しない
   revision mode・date 等の機械的メタを指摘させない注意書きは prompts.py。
@@ -98,14 +119,14 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
 - **標準様式への準拠（ネット調査で裏取り）**：`write_draft`/`write_monthly_draft` を 0–2 個別の標準様式へ（章立て・順序・
   **養護2本柱の分離**・**個別の生活記録**＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。制度用語2件の
   文言誤りも告示準拠に是正（3つの視点「健やかに伸び伸びと育つ」・10の姿「数量や図形、標識や文字などへの関心・感覚」）。
-  `LifeRecord` スキーマ＋年齢分岐は `validate_*`/`write_*`/E2E/eval16件まで同調・テスト済み。
+  `LifeRecord` スキーマ＋年齢分岐は `validate_*`/`write_*`/E2E/eval まで同調・テスト済み。
 - **保育士の編集UI（標準様式の見た目）**：`FinalizeAgent` が `final_entry`（構造化）も state に出し、`docedit.js` が欄ごとの
   編集フォームに描画→ `/api/finalize-edit`（`finalize_entry` 中継）で再 validate/整形→承認（`/api/form-meta` がタグ語彙の SSOT）。
-- 出力の最終 validation／整形（`FinalizeAgent(kind)`＋`harness/finalize.py`。日誌/月案で `_finalize` を共用）。
+- 出力の最終 validation／整形（`FinalizeAgent(kind)`＋`harness/finalize.py`。日誌/月案/児童票で `_finalize` を共用）。
 - **育つ指針＝構造化カード（§8 v1）**：`policy_store`（決定的 CRUD/render/完全重複ガード/履歴）＋`git_ops.commit_policy_book`（証拠 commit・既定 dry_run）。`improver` は4ツール（`read_policy_cards`→`propose_policy_card`＝意味的競合の申告→`ask_caregiver`＝比較相談→`commit_policy_card`＝保育士決定で即反映）。eval は取り込みから decouple（CI 専用）。
-- **決定論E2E（結合テスト）**：`tests/test_e2e/`。`FakeLlm` 注入で日誌/月案パイプラインを実 ADK ランタイムに
+- **決定論E2E（結合テスト）**：`tests/test_e2e/`。`FakeLlm` 注入で日誌/月案/児童票パイプラインを実 ADK ランタイムに
   end-to-end で通し、連結・APPROVED 早期終了・**NEEDS_REVISION での再作成（2枚目が確定）**・巡回上限・確定3経路・
-  HITL 不発火・**真の承認ゲートの書き戻し**・**L2 還流/ルータ分岐**を creds 不要・決定的に検証（品質採点は層B eval＝別系統）。起動は `/e2e` skill。
+  HITL 不発火・**真の承認ゲートの書き戻し**・**L2/L3 還流・ルータ分岐（日誌/月案/児童票）**を creds 不要・決定的に検証（品質採点は層B eval＝別系統）。起動は `/e2e` skill。
 - **Memory Bank 配線（読み＋書き戻し）＋ 真の承認ゲート**：`config.memory_service_uri`（`agentengine://<id>`）→
   入口 `server.py`（ADK の `--memory_service_uri` 自動配線）。読み＝`recall_child_history`、書き戻し＝
   `persist_visit_to_memory`（`after_agent_callback`）。書き戻しは **保育士の明示承認（`caregiver_approved=True`＝
@@ -134,7 +155,7 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   据え置き）で、nightly/手動の main eval-gate がこれを実行しコミットバックする（`eval-gate.yml`・`contents: write`）。
   **live 採点で実値シード済み（main mean≈0.95・must_fix 0）**。load/write/降格・file 優先順位は
   `tests/test_eval_gate.py` で LLM 非依存に検証。
-- **eval ケース**：`eval/cases/diary_0_2.evalset.json` を 16 件（実在しない仮名ロスターのみ・現場の多様な状況）に拡充。
+- **eval ケース**：`eval/cases/diary_0_2.evalset.json` 16 件 ＋ `eval/cases/child_record.evalset.json` 6 件（§19・session_input で doc_type/期間日誌を seed・開示前提の参照ドラフト）＝計 22 件（実在しない仮名ロスターのみ・現場の多様な状況）。
   子どもは現場の日誌に寄せた仮名（下の名前＋ちゃん/くん）＋月齢・数量化した生活記録・具体的な姿で、`tests/test_eval_cases.py`
   の `_FICTIONAL_ROSTER` allowlist が実名/未知名の混入を機械的に落とす（§14）。
   件数≥15・参照ドラフトが型を通る・実名なしを `tests/test_eval_cases.py` で決定論検査。
@@ -143,13 +164,13 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   （nightly/手動・WIF で creds 採点）。決定論 CI（`ci.yml`）は従来どおり毎PR・creds 不要。
   docker build → コンテナ起動で `/docs` 200 を実機確認済み。
 - **保育士向け配布 UI（`web/`・B-full）**：`server.py` が `register_web_ui(app)` で `get_fast_api_app` に同居させる。
-  保育士 SPA＝`/app/`（`/` も着地）、dev UI＝`/dev-ui/`、自前 API＝`/api/*`。日誌/月案はフロントが ADK ネイティブ REST
+  保育士 SPA＝`/app/`（`/` も着地）、dev UI＝`/dev-ui/`、自前 API＝`/api/*`。日誌/月案/児童票はフロントが ADK ネイティブ REST
   （`/run_sse`・session 作成で月案 seed・`PATCH` 承認・`function_response` で HITL 再開）を直接駆動（自前 Runner なし＝§9）。
   **確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で保育士が欄ごとに自由に編集**でき（出欠/個別記録/教育ねらいは
   追加削除可・タグは年齢に応じ `/api/form-meta` の Enum 語彙から多選択・記録日/対象月は read-only）、保存時に
   `/api/finalize-edit`（harness の `finalize_entry` 中継）で再 validate/整形→state へ反映、承認で公式記録にロック（型成立ゲートは編集後も有効）。
   **現場でそのまま綴じる最終形＝園の帳票PDF**：確定/編集後の `final_entry` を「帳票PDFをダウンロード」で保存できる（`/api/export-pdf`→
-  `chohyo_pdf.render_pdf`＝ReportLab で A4 罫線帳票・日誌/月案・欄順は標準様式に一致・**描画のみで型検査は harness**）。**末尾に確認印欄
+  `chohyo_pdf.render_pdf`＝ReportLab で A4 罫線帳票・日誌/月案/児童票・欄順は標準様式に一致・**描画のみで型検査は harness**）。**末尾に確認印欄
   （担任/主任/園長）を置き公式記録の体裁を満たす**。生活記録（食事/睡眠/排泄/機嫌・体調）の4列表は本文全幅で他行と罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER によるズレを LEFT＋全幅で是正）。ヘッダは気温・組（`DiaryEntry` の任意欄）を記入時のみ添える。日本語は
   IPAex ゴシックを埋め込むため閲覧側の CJK フォントに依存せず化けない（Heisei CID 非埋め込みの空白化を回避）。生成は純 pip・
@@ -180,7 +201,7 @@ v0 で稼働する範囲は **保育日誌（0–2 個別）＋ 個別月案（0
   標準様式**（章立て・順序・養護2本柱・生活記録・制度用語）に準拠済み。残るのは特定園の欄差（午睡ブレスチェック間隔欄の
   型化要否・家庭連携/食育/健康の分割粒度・0歳=3つの視点 vs 旧式 0歳5領域など）をヒアリングで確定する微調整のみ＝
   **現場依存で、コードだけでは閉じられない**（標準様式準拠まではコードで到達済み）。
-- **現場の修正差分による eval ケースの質的拡充**（§12）：v0 は実在しない仮名ロスター 16 件。現場の👍👎・修正差分で「リアルな失敗」を
+- **現場の修正差分による eval ケースの質的拡充**（§12）：v0 は実在しない仮名ロスター 22 件（日誌16＋児童票6）。現場の👍👎・修正差分で「リアルな失敗」を
   足すのは現場との運用依存（PII 非コミットを守りつつ＝§14）。
 - **rubric 文面の echo 安定化**（§12）：ADK は judge の echo テキストで rubric を照合するため、長い軸 rubric
   （axis_guideline_alignment）は judge の言い換えで照合漏れし一部ケースでその軸が欠落する（mustfix は不影響・

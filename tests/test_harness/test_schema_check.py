@@ -104,3 +104,15 @@ def test_blank_life_record_is_violation():
     """0–2 養護の中核＝生活記録が4欄すべて空なら違反（1欄でも記入があれば型成立）。"""
     assert any("生活記録" in p for p in validate_fields(_entry(life_record=LifeRecord())))
     assert validate_fields(_entry(life_record=LifeRecord(sleep="午睡2時間"))) == []
+
+
+def test_3_5_blank_life_record_is_not_violation():
+    """3–5 は生活記録が全欄空でも違反にならない（児別の生活記録欄は 0–2 標準様式のみ＝全年齢対応・§19）。"""
+    problems = validate_fields(
+        _entry(
+            age_band=AgeBand.三から五歳,
+            tags=[FiveDomains.人間関係],
+            life_record=LifeRecord(),
+        )
+    )
+    assert problems == []

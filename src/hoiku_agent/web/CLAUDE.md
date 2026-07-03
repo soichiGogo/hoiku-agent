@@ -5,7 +5,7 @@
 
 ## 立ち位置（4つ目の責務ではない）
 
-- **薄い presentation 層**。日誌/月案の生成は ADK の `get_fast_api_app` が出す**ネイティブ REST**
+- **薄い presentation 層**。日誌/月案/児童票の生成は ADK の `get_fast_api_app` が出す**ネイティブ REST**
   （`/run_sse`・`/apps/{app}/users/{u}/sessions`・`PATCH …/sessions`）をフロント SPA が直接叩く＝
   **自前 Runner を組まない**（server.py の方針・§9）。harness/agents/schemas は不変のまま動く。
 - improver（二階）だけは discoverable app でない（root_agent を持たない＝improver/CLAUDE.md）ため、
@@ -28,17 +28,17 @@
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
   **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
-  （帳票PDF のサーバ生成＝`chohyo_pdf.py` はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
+  （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/児童票）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
   日本語フォントは `web/fonts/ipaexg.ttf` を**同梱**して埋め込む＝実行時に外部取得しない＝ローカル完結は保つ。）
 - **帳票PDF（現場でそのまま綴じる最終形＝§18）は presentation**：確定 entry を園の様式に近い罫線帳票へ描くだけ
-  （型の保証・validation は harness＝§5・ここは描画のみ）。欄順は `write_draft`/`write_monthly_draft`（標準様式）と一致させる。
+  （型の保証・validation は harness＝§5・ここは描画のみ）。欄順は `write_draft`/`write_monthly_draft`/`write_child_record_draft`（標準様式）と一致させる。
 - **実名を出さない**（架空の子のみ＝§14）。対象児・サンプル投入は現場の日誌に寄せた**実在しない仮名**
   （下の名前＋ちゃん/くん・`app.js` の `CHILDREN`）と仮メモのみ（記号名「架空児A」には戻さない）。
 
 ## デザイン規約（刷新後・崩さない）
 
 UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質**（透明性・状態可視化・HITL・
-正直な降格・作業の可視化）を保育士語に翻訳して載せる。方針＝**日誌/月案・指針を育てる（improver）を
+正直な降格・作業の可視化）を保育士語に翻訳して載せる。方針＝**日誌/月案/児童票・指針を育てる（improver）を
 すべて温かく**、**単一デザインシステム**で統一する（v1 でコンソール調は撤去）。
 
 - **色は意味で割り当てる**＝`styles.css` の `:root` トークンが SSOT（面/文字/actor/状態/ゲート/diff）。
@@ -68,13 +68,13 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
   harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
   `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・A4 罫線帳票・日誌/月案）。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・A4 罫線帳票・日誌/月案/児童票）。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
-- `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得）／`docflow.js`（日誌・月案 共通フロー・
+- `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得）／`docflow.js`（日誌・月案・児童票 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
   確定エリアに「帳票PDFをダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
   欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`ui.js`・`app.js`・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。

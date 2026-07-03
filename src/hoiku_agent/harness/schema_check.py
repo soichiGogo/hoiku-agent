@@ -17,7 +17,7 @@ LLM は呼ばない。判定は純粋関数で、tests/test_harness/ から LLM 
 
 from __future__ import annotations
 
-from ..schemas import AgeBand, DiaryEntry, FiveDomains, MonthlyPlan, ThreeViewpoint
+from ..schemas import AgeBand, ChildRecord, DiaryEntry, FiveDomains, MonthlyPlan, ThreeViewpoint
 
 
 def _required_tag_type(age_band: AgeBand) -> tuple[type, str]:
@@ -53,7 +53,7 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
     if not entry.practice_record.strip():
         problems.append("保育の実践記録が未記入")
     if not entry.individual_notes:
-        problems.append("個別日誌（individual_notes）が空：0–2 個別は個の記録が本体（§3/§10）")
+        problems.append("個別日誌（individual_notes）が空：個の記録が日誌の本体（§3/§10）")
     if not entry.evaluation.child_focus.strip():
         problems.append("評価・反省(a 子どもに焦点)が未記入（2視点必須＝§10）")
     if not entry.evaluation.self_review.strip():
@@ -71,8 +71,9 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
                 f"child_id={note.child_id}: {entry.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
         # 0–2 養護の中核＝個別の生活記録（食事・睡眠・排泄・機嫌/体調）。4 欄すべて空なら未記入扱い
-        # （1欄でも記入があれば型成立。標準様式調査＝§10）。
-        if note.life_record.is_blank():
+        # （1欄でも記入があれば型成立。標準様式調査＝§10）。**0–2 のみ必須**：3–5 の標準様式に
+        # 児別の生活記録欄は無いため課さない（全年齢対応＝§19。記入があれば整形には出す）。
+        if entry.age_band is AgeBand.零から二歳 and note.life_record.is_blank():
             problems.append(
                 f"child_id={note.child_id}: 生活記録（食事・睡眠・排泄・機嫌/体調）が未記入"
                 "（0–2 養護の中核＝§10）"
@@ -122,6 +123,45 @@ def validate_monthly_fields(plan: MonthlyPlan) -> list[str]:
         if not any(isinstance(t, required_tag_type) for t in note.tags):
             problems.append(
                 f"教育のねらい[{i}]: {plan.age_band.value} は{tag_label}のタグが1つ以上必要"
+            )
+
+    return problems
+
+
+def validate_child_record_fields(record: ChildRecord) -> list[str]:
+    """児童票（期ごとの保育経過記録）ドラフトの必須欄・年齢分岐を検査する（空＝充足・§19）。
+
+    日誌・月案と同じく「型としての成立」だけを決定的に検査する（表現の適否＝開示前提の
+    肯定的・非断定的表現はレビューAI／指針整合＝eval の責務）。年齢分岐は日誌・月案と共通の
+    _required_tag_type を使い、「発達の経過（development_notes）」の各叙述に
+    0–2＝3つの視点 / 3–5＝5領域 のタグを課す（実務主流＝0歳:3つの視点/全年齢:5領域と一致・§19）。
+
+    Args:
+        record: 検査対象の児童票ドラフト（ChildRecord）。
+
+    Returns:
+        違反メッセージのリスト。空リストなら "型" として成立。
+    """
+    problems: list[str] = []
+
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ── §19 児童票：共通構造
+    if not record.period.strip():
+        problems.append("対象期間（period）が未記入")
+    if not record.child_id.strip():
+        problems.append("対象児（child_id）が未記入（児童票は児童別＝§19）")
+    if not record.overall_note.strip():
+        problems.append("総合所見（overall_note）が未記入（期の育ちの総括＝§19）")
+    if not record.development_notes:
+        problems.append("発達の経過（development_notes）が空：年齢分岐タグ付きで1つ以上必要（§19）")
+
+    # ── 年齢分岐：発達の経過に必須タグ体系を課す（0–2＝3つの視点 / 3–5＝5領域） ──
+    required_tag_type, tag_label = _required_tag_type(record.age_band)
+    for i, note in enumerate(record.development_notes):
+        if not note.description.strip():
+            problems.append(f"発達の経過[{i}]: 叙述（description）が未記入")
+        if not any(isinstance(t, required_tag_type) for t in note.tags):
+            problems.append(
+                f"発達の経過[{i}]: {record.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
 
     return problems

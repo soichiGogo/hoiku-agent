@@ -11,12 +11,15 @@
   ApprovalGate] を1巡とする LoopAgent に author を包み、NEEDS_REVISION のとき次巡で author が指摘点を直して
   再提出する（「巡回保証が要る」と判断したための設計＝旧 v0 は author をループに包まなかった）。再作成時の
   挙動（白紙から作り直さない・同じ不足で `ask_caregiver` を繰り返さない）は `prompts.py` の revision mode。
-  **月案も同じ形**（`monthly_author_agent.py`＝単一 LlmAgent・authoring_loop を日誌と共用）。違いは instruction
-  （月案スキーマ）と、前段 `MonthlyPrepAgent` が決定的集計した前月集積（L2 還流）を読み要約する点（§10）。
-- **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案共用）。**巡回（LoopAgent）と APPROVED 早期終了の
+  **月案・児童票も同じ形**（`monthly_author_agent.py` / `child_record_author_agent.py`＝単一 LlmAgent・
+  authoring_loop を日誌と共用）。違いは instruction（月案/児童票スキーマ。児童票は**開示前提の肯定的・非断定的
+  表現**を含む＝§19）と、前段 `DigestPrepAgent` が決定的集計した集積（月案＝前月 L2／児童票＝期間 L3）を読み
+  要約する点（§10/§19）。
+- **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案/児童票共用・開示前提の表現観点を含む）。**巡回（LoopAgent）と APPROVED 早期終了の
   "制御" は harness/pipeline.py 側**（決定的）。ここは reviewer 単体（指摘の生成）を返す。`date` 等 harness が
   確定時に補完する機械的メタの欠落は指摘対象外＝内容点検に集中する（prompts.py の注意書き）。
-- **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_review_agent`。
+- **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_child_record_author_agent` /
+  `build_review_agent`。
   トップレベルでインスタンス化しない（例外は `agent.py` の root_agent のみ）。任意引数 `model`（既定
   None＝`models.build_model()`＝`gemini_model` を `model_location`＝global に固定した Gemini。Gemini 3.x は
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の

@@ -8,7 +8,8 @@
 - **リポジトリ内の設計参照は `docs/設計コンテキスト.md`（開発ハンドオフの凝縮版）→ `docs/architecture.md`
   （コード対応）の順に見る**。なお不明なら推測で埋めずユーザーに確認。両者が食い違ったら vault が正。
 - コード内の docstring は設計コンテキストの節番号（§4＝アーキ全体像 / §5＝責務境界 / §6＝作成AI /
-  §7＝レビューAI / §8＝改善エージェント / §9＝メモリ / §10＝スキーマ / §12＝eval）を参照する。崩さない。
+  §7＝レビューAI / §8＝改善エージェント / §9＝メモリ / §10＝スキーマ / §12＝eval / §19＝ヒアリング反映
+  2026-07：児童票＝L3 集積・全年齢化）を参照する。崩さない。
 - **構造・規約を変えたら本 CLAUDE.md と `docs/architecture.md` を同じ変更内で更新する**（規約と実態の乖離・
   リンク切れを防ぐ。改名・移動・SSOT の置き場変更は特に）。
 
@@ -36,6 +37,8 @@
 - 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
 - 月案（doc_type=月案・L2 還流）は前月日誌を seed して回す専用入口 `uv run python scripts/run_monthly.py
   --child-id はるとくん --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
+- 児童票（doc_type=児童票・L3 還流＝期間日誌の集積）は専用入口 `uv run python scripts/run_child_record.py
+  --child-id はるとくん --period 2026-04〜2026-06`（要 LLM 資格情報。期間日誌を seed）。
 - 配信（層A）: `Dockerfile`＝`uvicorn server:app`（Cloud Run・scale-to-zero）。デプロイ＝
   `.github/workflows/deploy.yml`（WIF）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
 - 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
@@ -50,9 +53,10 @@
 1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・git適用。
    LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。`tools/validate_fields.py`・`tools/write_draft.py` は
    これを呼ぶ**薄いラッパ**（二重実装しない）。Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
-2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）＝**単一 LlmAgent**（内部を
-   多層化しない。巡回＝再作成は harness の `build_authoring_loop` が [作成→レビュー→ゲート] に包んで担う＝
-   NEEDS_REVISION で author が指摘点を再作成）、reviewer＝Evaluator（日誌/月案共用）。巡回制御・早期終了は harness 側。
+2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）/ child_record_author（児童票）＝
+   **単一 LlmAgent**（内部を多層化しない。巡回＝再作成は harness の `build_authoring_loop` が [作成→レビュー→ゲート]
+   に包んで担う＝NEEDS_REVISION で author が指摘点を再作成）、reviewer＝Evaluator（日誌/月案/児童票で共用・
+   開示前提の表現観点を含む）。巡回制御・早期終了は harness 側。
 3. **improver/（二階・回す）** — 修正メモ→育つ指針カードの追加/改訂を自走提案。**既存カードとの意味的競合を
    精査し、競合は保育士に比較相談、保育士の決定で即反映**（add/supersede。番人＝意味的競合精査＋保育士決定）。
    指針編集の決定的実体は harness/policy_store、git 証拠 commit は harness/git_ops。**eval は取り込みから外す**
@@ -66,8 +70,9 @@
 
 - 各モジュール冒頭に `from __future__ import annotations` を置く。
 - ADK エージェントは **`build_xxx()` ファクトリ関数**で構築して返す（`build_author_agent` /
-  `build_monthly_author_agent` / `build_review_agent` / `build_improver_agent` / `build_document_pipeline` /
-  `build_monthly_pipeline` / `build_root_agent`）。トップレベルでインスタンス化しない（例外は `agent.py` の `root_agent` のみ）。
+  `build_monthly_author_agent` / `build_child_record_author_agent` / `build_review_agent` / `build_improver_agent` /
+  `build_document_pipeline` / `build_monthly_pipeline` / `build_child_record_pipeline` / `build_root_agent`）。
+  トップレベルでインスタンス化しない（例外は `agent.py` の `root_agent` のみ）。
 - エージェント間の受け渡しは **`output_key` → `state[...]`**（`state["draft"]` / `state["review"]`）。
   独自グローバルで渡さない。
 - スキーマは `schemas/` の pydantic モデルに集約。同じ関心事を別所で二重定義しない。
@@ -79,26 +84,29 @@
 決定的部分（harness）は実装＋テスト済みで、LLM/GCP 非依存で稼働する。実装状況の詳細は
 `docs/architecture.md`「実装状況（v0）と残課題」を正とする（ここでは要点のみ・二重管理しない）。
 
-- **稼働範囲**: 保育日誌（0–2 個別）＋ **個別月案（0–2・L2 還流）**。doc_type 分岐（`DocTypeRouter`＝root_agent）で
-  振り分け（既定＝保育日誌＝§3）。
+- **稼働範囲**: 保育日誌 ＋ **個別月案（L2 還流）** ＋ **児童票（期ごとの保育経過記録・L3 還流＝§19）**。
+  いずれも**全年齢（0–2/3–5）**対応（年齢分岐＝0–2:3つの視点＋生活記録必須／3–5:5領域・生活記録任意）。
+  doc_type 分岐（`DocTypeRouter`＝root_agent）で振り分け（既定＝保育日誌＝§3）。
 - **実装済み（コード）**: レビュー APPROVED 早期終了（`ApprovalGate`/`is_approved`）/ 確定処理（`FinalizeAgent(kind)`＋
-  `harness/finalize.py`・日誌/月案）/ **月案パス＋L2 還流**（`MonthlyPrepAgent`→`prev_month_digest`→`monthly_author`）/
+  `harness/finalize.py`・日誌/月案/児童票）/ **月案パス＋L2 還流**（`DigestPrepAgent`→`prev_month_digest`→`monthly_author`）/
+  **児童票パス＋L3 還流**（`DigestPrepAgent`（period_prep）→`period_digest`→`child_record_author`・開示前提の表現指針＝§19）/
   HITL（`ask_caregiver`・`awaiting_caregiver_approval`）/ Memory Bank 配線＋**真の承認ゲート**（書き戻しは
   `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/
   **育つ指針＝構造化カード（§8 v1）**（`policy_store`＝決定的 CRUD/render/完全重複ガード/履歴・`git_ops.commit_policy_book`＝証拠 commit・
   improver は read→propose（意味的競合の申告）→ask（比較相談）→commit（保育士決定で即反映）の4ツール・eval は decouple）/
   **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格・**CI 品質回帰専用**）/
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
-  **eval ケース 16 件**（実在しない仮名ロスターのみ・現場に即した内容）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
+  **eval ケース 22 件**（日誌16＋児童票6・実在しない仮名ロスターのみ・現場に即した内容）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
 - **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
 - **標準様式への準拠＋制度用語是正**: `write_draft`/`write_monthly_draft` をネット調査で裏取りした 0–2 個別の標準様式へ
   （養護2本柱の分離・個別の生活記録＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。3つの視点/10の姿の
-  文言誤り2件を告示準拠に是正。`LifeRecord` スキーマ＋年齢分岐は validate/draft/finalize/E2E/eval16件まで同調・テスト済み（§18・§10）。
-- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/**指針を育てる**）。日誌/月案は ADK ネイティブ REST を
-  フロントが直接駆動（HITL は `function_response` 再送で再開）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
+  文言誤り2件を告示準拠に是正。`LifeRecord` スキーマ＋年齢分岐は validate/draft/finalize/E2E/eval まで同調・テスト済み（§18・§10）。
+- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/**児童票**/**指針を育てる**）。日誌/月案/児童票は
+  ADK ネイティブ REST をフロントが直接駆動（HITL は `function_response` 再送で再開。日誌は年齢帯チップ・児童票は期間指定＋
+  期間日誌 seed）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
   保育士が欄ごとに自由に編集**でき、保存時 `/api/finalize-edit`（harness `finalize_entry` 中継）で再検査・再整形→承認（`PATCH`
   で `caregiver_approved`）。タグ語彙は `/api/form-meta`（schemas Enum が SSOT）。**現場でそのまま綴じる最終形＝園の帳票PDF**は
-  「帳票PDFをダウンロード」→ `/api/export-pdf`（`web/chohyo_pdf.py`＝ReportLab で A4 罫線帳票・日誌/月案・欄順は標準様式に一致・
+  「帳票PDFをダウンロード」→ `/api/export-pdf`（`web/chohyo_pdf.py`＝ReportLab で A4 罫線帳票・日誌/月案/児童票・欄順は標準様式に一致・
   **末尾に確認印欄（担任/主任/園長）**・**描画のみ／型の保証は harness**・日本語は IPAex ゴシック `web/fonts/ipaexg.ttf` を埋め込み＝閲覧側フォント非依存・純 pip で Dockerfile 不変・非ゲート）。
   **改善エージェント（指針を育てる＝`policy.js`）は
   `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。

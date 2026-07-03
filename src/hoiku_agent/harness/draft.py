@@ -17,7 +17,14 @@ template_ref が与えられればそれに寄せる余地を残す。
 
 from __future__ import annotations
 
-from ..schemas import DiaryEntry, IndividualNote, MonthlyEducationNote, MonthlyPlan
+from ..schemas import (
+    ChildRecord,
+    DevelopmentNote,
+    DiaryEntry,
+    IndividualNote,
+    MonthlyEducationNote,
+    MonthlyPlan,
+)
 
 
 def _format_attendance(entry: DiaryEntry) -> str:
@@ -46,9 +53,11 @@ def _format_life_record(note: IndividualNote) -> str:
     )
 
 
-def _format_note(note: IndividualNote) -> str:
-    # 0–2 個別の記録は児ごとに「姿＋枠組みタグ＋生活記録＋個人のねらい」をまとめて出す（標準様式）。
+def _format_note(note: IndividualNote, life_record_always: bool = True) -> str:
+    # 個別の記録は児ごとに「姿＋枠組みタグ＋生活記録＋個人のねらい」をまとめて出す（標準様式）。
     # タグは枠組み（10の姿/3つの視点/5領域）を明示して出力する（§13）。
+    # 生活記録は 0–2 で常時（養護の中核＝空欄も「―」で出す）、3–5 は記入があるときだけ添える
+    # （3–5 標準様式に児別の生活記録欄は無い＝全年齢対応・§19）。
     tags = "、".join(t.value for t in note.tags) if note.tags else "（タグ未付与）"
     header = f"  ◆ {note.child_id}"
     if note.age_months.strip():
@@ -57,8 +66,9 @@ def _format_note(note: IndividualNote) -> str:
         header,
         f"    ・子どもの姿: {note.observed_state or '（未記入）'}",
         f"      └ 対応する姿/領域: {tags}",
-        f"    ・生活記録: {_format_life_record(note)}",
     ]
+    if life_record_always or not note.life_record.is_blank():
+        lines.append(f"    ・生活記録: {_format_life_record(note)}")
     if note.individual_aim.strip():
         lines.append(f"    ・個人のねらい: {note.individual_aim}")
     return "\n".join(lines)
@@ -74,8 +84,9 @@ def write_draft(entry: DiaryEntry, template_ref: str | None = None) -> str:
     Returns:
         様式に整形した文字列（標準様式の章立て・順序。10の姿/3つの視点/5領域タグを明示）。
     """
+    life_record_always = entry.age_band.value == "0-2"  # 0–2＝養護の中核として常時／3–5＝記入時のみ
     notes_block = (
-        "\n".join(_format_note(n) for n in entry.individual_notes)
+        "\n".join(_format_note(n, life_record_always) for n in entry.individual_notes)
         if entry.individual_notes
         else "  （個別記録なし）"
     )
@@ -167,6 +178,55 @@ def write_monthly_draft(plan: MonthlyPlan, template_ref: str | None = None) -> s
         "",
         "【評価・反省】",
         f"  {plan.evaluation_reflection}",
+    ]
+    if template_ref:
+        lines.append("")
+        lines.append(f"（様式参照: {template_ref}）")
+    return "\n".join(lines) + "\n"
+
+
+def _format_development(note: DevelopmentNote) -> str:
+    # 発達の経過も枠組み（3つの視点/5領域/10の姿）を明示して出力する（§13/§19）。
+    tags = "、".join(t.value for t in note.tags) if note.tags else "（タグ未付与）"
+    return f"  - {note.description}\n    └ 対応する姿/領域: {tags}"
+
+
+def write_child_record_draft(record: ChildRecord, template_ref: str | None = None) -> str:
+    """児童票（期ごとの保育経過記録）ドラフトを標準様式テキストへ整形して返す（§19）。
+
+    共通構造（越谷市公式様式・実務解説で裏取り）の順序：ヘッダ（期・対象児・月齢・年齢帯）→
+    発達の経過（領域別叙述＋年齢分岐タグ明示）→ 配慮事項・特記 → 家庭との連携 → 総合所見 →
+    次期に向けて。確認印欄は帳票PDF（web/chohyo_pdf）側で描く（テキスト版は本文のみ）。
+
+    Args:
+        record: 整形対象の児童票ドラフト。
+        template_ref: 雛形のパス等（あれば様式に従う）。期制・欄名の園差で拡張可。
+
+    Returns:
+        様式に整形した文字列（枠組みタグを明示）。
+    """
+    development_block = (
+        "\n".join(_format_development(n) for n in record.development_notes)
+        if record.development_notes
+        else "  （発達の経過 未記入）"
+    )
+    subject = record.child_id
+    if record.age_months.strip():
+        subject += f"（{record.age_months}）"
+    lines = [
+        f"■ 児童票・保育経過記録（{record.age_band.value} 歳児）　対象期間: {record.period}　対象児: {subject}",
+        "",
+        "【発達の経過（領域別の叙述）】",
+        development_block,
+        "",
+        f"【配慮事項・特記】 {record.care_notes or '（なし）'}",
+        "",
+        f"【家庭との連携】 {record.family_liaison or '（なし）'}",
+        "",
+        "【総合所見】",
+        f"  {record.overall_note}",
+        "",
+        f"【次期に向けて】 {record.next_aims or '（なし）'}",
     ]
     if template_ref:
         lines.append("")
