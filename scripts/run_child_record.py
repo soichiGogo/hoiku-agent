@@ -1,0 +1,203 @@
+"""児童票パイプライン（L3 還流）の手動起動エントリ（設計コンテキスト §19）。
+
+月案（run_monthly.py）と対称。児童票は期間中の日誌の集積（L3 還流）を seed する必要があるため、
+専用スクリプトで起こす（root_agent には組み込み済みだが、`adk web` は doc_type と期間日誌を
+seed しづらいので、デモ/検証はこの入口を使う）。
+
+このスクリプトは:
+1. 期間中の日誌（`--entries-file` の JSON 配列。無ければ同梱の仮名サンプル＝3ヶ月の発達推移）を読む。
+2. session state に doc_type="児童票" と period_entries を seed して root_agent（DocTypeRouter）を回す。
+3. DigestPrepAgent（period_prep）が child_id 別に集計（state["period_digest"]）→ 児童票 author が
+   領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer → 児童票 finalize（ChildRecord を検査・整形）。
+
+使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:
+    uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06
+    uv run python scripts/run_child_record.py --entries-file path/to/period_diaries.json
+
+期間日誌の JSON は DiaryEntry の配列（run_monthly.py の前月日誌と同型）。
+実データは置かない＝実在しない仮名のみ（§14。既定サンプルの子は eval の仮名ロスターと同じ）。
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+from pathlib import Path
+
+from google.genai import types
+
+from hoiku_agent.agent import root_agent
+
+_APP_NAME = "hoiku_child_record"
+_USER_ID = "caregiver"
+
+
+def _sample_period_entries(child_id: str) -> list[dict]:
+    """期間中の日誌サンプル（L3 還流のデモ入力）。実データは置かない＝実在しない仮名のみ（§14）。
+
+    3ヶ月にわたる発達の推移（つかまり立ち→歩行→指さし・発語）を含め、児童票の
+    「点の記録 → 期の育ちの線」への再構成が見える素材にする（§19）。
+    各要素は DiaryEntry として妥当（_parse_prev_entries が model_validate で復元する）。
+    """
+    days = [
+        {
+            "date": "2026-04-10",
+            "age_months": "1歳1か月",
+            "observed_state": "つかまり立ちから伝い歩きで棚に沿って移動し、玩具に手を伸ばした",
+            "tags": ["健やかに伸び伸びと育つ"],
+            "practice_record": "つかまり立ちを促す安全な環境を整えた。",
+            "meal": "離乳食後期を7割",
+            "sleep": "12:00〜14:00 午睡",
+            "toilet": "排尿4回・排便1回",
+            "mood_health": "視診で体温36.5℃、機嫌よし",
+        },
+        {
+            "date": "2026-04-24",
+            "age_months": "1歳1か月",
+            "observed_state": "保育者の歌に合わせて体を揺らし、目が合うと声を出して笑った",
+            "tags": ["身近な人と気持ちが通じ合う"],
+            "practice_record": "ふれあい遊びで応答的に関わった。",
+            "meal": "離乳食後期を8割",
+            "sleep": "12:10〜14:05 午睡",
+            "toilet": "排尿4回・排便1回",
+            "mood_health": "視診で体温36.6℃、変化なし",
+        },
+        {
+            "date": "2026-05-15",
+            "age_months": "1歳2か月",
+            "observed_state": "両手を離して2〜3歩歩き、保育者のもとへ進もうとした",
+            "tags": ["健やかに伸び伸びと育つ"],
+            "practice_record": "広い動線とマットで歩行を支えた。",
+            "meal": "完了期へ移行し8割",
+            "sleep": "12:15〜14:20 午睡",
+            "toilet": "排尿5回・排便1回",
+            "mood_health": "視診で体温36.5℃、機嫌よし",
+        },
+        {
+            "date": "2026-05-29",
+            "age_months": "1歳2か月",
+            "observed_state": "砂場でスコップに砂をすくっては空け、こぼれる様子をじっと見つめた",
+            "tags": ["身近なものと関わり感性が育つ"],
+            "practice_record": "砂・水の感触遊びを用意した。",
+            "meal": "完了期を8割・麦茶80ml",
+            "sleep": "12:15〜14:15 午睡",
+            "toilet": "排尿4回・排便1回",
+            "mood_health": "視診で体温36.6℃、変化なし",
+        },
+        {
+            "date": "2026-06-12",
+            "age_months": "1歳3か月",
+            "observed_state": "絵本の動物を指さして「わんわん」と声を出し、保育者に見せようとした",
+            "tags": ["身近な人と気持ちが通じ合う", "身近なものと関わり感性が育つ"],
+            "practice_record": "少人数で絵本を読み指さしに応じた。",
+            "meal": "完了期を9割",
+            "sleep": "12:20〜14:30 午睡",
+            "toilet": "排尿5回・排便1回",
+            "mood_health": "視診で体温36.6℃、機嫌よし",
+        },
+        {
+            "date": "2026-06-26",
+            "age_months": "1歳3か月",
+            "observed_state": "安定して歩き、好きな玩具を自分で選んで保育者に手渡した",
+            "tags": ["健やかに伸び伸びと育つ"],
+            "practice_record": "自分で選べる玩具棚の配置にした。",
+            "meal": "完了期を全量摂取",
+            "sleep": "12:15〜14:10 午睡",
+            "toilet": "排尿4回・排便1回",
+            "mood_health": "視診で体温36.5℃、機嫌よし",
+        },
+    ]
+    return [
+        {
+            "date": d["date"],
+            "age_band": "0-2",
+            "weather": "晴れ",
+            "attendance": [{"child_id": child_id, "present": True, "reason": None}],
+            "practice_record": d["practice_record"],
+            "individual_notes": [
+                {
+                    "child_id": child_id,
+                    "age_months": d["age_months"],
+                    "observed_state": d["observed_state"],
+                    "tags": d["tags"],
+                    "life_record": {
+                        "meal": d["meal"],
+                        "sleep": d["sleep"],
+                        "toilet": d["toilet"],
+                        "mood_health": d["mood_health"],
+                    },
+                }
+            ],
+            "evaluation": {
+                "child_focus": "興味の対象に自分から関わっていた",
+                "self_review": "発達に合わせた環境を用意できた",
+            },
+        }
+        for d in days
+    ]
+
+
+async def _run(period: str, child_id: str, period_entries: list[dict]) -> None:
+    from google.adk.runners import InMemoryRunner
+
+    runner = InMemoryRunner(agent=root_agent, app_name=_APP_NAME)
+    session = await runner.session_service.create_session(
+        app_name=_APP_NAME,
+        user_id=_USER_ID,
+        state={"doc_type": "児童票", "period_entries": period_entries},
+    )
+    message = types.Content(
+        role="user",
+        parts=[
+            types.Part(
+                text=(
+                    f"対象期間 {period} の {child_id} の児童票（保育経過記録）を作成してください。"
+                    f"period には「{period}」をそのまま書いてください。"
+                )
+            )
+        ],
+    )
+
+    async for event in runner.run_async(
+        user_id=_USER_ID, session_id=session.id, new_message=message
+    ):
+        if event.content and event.content.parts:
+            for part in event.content.parts:
+                if getattr(part, "text", None):
+                    print(f"[{event.author}] {part.text}")
+                if getattr(part, "function_call", None):
+                    print(
+                        f"[{event.author}] →tool {part.function_call.name}({part.function_call.args})"
+                    )
+
+    final = await runner.session_service.get_session(
+        app_name=_APP_NAME, user_id=_USER_ID, session_id=session.id
+    )
+    print("\n--- 最終 state ---")
+    print("period_digest:", json.dumps(final.state.get("period_digest"), ensure_ascii=False))
+    print("validation:", final.state.get("validation"))
+    print("final_document:\n", final.state.get("final_document"))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="児童票パイプライン（L3 還流）の手動起動")
+    parser.add_argument("--period", default="2026-04〜2026-06", help="対象期間（自由記述）")
+    parser.add_argument(
+        "--child-id", default="はるとくん", help="対象児（実在しない仮名のみ＝§14）"
+    )
+    parser.add_argument(
+        "--entries-file", help="期間中の日誌（DiaryEntry の JSON 配列）。無ければ同梱サンプル"
+    )
+    args = parser.parse_args()
+
+    if args.entries_file:
+        period_entries = json.loads(Path(args.entries_file).read_text(encoding="utf-8"))
+    else:
+        period_entries = _sample_period_entries(args.child_id)
+
+    asyncio.run(_run(args.period, args.child_id, period_entries))
+
+
+if __name__ == "__main__":
+    main()
