@@ -58,6 +58,28 @@ _MONTHLY = {
 }
 
 
+_CHILD_RECORD = {
+    "period": "2026-04〜2026-06",
+    "age_band": "0-2",
+    "child_id": "はるとくん",
+    "age_months": "1歳3か月",
+    "development_notes": [
+        {
+            "description": "伝い歩きから一人歩きへ移行し、探索範囲が広がった",
+            "tags": ["健やかに伸び伸びと育つ"],
+        },
+        {
+            "description": "指さしと発声で保育者へ伝えようとする姿が増えた",
+            "tags": ["身近な人と気持ちが通じ合う"],
+        },
+    ],
+    "care_notes": "特になし",
+    "family_liaison": "連絡帳で歩行の様子を共有した",
+    "overall_note": "安心できる関係を土台に自分から環境へ関わる姿が増えた",
+    "next_aims": "言葉のやりとりを広げる",
+}
+
+
 def test_render_diary_pdf():
     b = render_pdf("diary", _DIARY)
     assert b[:4] == b"%PDF"
@@ -79,12 +101,41 @@ def test_render_diary_with_temperature_and_class():
     assert len(b) > 10_000
 
 
+def test_render_child_record_pdf():
+    """児童票（期ごとの保育経過記録）も帳票PDF に描ける（欄順は write_child_record_draft と一致・§19）。"""
+    b = render_pdf("child_record", _CHILD_RECORD)
+    assert b[:4] == b"%PDF"
+    assert len(b) > 10_000
+
+
+def test_render_diary_3_5_without_life_record():
+    """3–5 は生活記録が全欄空なら4列表を描かない（全年齢対応・§19）。例外なく %PDF を返す。"""
+    entry = {
+        "date": "2026-07-01",
+        "age_band": "3-5",
+        "weather": "晴れ",
+        "individual_notes": [
+            {
+                "child_id": "さくらちゃん",
+                "observed_state": "鬼ごっこを楽しんだ",
+                "tags": ["人間関係"],
+                "life_record": {},
+            }
+        ],
+        "evaluation": {"child_focus": "友だちとの関わり", "self_review": "見守りが適切"},
+    }
+    b = render_pdf("diary", entry)
+    assert b[:4] == b"%PDF"
+
+
 def test_render_sparse_entry_does_not_raise():
     """空欄多め・タグ空・個別記録空 dict でも描画は落ちない（型検査は harness の責務）。"""
     b = render_pdf("diary", {"age_band": "0-2", "individual_notes": [{}], "evaluation": {}})
     assert b[:4] == b"%PDF"
     b2 = render_pdf("monthly", {"age_band": "0-2", "education": []})
     assert b2[:4] == b"%PDF"
+    b3 = render_pdf("child_record", {"age_band": "0-2", "development_notes": []})
+    assert b3[:4] == b"%PDF"
 
 
 def test_invalid_kind_raises():

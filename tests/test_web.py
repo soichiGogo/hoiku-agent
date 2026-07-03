@@ -148,6 +148,48 @@ def test_finalize_edit_surfaces_validation_after_edit() -> None:
     assert any("生活記録" in p for p in body["problems"])
 
 
+def _edit_child_record_entry() -> dict:
+    """児童票の編集フォーム相当 dict（型を通す good 例・§19）。"""
+    return {
+        "period": "2026-04〜2026-06",
+        "age_band": "0-2",
+        "child_id": "架空児A",
+        "age_months": "1歳3か月",
+        "development_notes": [
+            {
+                "description": "伝い歩きから一人歩きへ移行し、探索範囲が広がった",
+                "tags": ["健やかに伸び伸びと育つ"],
+            }
+        ],
+        "care_notes": "",
+        "family_liaison": "連絡帳で歩行の様子を共有した",
+        "overall_note": "安心できる関係を土台に自分から環境へ関わる姿が増えた",
+        "next_aims": "",
+    }
+
+
+def test_finalize_edit_child_record_revalidates_and_formats() -> None:
+    """児童票の編集後 dict も harness で再検査・再整形できる（kind=child_record）。"""
+    r = _client().post(
+        "/api/finalize-edit", json={"kind": "child_record", "entry": _edit_child_record_entry()}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert "児童票・保育経過記録" in body["formatted"] and "総合所見" in body["formatted"]
+
+
+def test_finalize_edit_child_record_surfaces_validation() -> None:
+    """総合所見を空にしたら不足を返す（児童票でも編集後の型成立ゲートが効く）。"""
+    entry = _edit_child_record_entry()
+    entry["overall_note"] = ""
+    body = (
+        _client().post("/api/finalize-edit", json={"kind": "child_record", "entry": entry}).json()
+    )
+    assert body["ok"] is False
+    assert any("総合所見" in p for p in body["problems"])
+
+
 def test_finalize_edit_not_passcode_gated(monkeypatch) -> None:
     """編集の再確定は LLM 非課金なのでパスコードでゲートしない（読み取り同様素通し）。"""
     monkeypatch.setattr(settings, "demo_passcode", "secret")
@@ -193,6 +235,13 @@ def test_export_pdf_diary_returns_pdf() -> None:
 
 def test_export_pdf_monthly_returns_pdf() -> None:
     r = _client().post("/api/export-pdf", json={"kind": "monthly", "entry": _edit_monthly_entry()})
+    _assert_is_pdf(r)
+
+
+def test_export_pdf_child_record_returns_pdf() -> None:
+    r = _client().post(
+        "/api/export-pdf", json={"kind": "child_record", "entry": _edit_child_record_entry()}
+    )
     _assert_is_pdf(r)
 
 
