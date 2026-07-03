@@ -156,7 +156,9 @@ class FinalizeAgent(BaseAgent):
     """
 
     template_ref: str | None = None
-    kind: str = "diary"  # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）
+    kind: str = (
+        "diary"  # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）
+    )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         draft = ctx.session.state.get("draft") or ""

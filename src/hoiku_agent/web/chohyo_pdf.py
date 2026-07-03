@@ -135,8 +135,12 @@ def _life_record_table(lr: dict) -> Table:
     return tbl
 
 
-def _child_block(note: dict) -> KeepTogether:
-    """個別の記録1件（児ごと）。ページ跨ぎを避けてまとめて出す。"""
+def _child_block(note: dict, life_record_always: bool = True) -> KeepTogether:
+    """個別の記録1件（児ごと）。ページ跨ぎを避けてまとめて出す。
+
+    生活記録の4列表は 0–2 で常時（養護の中核）、3–5 は記入があるときだけ描く
+    （3–5 標準様式に児別の生活記録欄は無い＝全年齢対応・§19。harness の write_draft と同順）。
+    """
     note = note or {}
     months = str(note.get("age_months") or "").strip()
     head = note.get("child_id") or "（対象児）"
@@ -168,13 +172,43 @@ def _child_block(note: dict) -> KeepTogether:
         _P(f"◆ {_t(head)}", _CHILD),
         Spacer(1, 1.5 * mm),
         inner,
-        _life_record_table(note.get("life_record") or {}),
     ]
+    lr = note.get("life_record") or {}
+    if life_record_always or any(str(lr.get(k) or "").strip() for k in lr):
+        parts.append(_life_record_table(lr))
     aim = str(note.get("individual_aim") or "").strip()
     if aim:
         parts.append(_section("個人のねらい", _P(aim, _SMALL)))
     parts.append(Spacer(1, 3 * mm))
     return KeepTogether(parts)
+
+
+def _development_block(note: dict) -> KeepTogether:
+    """児童票「発達の経過」1件（叙述＋対応する姿・領域）。ページ跨ぎを避けてまとめて出す。"""
+    note = note or {}
+    tags = note.get("tags") or []
+    tag_text = "、".join(str(t) for t in tags) if tags else "（タグ未付与）"
+    inner = Table(
+        [
+            [_P("経過（叙述）", _LABEL), _P(note.get("description"), _SMALL)],
+            [_P("対応する姿・領域", _LABEL), _P(tag_text, _SMALL)],
+        ],
+        colWidths=[_LABEL_W, _CONTENT_W - _LABEL_W],
+    )
+    inner.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+                ("BACKGROUND", (0, 0), (0, -1), _HEADER_BG),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    return KeepTogether([inner, Spacer(1, 2 * mm)])
 
 
 def _attendance_text(attendance: list) -> str:
@@ -251,8 +285,9 @@ def _diary_story(entry: dict) -> list:
         Spacer(1, 1.5 * mm),
     ]
     notes = entry.get("individual_notes") or []
+    life_record_always = age == "0-2"  # 0–2＝養護の中核として常時／3–5＝記入時のみ（§19）
     if notes:
-        story.extend(_child_block(n) for n in notes)
+        story.extend(_child_block(n, life_record_always) for n in notes)
     else:
         story.append(_section("", _P("（個別記録なし）")))
     story.extend(
@@ -311,16 +346,48 @@ def _monthly_story(entry: dict) -> list:
     return story
 
 
-_BUILDERS = {"diary": _diary_story, "monthly": _monthly_story}
+def _child_record_story(entry: dict) -> list:
+    """児童票（期ごとの保育経過記録）。欄順は harness の write_child_record_draft（標準様式）と一致させる。"""
+    age = entry.get("age_band") or "0-2"
+    subject = entry.get("child_id") or "（対象児）"
+    months = str(entry.get("age_months") or "").strip()
+    if months:
+        subject = f"{subject}（{months}）"
+    story: list = [
+        _P(f"児童票・保育経過記録（{_AGE_LABEL.get(age, age)}）", _TITLE),
+        # _P が1回だけエスケープするため生値を渡す（f-string 内 _t は二重エスケープになる）。
+        _P(f"対象期間: {entry.get('period') or ''}　　対象児: {subject}", _META),
+        Spacer(1, 3 * mm),
+        _P("発達の経過（領域別の叙述）", _LABEL),
+        Spacer(1, 1.5 * mm),
+    ]
+    notes = entry.get("development_notes") or []
+    if notes:
+        story.extend(_development_block(n) for n in notes)
+    else:
+        story.append(_section("", _P("（発達の経過 未記入）")))
+    story.extend(
+        [
+            _section("配慮事項・特記", _P(entry.get("care_notes") or "（なし）")),
+            _section("家庭との連携", _P(entry.get("family_liaison") or "（なし）")),
+            _section("総合所見", _P(entry.get("overall_note"))),
+            _section("次期に向けて", _P(entry.get("next_aims") or "（なし）")),
+        ]
+    )
+    story.append(_signoff_block())
+    return story
+
+
+_BUILDERS = {"diary": _diary_story, "monthly": _monthly_story, "child_record": _child_record_story}
 
 
 def render_pdf(kind: str, entry: dict) -> bytes:
-    """確定 entry（dict）を帳票PDF（bytes）へ描画する。kind = "diary" | "monthly"。
+    """確定 entry（dict）を帳票PDF（bytes）へ描画する。kind = "diary" | "monthly" | "child_record"。
 
     描画のみ（型検査はしない＝空欄は空セルで出す）。entry が dict でない・kind 不正は ValueError。
     """
     if kind not in _BUILDERS:
-        raise ValueError(f"未知の kind: {kind!r}（'diary' | 'monthly'）")
+        raise ValueError(f"未知の kind: {kind!r}（'diary' | 'monthly' | 'child_record'）")
     if not isinstance(entry, dict):
         raise ValueError("entry は dict である必要があります")
     buf = io.BytesIO()
@@ -331,7 +398,7 @@ def render_pdf(kind: str, entry: dict) -> bytes:
         rightMargin=_MARGIN,
         topMargin=_MARGIN,
         bottomMargin=_MARGIN,
-        title="保育日誌" if kind == "diary" else "個別月案",
+        title={"diary": "保育日誌", "monthly": "個別月案", "child_record": "児童票"}[kind],
     )
     doc.build(_BUILDERS[kind](entry))
     return buf.getvalue()

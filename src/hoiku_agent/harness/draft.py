@@ -53,9 +53,11 @@ def _format_life_record(note: IndividualNote) -> str:
     )
 
 
-def _format_note(note: IndividualNote) -> str:
-    # 0–2 個別の記録は児ごとに「姿＋枠組みタグ＋生活記録＋個人のねらい」をまとめて出す（標準様式）。
+def _format_note(note: IndividualNote, life_record_always: bool = True) -> str:
+    # 個別の記録は児ごとに「姿＋枠組みタグ＋生活記録＋個人のねらい」をまとめて出す（標準様式）。
     # タグは枠組み（10の姿/3つの視点/5領域）を明示して出力する（§13）。
+    # 生活記録は 0–2 で常時（養護の中核＝空欄も「―」で出す）、3–5 は記入があるときだけ添える
+    # （3–5 標準様式に児別の生活記録欄は無い＝全年齢対応・§19）。
     tags = "、".join(t.value for t in note.tags) if note.tags else "（タグ未付与）"
     header = f"  ◆ {note.child_id}"
     if note.age_months.strip():
@@ -64,8 +66,9 @@ def _format_note(note: IndividualNote) -> str:
         header,
         f"    ・子どもの姿: {note.observed_state or '（未記入）'}",
         f"      └ 対応する姿/領域: {tags}",
-        f"    ・生活記録: {_format_life_record(note)}",
     ]
+    if life_record_always or not note.life_record.is_blank():
+        lines.append(f"    ・生活記録: {_format_life_record(note)}")
     if note.individual_aim.strip():
         lines.append(f"    ・個人のねらい: {note.individual_aim}")
     return "\n".join(lines)
@@ -81,8 +84,9 @@ def write_draft(entry: DiaryEntry, template_ref: str | None = None) -> str:
     Returns:
         様式に整形した文字列（標準様式の章立て・順序。10の姿/3つの視点/5領域タグを明示）。
     """
+    life_record_always = entry.age_band.value == "0-2"  # 0–2＝養護の中核として常時／3–5＝記入時のみ
     notes_block = (
-        "\n".join(_format_note(n) for n in entry.individual_notes)
+        "\n".join(_format_note(n, life_record_always) for n in entry.individual_notes)
         if entry.individual_notes
         else "  （個別記録なし）"
     )

@@ -74,8 +74,12 @@ def format_digest_for_prompt(digest: dict[str, dict], label: str = "前月") -> 
     label は集積の見出し（月案＝「前月」（L2）／児童票＝「期間」（L3）。§10/§19）。
     """
     if not digest:
-        return f"【{label}の集積】{label}の日誌データがありません（初回、または{label}記録未提供）。"
-    lines = [f"【{label}の集積（child_id 別）】要約は子どもの姿/評価反省・総合所見を書くときに用いる:"]
+        return (
+            f"【{label}の集積】{label}の日誌データがありません（初回、または{label}記録未提供）。"
+        )
+    lines = [
+        f"【{label}の集積（child_id 別）】要約は子どもの姿/評価反省・総合所見を書くときに用いる:"
+    ]
     for child_id, slot in digest.items():
         tags = "、".join(f"{name}×{count}" for name, count in slot["tag_freq"].items())
         lines.append(

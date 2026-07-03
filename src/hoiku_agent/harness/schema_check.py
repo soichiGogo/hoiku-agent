@@ -53,7 +53,7 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
     if not entry.practice_record.strip():
         problems.append("保育の実践記録が未記入")
     if not entry.individual_notes:
-        problems.append("個別日誌（individual_notes）が空：0–2 個別は個の記録が本体（§3/§10）")
+        problems.append("個別日誌（individual_notes）が空：個の記録が日誌の本体（§3/§10）")
     if not entry.evaluation.child_focus.strip():
         problems.append("評価・反省(a 子どもに焦点)が未記入（2視点必須＝§10）")
     if not entry.evaluation.self_review.strip():
@@ -71,8 +71,9 @@ def validate_fields(entry: DiaryEntry) -> list[str]:
                 f"child_id={note.child_id}: {entry.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
         # 0–2 養護の中核＝個別の生活記録（食事・睡眠・排泄・機嫌/体調）。4 欄すべて空なら未記入扱い
-        # （1欄でも記入があれば型成立。標準様式調査＝§10）。
-        if note.life_record.is_blank():
+        # （1欄でも記入があれば型成立。標準様式調査＝§10）。**0–2 のみ必須**：3–5 の標準様式に
+        # 児別の生活記録欄は無いため課さない（全年齢対応＝§19。記入があれば整形には出す）。
+        if entry.age_band is AgeBand.零から二歳 and note.life_record.is_blank():
             problems.append(
                 f"child_id={note.child_id}: 生活記録（食事・睡眠・排泄・機嫌/体調）が未記入"
                 "（0–2 養護の中核＝§10）"

@@ -68,7 +68,9 @@ class DigestPrepAgent(BaseAgent):
 
     input_key: str = "prev_month_entries"
     output_key: str = "prev_month_digest"
-    digest_label: str = "前月"  # format_digest_for_prompt の見出しラベル（月案＝前月／児童票＝期間）
+    digest_label: str = (
+        "前月"  # format_digest_for_prompt の見出しラベル（月案＝前月／児童票＝期間）
+    )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         entries = _parse_prev_entries(ctx.session.state.get(self.input_key))
