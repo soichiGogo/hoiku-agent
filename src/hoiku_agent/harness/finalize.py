@@ -26,16 +26,20 @@ from datetime import date
 
 from pydantic import BaseModel, ValidationError
 
-from ..schemas import DiaryEntry, MonthlyPlan
-from .draft import write_draft, write_monthly_draft
-from .schema_check import validate_fields, validate_monthly_fields
+from ..schemas import ChildRecord, DiaryEntry, MonthlyPlan
+from .draft import write_child_record_draft, write_draft, write_monthly_draft
+from .schema_check import (
+    validate_child_record_fields,
+    validate_fields,
+    validate_monthly_fields,
+)
 
 
 @dataclass
 class FinalizedDocument:
-    """確定処理の結果（決定的）。日誌（DiaryEntry）と月案（MonthlyPlan）で共用する。"""
+    """確定処理の結果（決定的）。日誌（DiaryEntry）・月案（MonthlyPlan）・児童票（ChildRecord）で共用する。"""
 
-    entry: DiaryEntry | MonthlyPlan | None = None  # 復元した書類モデル（日誌 or 月案）
+    entry: DiaryEntry | MonthlyPlan | ChildRecord | None = None  # 復元した書類モデル
     problems: list[str] = field(default_factory=list)  # validate_* 違反（空＝充足）
     formatted: str | None = None  # write_* の整形済み出力
     parse_error: str | None = None  # JSON 抽出/検証失敗の理由（None＝成功）
@@ -159,6 +163,11 @@ def parse_draft_to_plan(text: str) -> MonthlyPlan:
     return _parse_json_to_model(text, MonthlyPlan, "MonthlyPlan")  # type: ignore[return-value]
 
 
+def parse_draft_to_child_record(text: str) -> ChildRecord:
+    """児童票 author のドラフト文字列から ChildRecord を復元する。失敗時は ValueError（§19）。"""
+    return _parse_json_to_model(text, ChildRecord, "ChildRecord")  # type: ignore[return-value]
+
+
 def _finalize(text, *, parse, validate, write, template_ref) -> FinalizedDocument:
     """確定処理の汎用本体（復元→検査→整形）。日誌/月案で parse/validate/write を差し替える。"""
     try:
@@ -213,6 +222,25 @@ def finalize_monthly_document(text: str, template_ref: str | None = None) -> Fin
     )
 
 
+def finalize_child_record_document(text: str, template_ref: str | None = None) -> FinalizedDocument:
+    """児童票ドラフトを確定処理（復元→検査→整形）する（§19）。日誌・月案の finalize_* と対称。
+
+    Args:
+        text: 児童票 author が生成したドラフト（ChildRecord の JSON を含む）。
+        template_ref: 様式参照（あれば write_child_record_draft に渡す）。
+
+    Returns:
+        FinalizedDocument（entry=ChildRecord / problems / formatted / parse_error）。
+    """
+    return _finalize(
+        text,
+        parse=parse_draft_to_child_record,
+        validate=validate_child_record_fields,
+        write=write_child_record_draft,
+        template_ref=template_ref,
+    )
+
+
 def finalize_entry(
     data: dict,
     *,
@@ -227,11 +255,11 @@ def finalize_entry(
     実体は harness に1つ（§5）＝web の編集UIからはこれを中継するだけで、検査・整形を再実装しない。
 
     日誌の記録日（date）は harness 所有の機械メタ（§5）。doc_date が与えられればここで上書きしてから検証する
-    （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案の型・検査・整形を切替。
+    （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案/児童票の型・検査・整形を切替。
 
     Args:
-        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan の JSON 相当の dict）。
-        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）。
+        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan / ChildRecord の JSON 相当の dict）。
+        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）。
         doc_date: 記録日（日誌のみ・与えられれば上書き）。
         template_ref: 様式参照（あれば write_* に渡す）。
 
@@ -243,6 +271,13 @@ def finalize_entry(
     if kind == "monthly":
         model_cls: type[BaseModel] = MonthlyPlan
         validate, write, label = validate_monthly_fields, write_monthly_draft, "MonthlyPlan"
+    elif kind == "child_record":
+        model_cls = ChildRecord
+        validate, write, label = (
+            validate_child_record_fields,
+            write_child_record_draft,
+            "ChildRecord",
+        )
     else:
         model_cls = DiaryEntry
         validate, write, label = validate_fields, write_draft, "DiaryEntry"

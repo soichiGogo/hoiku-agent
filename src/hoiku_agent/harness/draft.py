@@ -17,7 +17,14 @@ template_ref が与えられればそれに寄せる余地を残す。
 
 from __future__ import annotations
 
-from ..schemas import DiaryEntry, IndividualNote, MonthlyEducationNote, MonthlyPlan
+from ..schemas import (
+    ChildRecord,
+    DevelopmentNote,
+    DiaryEntry,
+    IndividualNote,
+    MonthlyEducationNote,
+    MonthlyPlan,
+)
 
 
 def _format_attendance(entry: DiaryEntry) -> str:
@@ -167,6 +174,55 @@ def write_monthly_draft(plan: MonthlyPlan, template_ref: str | None = None) -> s
         "",
         "【評価・反省】",
         f"  {plan.evaluation_reflection}",
+    ]
+    if template_ref:
+        lines.append("")
+        lines.append(f"（様式参照: {template_ref}）")
+    return "\n".join(lines) + "\n"
+
+
+def _format_development(note: DevelopmentNote) -> str:
+    # 発達の経過も枠組み（3つの視点/5領域/10の姿）を明示して出力する（§13/§19）。
+    tags = "、".join(t.value for t in note.tags) if note.tags else "（タグ未付与）"
+    return f"  - {note.description}\n    └ 対応する姿/領域: {tags}"
+
+
+def write_child_record_draft(record: ChildRecord, template_ref: str | None = None) -> str:
+    """児童票（期ごとの保育経過記録）ドラフトを標準様式テキストへ整形して返す（§19）。
+
+    共通構造（越谷市公式様式・実務解説で裏取り）の順序：ヘッダ（期・対象児・月齢・年齢帯）→
+    発達の経過（領域別叙述＋年齢分岐タグ明示）→ 配慮事項・特記 → 家庭との連携 → 総合所見 →
+    次期に向けて。確認印欄は帳票PDF（web/chohyo_pdf）側で描く（テキスト版は本文のみ）。
+
+    Args:
+        record: 整形対象の児童票ドラフト。
+        template_ref: 雛形のパス等（あれば様式に従う）。期制・欄名の園差で拡張可。
+
+    Returns:
+        様式に整形した文字列（枠組みタグを明示）。
+    """
+    development_block = (
+        "\n".join(_format_development(n) for n in record.development_notes)
+        if record.development_notes
+        else "  （発達の経過 未記入）"
+    )
+    subject = record.child_id
+    if record.age_months.strip():
+        subject += f"（{record.age_months}）"
+    lines = [
+        f"■ 児童票・保育経過記録（{record.age_band.value} 歳児）　対象期間: {record.period}　対象児: {subject}",
+        "",
+        "【発達の経過（領域別の叙述）】",
+        development_block,
+        "",
+        f"【配慮事項・特記】 {record.care_notes or '（なし）'}",
+        "",
+        f"【家庭との連携】 {record.family_liaison or '（なし）'}",
+        "",
+        "【総合所見】",
+        f"  {record.overall_note}",
+        "",
+        f"【次期に向けて】 {record.next_aims or '（なし）'}",
     ]
     if template_ref:
         lines.append("")

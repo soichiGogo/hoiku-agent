@@ -17,7 +17,7 @@ LLM は呼ばない。判定は純粋関数で、tests/test_harness/ から LLM 
 
 from __future__ import annotations
 
-from ..schemas import AgeBand, DiaryEntry, FiveDomains, MonthlyPlan, ThreeViewpoint
+from ..schemas import AgeBand, ChildRecord, DiaryEntry, FiveDomains, MonthlyPlan, ThreeViewpoint
 
 
 def _required_tag_type(age_band: AgeBand) -> tuple[type, str]:
@@ -122,6 +122,45 @@ def validate_monthly_fields(plan: MonthlyPlan) -> list[str]:
         if not any(isinstance(t, required_tag_type) for t in note.tags):
             problems.append(
                 f"教育のねらい[{i}]: {plan.age_band.value} は{tag_label}のタグが1つ以上必要"
+            )
+
+    return problems
+
+
+def validate_child_record_fields(record: ChildRecord) -> list[str]:
+    """児童票（期ごとの保育経過記録）ドラフトの必須欄・年齢分岐を検査する（空＝充足・§19）。
+
+    日誌・月案と同じく「型としての成立」だけを決定的に検査する（表現の適否＝開示前提の
+    肯定的・非断定的表現はレビューAI／指針整合＝eval の責務）。年齢分岐は日誌・月案と共通の
+    _required_tag_type を使い、「発達の経過（development_notes）」の各叙述に
+    0–2＝3つの視点 / 3–5＝5領域 のタグを課す（実務主流＝0歳:3つの視点/全年齢:5領域と一致・§19）。
+
+    Args:
+        record: 検査対象の児童票ドラフト（ChildRecord）。
+
+    Returns:
+        違反メッセージのリスト。空リストなら "型" として成立。
+    """
+    problems: list[str] = []
+
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ── §19 児童票：共通構造
+    if not record.period.strip():
+        problems.append("対象期間（period）が未記入")
+    if not record.child_id.strip():
+        problems.append("対象児（child_id）が未記入（児童票は児童別＝§19）")
+    if not record.overall_note.strip():
+        problems.append("総合所見（overall_note）が未記入（期の育ちの総括＝§19）")
+    if not record.development_notes:
+        problems.append("発達の経過（development_notes）が空：年齢分岐タグ付きで1つ以上必要（§19）")
+
+    # ── 年齢分岐：発達の経過に必須タグ体系を課す（0–2＝3つの視点 / 3–5＝5領域） ──
+    required_tag_type, tag_label = _required_tag_type(record.age_band)
+    for i, note in enumerate(record.development_notes):
+        if not note.description.strip():
+            problems.append(f"発達の経過[{i}]: 叙述（description）が未記入")
+        if not any(isinstance(t, required_tag_type) for t in note.tags):
+            problems.append(
+                f"発達の経過[{i}]: {record.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
 
     return problems
