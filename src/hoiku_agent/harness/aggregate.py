@@ -46,7 +46,7 @@ def prev_month_digest(entries: list[DiaryEntry]) -> dict[str, dict]:
     """aggregate_by_child の結果を state へ載せられる serializable 形に正規化する（L2 還流）。
 
     Counter は JSON 化できる素の dict にし、タグ頻度は多い順に並べる（要約 author が読みやすい順）。
-    これを月案パイプラインの先頭（MonthlyPrepAgent）が `state["prev_month_digest"]` に格納し、
+    これを月案パイプラインの先頭（DigestPrepAgent＝monthly_prep）が `state["prev_month_digest"]` に格納し、
     月案 author の gather 段階が「前月の子どもの姿／評価・反省」の要約生成に使う（§10）。
 
     Args:
@@ -66,15 +66,16 @@ def prev_month_digest(entries: list[DiaryEntry]) -> dict[str, dict]:
     }
 
 
-def format_digest_for_prompt(digest: dict[str, dict]) -> str:
-    """serializable な前月集積を、月案 author が読む人間可読テキストへ整形する（決定的・要約しない）。
+def format_digest_for_prompt(digest: dict[str, dict], label: str = "前月") -> str:
+    """serializable な集積を、後段 author が読む人間可読テキストへ整形する（決定的・要約しない）。
 
-    要約（前月の子どもの姿／評価・反省の文章化）は author（LlmAgent）の責務（§10）。ここは集計の
-    "事実" を列挙するだけで解釈を加えない。空（前月データ無し）なら降格メッセージを返す。
+    要約（子どもの姿／評価・反省・総合所見の文章化）は author（LlmAgent）の責務（§10）。ここは集計の
+    "事実" を列挙するだけで解釈を加えない。空（データ無し）なら降格メッセージを返す。
+    label は集積の見出し（月案＝「前月」（L2）／児童票＝「期間」（L3）。§10/§19）。
     """
     if not digest:
-        return "【前月の集積（L2）】前月の日誌データがありません（初月、または前月記録未提供）。"
-    lines = ["【前月の集積（L2・child_id 別）】要約は前月の姿/評価反省欄を書くときに用いる:"]
+        return f"【{label}の集積】{label}の日誌データがありません（初回、または{label}記録未提供）。"
+    lines = [f"【{label}の集積（child_id 別）】要約は子どもの姿/評価反省・総合所見を書くときに用いる:"]
     for child_id, slot in digest.items():
         tags = "、".join(f"{name}×{count}" for name, count in slot["tag_freq"].items())
         lines.append(

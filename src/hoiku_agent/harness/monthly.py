@@ -55,22 +55,29 @@ def _parse_prev_entries(raw: object) -> list[DiaryEntry]:
     return entries
 
 
-class MonthlyPrepAgent(BaseAgent):
-    """L2 還流：前月日誌（state["prev_month_entries"]）を child_id 別に決定的集計する（§10）。
+class DigestPrepAgent(BaseAgent):
+    """集積還流の決定的 prep：日誌群（state[input_key]）を child_id 別に決定的集計する（§10/§19）。
 
-    集計結果（serializable digest）を state["prev_month_digest"] に格納し、人間可読テキストを
-    イベントとして提示する（後段の月案 author が直前メッセージとして読み、要約に使う）。要約・
-    解釈は author の責務（§10）＝ここでは集計のみ。前月データが無ければ空 digest で素通り（降格）。
+    集計結果（serializable digest）を state[output_key] に格納し、人間可読テキストをイベントとして
+    提示する（後段の author が直前メッセージとして読み、要約に使う）。要約・解釈は author の責務
+    （§10）＝ここでは集計のみ。データが無ければ空 digest で素通り（降格）。
+
+    月案（L2 還流＝前月日誌・既定キー）と児童票（L3 還流＝期間日誌）で共用する（集計の決定的実体は
+    aggregate.py に1つ・ここは配線のみ）。旧名 MonthlyPrepAgent を一般化した。
     """
 
+    input_key: str = "prev_month_entries"
+    output_key: str = "prev_month_digest"
+    digest_label: str = "前月"  # format_digest_for_prompt の見出しラベル（月案＝前月／児童票＝期間）
+
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        entries = _parse_prev_entries(ctx.session.state.get("prev_month_entries"))
+        entries = _parse_prev_entries(ctx.session.state.get(self.input_key))
         digest = prev_month_digest(entries)
         yield Event(
             invocation_id=ctx.invocation_id,
             author=self.name,
-            content=_model_content(format_digest_for_prompt(digest)),
-            actions=EventActions(state_delta={"prev_month_digest": digest}),
+            content=_model_content(format_digest_for_prompt(digest, label=self.digest_label)),
+            actions=EventActions(state_delta={self.output_key: digest}),
         )
 
 
@@ -80,7 +87,7 @@ def build_monthly_pipeline(
 ) -> SequentialAgent:
     """個別月案の型を保証する月案パイプラインを構築する（§3/§4/§10）。
 
-    日誌の build_document_pipeline と対称。先頭に MonthlyPrepAgent（L2 還流の決定的集計）を置き、
+    日誌の build_document_pipeline と対称。先頭に DigestPrepAgent（L2 還流の決定的集計）を置き、
     巡回は build_authoring_loop（[monthly_author → reviewer → ApprovalGate]・日誌と共用。NEEDS_REVISION で
     monthly_author が再作成）、finalize は kind="monthly"。after_agent_callback は日誌と共用（明示承認＋
     型成立で書き戻し・§9）。author_model/reviewer_model は通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
@@ -88,7 +95,7 @@ def build_monthly_pipeline(
     return SequentialAgent(
         name="monthly_plan_pipeline",
         sub_agents=[
-            MonthlyPrepAgent(name="monthly_prep"),
+            DigestPrepAgent(name="monthly_prep"),
             build_authoring_loop(build_monthly_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="monthly"),
         ],
