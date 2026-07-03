@@ -40,6 +40,7 @@
     <nav class="tabs" role="tablist" aria-label="作成する書類">
       <button class="tab is-active" data-tab="diary" role="tab" id="tabbtn-diary" aria-controls="tab-diary" aria-selected="true"><span data-ic="diary"></span><span class="tab-label">保育日誌</span></button>
       <button class="tab" data-tab="monthly" role="tab" id="tabbtn-monthly" aria-controls="tab-monthly" aria-selected="false"><span data-ic="calendar"></span><span class="tab-label">個別月案</span></button>
+      <button class="tab" data-tab="record" role="tab" id="tabbtn-record" aria-controls="tab-record" aria-selected="false"><span data-ic="chart"></span><span class="tab-label">児童票</span></button>
       <button class="tab" data-tab="policy" role="tab" id="tabbtn-policy" aria-controls="tab-policy" aria-selected="false"><span data-ic="sprout"></span><span class="tab-label">指針を育てる</span></button>
     </nav>
   </header>
@@ -51,6 +52,9 @@
       <div class="card">
         <label class="field-label">対象児（仮名）</label>
         <div id="diary-children" class="chips"></div>
+
+        <label class="field-label">年齢帯（クラス）</label>
+        <div id="diary-ageband" class="chips"></div>
 
         <label class="field-label" for="diary-memo">観察メモ</label>
         <textarea id="diary-memo" class="memo" rows="4" placeholder="例）戸外で砂遊び。スコップで砂をすくって繰り返し感触を確かめていた。友だちが来ると場所を空けていた。"></textarea>
@@ -90,6 +94,40 @@
 
       <div id="monthly-stepper" class="stepper hidden"></div>
       <div id="monthly-flow" class="flow-area"></div>
+    </section>
+
+    <!-- ───────── 児童票（期ごとの保育経過記録） ───────── -->
+    <section id="tab-record" class="panel" role="tabpanel" aria-labelledby="tabbtn-record" tabindex="0">
+      <div class="hero">
+        <h1>日々の記録が、期の育ちの記録になる</h1>
+        <p>期間中の日誌の積み重ねを AI が集計し、その期の「発達の経過」「総合所見」へ再構成します。保護者に開示され得る書類なので、肯定的で断定しない表現に整えます。</p>
+      </div>
+      <div class="card">
+        <label class="field-label">対象児（仮名）</label>
+        <div id="record-children" class="chips"></div>
+
+        <div class="row">
+          <div>
+            <label class="field-label" for="record-start">対象期間（開始）</label>
+            <input id="record-start" class="input" type="month" value="2026-04">
+          </div>
+          <div>
+            <label class="field-label" for="record-end">対象期間（終了）</label>
+            <input id="record-end" class="input" type="month" value="2026-06">
+          </div>
+        </div>
+
+        <div class="seed-note">
+          <span data-ic="chart"></span>
+          <span>期間中の日誌（仮名サンプルを seed します）</span>
+          <span id="record-seed-count" class="badge">6 件</span>
+        </div>
+
+        <button id="record-run" class="btn btn-primary btn-block"><span data-ic="spark"></span>児童票の下書きを作成する</button>
+      </div>
+
+      <div id="record-stepper" class="stepper hidden"></div>
+      <div id="record-flow" class="flow-area"></div>
     </section>
 
     <!-- ───────── 指針を育てる（改善エージェント） ───────── -->

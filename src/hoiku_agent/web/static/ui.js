@@ -94,7 +94,12 @@ export function whoOf(author) {
   if (a.includes("review")) return { label: "レビューAI", cls: "review", icon: "review" };
   // prep を author/monthly より先に判定する（monthly_prep が "monthly" に先取りされ
   // 作成AI に誤分類されるのを防ぐ。docflow drive() のステッパー routing と順序を一致させる）。
-  if (a.includes("prep")) return { label: "前月の集計", cls: "prep", icon: "chart" };
+  // 児童票の period_prep は「期間の集計」、月案の monthly_prep は「前月の集計」。
+  if (a.includes("prep")) {
+    return a.includes("period")
+      ? { label: "期間の集計", cls: "prep", icon: "chart" }
+      : { label: "前月の集計", cls: "prep", icon: "chart" };
+  }
   if (a.includes("author") || a.includes("monthly")) return { label: "作成AI", cls: "author", icon: "author" };
   if (a.includes("improv")) return { label: "改善エージェント", cls: "improver", icon: "refresh" };
   return { label: author || "AI", cls: "", icon: "robot" };

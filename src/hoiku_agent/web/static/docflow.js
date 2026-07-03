@@ -1,4 +1,4 @@
-// 日誌/月案で共通の作成フロー（前月集計→収集→下書き→HITL→レビュー→確定→承認）。
+// 日誌/月案/児童票で共通の作成フロー（集計→収集→下書き→HITL→レビュー→確定→承認）。
 // 生成は ADK /run_sse を直接駆動（自前 Runner は組まない＝§9）。harness/agents は不変。
 // 「働いている実質」は計画ステッパー＋ステータスラインで示し、作成AI/レビューAI/ツールの細かな
 // やりとりは既定で畳む（<details class="proc">）。保育士が前面で確認するのは「不足の確認（HITL）」と
@@ -11,10 +11,26 @@ import { renderEditableDoc } from "./docedit.js";
 const DOC_META = {
   diary: { title: "保育日誌", icon: "diary" },
   monthly: { title: "個別月案", icon: "calendar" },
+  child_record: { title: "児童票", icon: "chart" },
+};
+
+// 集計 prep を持つ doc_type の表示メタ（digest の state キー・見出し・稼働中フェーズ文言）。
+const PREP_META = {
+  monthly: {
+    digestKey: "prev_month_digest",
+    digestTitle: "前月の積み重ね（自動集計・L2 還流）",
+    phaseText: "前月の積み重ねを集計しています",
+  },
+  child_record: {
+    digestKey: "period_digest",
+    digestTitle: "期間の積み重ね（自動集計・L3 還流）",
+    phaseText: "期間の積み重ねを集計しています",
+  },
 };
 
 export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status }) {
-  const iPrep = steps.indexOf("前月の集計");
+  const prepMeta = PREP_META[kind] || null;
+  const iPrep = steps.findIndex((s) => s.includes("集計"));
   const iColl = steps.indexOf("情報を集める");
   const iDraft = steps.indexOf("下書き");
   const iReview = steps.indexOf("レビュー");
@@ -101,9 +117,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     buildProc();
     stepperEl.classList.remove("hidden");
     stepper = makeStepper(stepperEl, steps);
-    if (kind === "monthly") {
+    if (prepMeta) {
       toStep(iPrep);
-      phase("前月の積み重ねを集計しています", "working");
+      phase(prepMeta.phaseText, "working");
     } else {
       stepper.set(0, "done");
       maxStep = 0;
@@ -148,7 +164,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
               const a = (it.author || "").toLowerCase();
               if (a.includes("prep")) {
                 toStep(iPrep);
-                phase("前月の積み重ねを集計しています", "working");
+                phase(prepMeta ? prepMeta.phaseText : "積み重ねを集計しています", "working");
               } else if (a.includes("review")) {
                 toStep(iReview);
                 phase("別の視点で点検しています", "working");
@@ -232,11 +248,11 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const st = s.state || {};
     cur = null;
 
-    // 前月集計は「AI が何を踏まえたか」の経過なので畳んだログ側に入れる（前面は最終下書きだけ）。
-    if (showDigest && st.prev_month_digest != null) {
-      const txt =
-        typeof st.prev_month_digest === "string" ? st.prev_month_digest : JSON.stringify(st.prev_month_digest, null, 2);
-      const dp = renderDocPanel({ titleIcon: "chart", title: "前月の積み重ね（自動集計・L2 還流）", formatted: txt });
+    // 集計（前月/期間）は「AI が何を踏まえたか」の経過なので畳んだログ側に入れる（前面は最終下書きだけ）。
+    const digest = prepMeta ? st[prepMeta.digestKey] : null;
+    if (showDigest && prepMeta && digest != null) {
+      const txt = typeof digest === "string" ? digest : JSON.stringify(digest, null, 2);
+      const dp = renderDocPanel({ titleIcon: "chart", title: prepMeta.digestTitle, formatted: txt });
       procBody.appendChild(dp);
     }
 

@@ -5,14 +5,21 @@ import { makeDocFlow } from "./docflow.js";
 import { makePolicy } from "./policy.js";
 
 // 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
+// さくらちゃんは 3–5 歳児クラスの仮名児（全年齢対応＝§19。年齢帯で枠組み＝3視点/5領域が切り替わるデモ）。
 const CHILDREN = ["はるとくん", "ゆいちゃん", "そうたくん"];
+const RECORD_CHILDREN = [...CHILDREN, "さくらちゃん"];
+const AGE_BAND_OF = { さくらちゃん: "3-5" }; // 既定は 0-2
+const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
+const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 
 // サンプルメモは当日の生活情報（食事量・午睡時刻・排泄回数・体温・月齢）を含める＝生成される日誌の
 // 生活記録（食事/睡眠/排泄/機嫌・体調）が現場同様に埋まる（手がかりが無い欄は空のまま＝§14・作成AIは創作しない）。
+// 4例目は 3–5 歳児クラス向け（5領域・生活記録なしの全年齢デモ）。
 const DIARY_SAMPLES = [
   "戸外で砂遊び。スコップで砂をすくって繰り返し感触を確かめていた。友だちが来ると場所を空けていた。離乳食完了期を8割、麦茶80ml。午睡12:15〜14:20。排尿4回・排便1回。視診で体温36.5℃、機嫌よし。1歳3か月。",
   "室内で積み木。高く積もうと何度も挑戦。崩れても笑って積み直していた。保育者に「みて」と指さしで知らせた。給食を9割、汁物も完食。午睡12:30〜14:10。排尿5回・排便なし。体温36.7℃、鼻水が少しあるが機嫌はよい。1歳6か月。",
   "午前のおやつで自分でコップを持って飲もうとした。少しこぼれたが満足そう。給食は完了期を全量摂取。午睡12:00〜14:00でぐっすり。排尿4回・排便1回。体温36.6℃、変化なし。0歳11か月。",
+  "園庭で鬼ごっこ。ルールを友だちに説明し、つかまった子に「次は鬼ね」と声をかけていた。帰りの会では当番として号令をかけ、みんなの前で今日楽しかったことを話した。4歳2か月。",
 ];
 
 const POLICY_SAMPLES = [
@@ -80,6 +87,50 @@ function samplePrevEntries(childId) {
       },
     ],
     evaluation: { child_focus: d.child_focus, self_review: d.self_review },
+  }));
+}
+
+// 期間中の日誌の仮名サンプル（児童票＝L3 還流のデモ seed）。3ヶ月にわたる発達の推移（月ごとに姿が
+// 進む）を含め、児童票の「点の記録→期の育ちの線」への再構成が見えるようにする（§14/§19）。
+// 0–2（既定）と 3–5（さくらちゃん＝5領域・生活記録なし）で内容を切り替える（全年齢対応）。
+function samplePeriodEntries(childId) {
+  const ageBand = AGE_BAND_OF[childId] || "0-2";
+  const days =
+    ageBand === "3-5"
+      ? [
+          { date: "2026-04-10", months: "4歳0か月", state: "新しいクラスに少し緊張しながらも、朝の支度を自分で進めた", tags: ["健康"], practice: "進級後の生活の流れを一緒に確認した。" },
+          { date: "2026-04-24", months: "4歳0か月", state: "好きな電車の絵本を友だちに見せ、言葉で説明しようとした", tags: ["言葉"], practice: "好きな遊びを介した友だちとの橋渡しをした。" },
+          { date: "2026-05-15", months: "4歳1か月", state: "鬼ごっこでルールを守れず悔しがる友だちに「もう1回やろう」と声をかけた", tags: ["人間関係"], practice: "集団遊びのルールを子どもたちと話し合った。" },
+          { date: "2026-05-29", months: "4歳1か月", state: "飼育しているカブトムシの幼虫を毎日観察し、変化を保育者に報告した", tags: ["環境"], practice: "飼育・観察のコーナーを継続して設けた。" },
+          { date: "2026-06-12", months: "4歳2か月", state: "音楽に合わせて自分で考えた動きを披露し、友だちの動きも真似て楽しんだ", tags: ["表現"], practice: "リズム遊びで自由な表現を受け止めた。" },
+          { date: "2026-06-26", months: "4歳2か月", state: "当番活動で号令をかけ、帰りの会で今日の出来事をみんなの前で話した", tags: ["言葉", "人間関係"], practice: "当番活動の役割を任せ、発表の場を作った。" },
+        ]
+      : [
+          { date: "2026-04-10", months: "1歳1か月", state: "つかまり立ちから伝い歩きで棚に沿って移動し、玩具に手を伸ばした", tags: ["健やかに伸び伸びと育つ"], practice: "つかまり立ちを促す安全な環境を整えた。", life: { meal: "離乳食後期を7割", sleep: "12:00〜14:00 午睡", toilet: "排尿4回・排便1回", mood: "体温36.5℃・機嫌よし" } },
+          { date: "2026-04-24", months: "1歳1か月", state: "保育者の歌に合わせて体を揺らし、目が合うと声を出して笑った", tags: ["身近な人と気持ちが通じ合う"], practice: "ふれあい遊びで応答的に関わった。", life: { meal: "離乳食後期を8割", sleep: "12:10〜14:05 午睡", toilet: "排尿4回・排便1回", mood: "体温36.6℃・変化なし" } },
+          { date: "2026-05-15", months: "1歳2か月", state: "両手を離して2〜3歩歩き、保育者のもとへ進もうとした", tags: ["健やかに伸び伸びと育つ"], practice: "広い動線とマットで歩行を支えた。", life: { meal: "完了期へ移行し8割", sleep: "12:15〜14:20 午睡", toilet: "排尿5回・排便1回", mood: "体温36.5℃・機嫌よし" } },
+          { date: "2026-05-29", months: "1歳2か月", state: "砂場でスコップに砂をすくっては空け、こぼれる様子をじっと見つめた", tags: ["身近なものと関わり感性が育つ"], practice: "砂・水の感触遊びを用意した。", life: { meal: "完了期を8割・麦茶80ml", sleep: "12:15〜14:15 午睡", toilet: "排尿4回・排便1回", mood: "体温36.6℃・変化なし" } },
+          { date: "2026-06-12", months: "1歳3か月", state: "絵本の動物を指さして「わんわん」と声を出し、保育者に見せようとした", tags: ["身近な人と気持ちが通じ合う", "身近なものと関わり感性が育つ"], practice: "少人数で絵本を読み指さしに応じた。", life: { meal: "完了期を9割", sleep: "12:20〜14:30 午睡", toilet: "排尿5回・排便1回", mood: "体温36.6℃・機嫌よし" } },
+          { date: "2026-06-26", months: "1歳3か月", state: "安定して歩き、好きな玩具を自分で選んで保育者に手渡した", tags: ["健やかに伸び伸びと育つ"], practice: "自分で選べる玩具棚の配置にした。", life: { meal: "完了期を全量摂取", sleep: "12:15〜14:10 午睡", toilet: "排尿4回・排便1回", mood: "体温36.5℃・機嫌よし" } },
+        ];
+  return days.map((d) => ({
+    date: d.date,
+    age_band: ageBand,
+    weather: "晴れ",
+    attendance: [{ child_id: childId, present: true, reason: null }],
+    practice_record: d.practice,
+    individual_notes: [
+      {
+        child_id: childId,
+        age_months: d.months,
+        observed_state: d.state,
+        tags: d.tags,
+        life_record: d.life
+          ? { meal: d.life.meal, sleep: d.life.sleep, toilet: d.life.toilet, mood_health: d.life.mood }
+          : {},
+      },
+    ],
+    evaluation: { child_focus: "興味の対象に自分から関わっていた", self_review: "発達に合わせた環境を用意できた" },
   }));
 }
 
@@ -252,6 +303,7 @@ async function main() {
 
   // ── 日誌 ──
   const diaryChild = chipGroup($("diary-children"), CHILDREN, null, "caregiver");
+  const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
   sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
   const diaryFlow = makeDocFlow({
     area: $("diary-flow"),
@@ -270,7 +322,8 @@ async function main() {
     }
     const child = diaryChild();
     status.setSubject(child);
-    const text = `対象児: ${child}\n本日の観察メモ:\n${memo}`;
+    // 年齢帯（0-2/3-5）を明示して渡す＝作成AIが枠組み（3視点/5領域）を確認質問せずに済む（全年齢対応）。
+    const text = `対象児: ${child}\n年齢帯: ${AGE_BAND_VALUE[diaryAge()]}（${diaryAge()}）\n本日の観察メモ:\n${memo}`;
     diaryFlow.run(null, text);
   };
 
@@ -293,6 +346,34 @@ async function main() {
     status.setSubject(child);
     const seed = { doc_type: "月案", prev_month_entries: samplePrevEntries(child) };
     monthlyFlow.run(seed, `${month} の ${child} の個別月案を作成してください。`);
+  };
+
+  // ── 児童票（期ごとの保育経過記録・L3 還流） ──
+  const recordChild = chipGroup($("record-children"), RECORD_CHILDREN, () => updateRecordSeed(), "caregiver");
+  const updateRecordSeed = () =>
+    ($("record-seed-count").textContent = samplePeriodEntries(recordChild()).length + " 件");
+  updateRecordSeed();
+  const recordFlow = makeDocFlow({
+    area: $("record-flow"),
+    button: $("record-run"),
+    stepper: $("record-stepper"),
+    steps: ["期間の集計", "情報を集める", "下書き", "レビュー", "確定"],
+    showDigest: true,
+    kind: "child_record",
+    status,
+  });
+  $("record-run").onclick = () => {
+    const child = recordChild();
+    const start = $("record-start").value || "2026-04";
+    const end = $("record-end").value || "2026-06";
+    const period = `${start}〜${end}`;
+    const ageBand = AGE_BAND_OF[child] || "0-2";
+    status.setSubject(child);
+    const seed = { doc_type: "児童票", period_entries: samplePeriodEntries(child) };
+    recordFlow.run(
+      seed,
+      `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の児童票（保育経過記録）を作成してください。period には「${period}」をそのまま書いてください。`,
+    );
   };
 
   // ── 指針を育てる ──
