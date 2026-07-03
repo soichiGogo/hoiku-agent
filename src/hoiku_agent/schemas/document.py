@@ -30,7 +30,10 @@ _BlankableStr = Annotated[str, BeforeValidator(lambda v: "" if v is None else v)
 
 
 class DocumentType(str, Enum):
-    """対象書類。国が課す必須文書を土台に対象を絞る（§2/§3）。第1号は 月案・保育日誌。"""
+    """対象書類。国が課す必須文書を土台に対象を絞る（§2/§3）。第1号は 月案・保育日誌。
+
+    児童票は §19（ヒアリング反映 2026-07）で追加：日誌の期間集積を再構成する下流文書（L3）。
+    """
 
     年間計画 = "年間計画"
     月案 = "月案"
@@ -39,6 +42,7 @@ class DocumentType(str, Enum):
     連絡帳 = "連絡帳"
     お便り = "お便り"
     保育日誌 = "保育日誌"
+    児童票 = "児童票"
     シフト = "シフト"
 
 
@@ -215,4 +219,55 @@ class MonthlyPlan(BaseModel):
     )
     evaluation_reflection: str = Field(
         description="評価・反省（当月日誌の集積と予想ねらいの照合＝「回す」の起点・双方向・§10）"
+    )
+
+
+# ──────────────────────── 児童票（期ごとの保育経過記録・全年齢） ────────────────────────
+# §19（ヒアリング反映 2026-07）：児童票の実体は3層（①原簿＝静的台帳／②発達チェックリスト／
+# ③期ごとの叙述式「保育経過記録」）で、AI 生成対象は③のみ（①②はフォーム＝AI外）。
+# 共通構造（越谷市公式様式・実務解説で裏取り）＝「期の区切り × 領域別の叙述 × 配慮・特記 ×
+# 総合所見 × 確認印」。日誌の期間集積（L3 還流＝L2 の期間版）に乗せて書く。欄名は自治体様式からの
+# 推論を含む（制度用語と断定しない＝§10 / Certainty）。園差（期制・枠組み）で拡張可能に保つ。
+
+
+class DevelopmentNote(BaseModel):
+    """児童票「発達の経過」の領域別叙述1件（年齢分岐タグ付き）。MonthlyEducationNote と同型。
+
+    タグ要件は年齢で分岐（0–2＝ThreeViewpoint / 3–5＝FiveDomains・実務主流＝0歳:3つの視点/
+    全年齢:5領域と一致）。強制は validate_child_record_fields（実体は harness の _required_tag_type）。
+    """
+
+    description: str = Field(description="その期の子どもの発達・生活の経過（叙述）")
+    tags: list[ThreeViewpoint | FiveDomains | TenNoSugata] = Field(default_factory=list)
+
+
+class ChildRecord(BaseModel):
+    """児童票＝期ごとの保育経過記録（児童別・全年齢）。write_child_record_draft の出力型 /
+    validate_child_record_fields の入力契約（§19）。
+
+    日誌の期間集積（state["period_digest"]＝L3 還流）を「発達の経過」「総合所見」へ流す。
+    保護者の開示請求で開示され得る書類＝断定的・否定的表現を避ける（表現の点検はレビューAI／
+    ここは型のみ）。期の区切り（月次/3期/4期制）は園差＝呼び出し側が seed する期間で表現し、
+    期制の設定化は残課題（§18 と同じ現場依存）。
+    """
+
+    period: str = Field(description="対象期間（例: 2026-04〜2026-06。期制は園差＝自由記述）")
+    age_band: AgeBand
+    child_id: str  # 架空児のみ。実名は書かない（§14）
+    # 月齢/年齢（◯歳◯か月・任意）。架空児は生年月日が無く自動導出できないため保育士編集の自由記述。
+    age_months: _BlankableStr = ""
+    development_notes: list[DevelopmentNote] = Field(
+        description="発達の経過（領域別叙述・年齢分岐タグ必須＝0–2は3つの視点/3–5は5領域・§19）"
+    )
+    care_notes: _BlankableStr = Field(
+        default="", description="配慮事項・特記（個別配慮・医療的ケアの経過など。任意・園差で拡張）"
+    )
+    family_liaison: _BlankableStr = Field(
+        default="", description="家庭との連携（保護者とのやりとり・園と家庭の育ちの共有。任意）"
+    )
+    overall_note: str = Field(
+        description="総合所見（その期の育ちの総括。開示前提＝肯定的・非断定的に書く）"
+    )
+    next_aims: _BlankableStr = Field(
+        default="", description="次期に向けて（課題・ねらいへの橋渡し。任意）"
     )
