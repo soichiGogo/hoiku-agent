@@ -179,3 +179,94 @@ def test_book_view_shapes():
     assert {"at", "by", "summary", "card_id"} <= view["history"][0].keys()
     # history は newest first
     assert view["history"][0]["card_id"] == "card-0002"
+
+
+# ──────────────────────────── GCS 外部ストア（POLICY_STORE_URI） ────────────────────────────
+
+
+class _FakeBlob:
+    """google-cloud-storage Blob の最小フェイク（reload/download/upload＋generation precondition）。"""
+
+    def __init__(self, store: dict):
+        self._store = store  # {"data": bytes|None, "generation": int}
+
+    def reload(self):
+        from google.api_core.exceptions import NotFound
+
+        if self._store["data"] is None:
+            raise NotFound("object not found")
+        self.generation = self._store["generation"]
+
+    def download_as_bytes(self) -> bytes:
+        return self._store["data"]
+
+    def upload_from_string(self, payload, content_type=None, if_generation_match=None):
+        from google.api_core.exceptions import PreconditionFailed
+
+        current = self._store["generation"] if self._store["data"] is not None else 0
+        if if_generation_match is not None and if_generation_match != current:
+            raise PreconditionFailed("generation mismatch")
+        self._store["data"] = payload.encode("utf-8")
+        self._store["generation"] = current + 1
+
+
+@pytest.fixture()
+def gcs_store(monkeypatch):
+    """外部ストアをフェイク GCS へ向ける（creds 不要・決定的）。"""
+    from hoiku_agent.config import settings
+
+    store = {"data": None, "generation": 0}
+    monkeypatch.setattr(ps, "_gcs_blob", lambda uri: _FakeBlob(store))
+    monkeypatch.setattr(settings, "policy_store_uri", "gs://bucket/文書作成指針.json")
+    return store
+
+
+def test_gcs_missing_returns_empty_and_create_generation(gcs_store):
+    book, generation = ps.load_book_meta()
+    assert book.cards == []
+    assert generation == 0  # 不在＝if_generation_match=0（create-only）で初回作成
+
+
+def test_gcs_save_load_roundtrip_with_lock(gcs_store):
+    book, generation = ps.load_book_meta()
+    ps.save_book(_seeded(), if_generation=generation)
+    loaded, generation2 = ps.load_book_meta()
+    assert [c.id for c in loaded.cards] == ["card-0001", "card-0002"]
+    assert loaded.cards[0].created_at == T
+    assert generation2 == 1
+
+
+def test_gcs_generation_conflict_raises(gcs_store):
+    ps.save_book(_seeded())  # generation 1
+    _, generation = ps.load_book_meta()
+    ps.save_book(_seeded())  # 他所の更新（generation 2）
+    with pytest.raises(ValueError, match="競合"):
+        ps.save_book(_seeded(), if_generation=generation)
+
+
+def test_gcs_corrupt_raises(gcs_store):
+    gcs_store["data"] = b"{ not json"
+    gcs_store["generation"] = 1
+    with pytest.raises(ValueError):
+        ps.load_book()
+
+
+def test_gcs_explicit_path_wins_over_uri(gcs_store, tmp_path):
+    """明示 path はローカル経路＝URI 設定下でも GCS に触れない（既存テスト・ツールの互換）。"""
+    p = tmp_path / "文書作成指針.json"
+    ps.save_book(_seeded(), p)
+    assert gcs_store["data"] is None  # フェイク GCS は未使用
+    assert [c.id for c in ps.load_book(p).cards] == ["card-0001", "card-0002"]
+
+
+def test_gcs_store_status(gcs_store, monkeypatch):
+    # 設定済み＋読める（不在でも空 book）＝Cloud Run 上でも persistent
+    monkeypatch.setenv("K_SERVICE", "hoiku")
+    assert ps.store_status() == "persistent"
+    ps.save_book(_seeded())
+    assert ps.store_status() == "persistent"
+    # 到達不能（クライアント生成/権限エラー等）は unavailable（偽の永続を出さない）
+    monkeypatch.setattr(
+        ps, "_gcs_blob", lambda uri: (_ for _ in ()).throw(RuntimeError("unreachable"))
+    )
+    assert ps.store_status() == "unavailable"

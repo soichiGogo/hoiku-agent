@@ -98,3 +98,18 @@ def test_commit_exact_duplicate_rejected(store):
 
 def test_commit_invalid_scope(store):
     assert commit_policy_card("不明", "x")["status"] == "error"
+
+
+def test_commit_generation_conflict_rejected(store, monkeypatch):
+    """save の競合 ValueError（GCS 楽観ロック）を rejected に変換し improver を落とさない（§8）。
+
+    競合検出そのもの（generation precondition）は test_harness/test_policy_store.py が担う。
+    """
+
+    def racy_save(book, path=None, *, if_generation=None):
+        raise ValueError("指針ストアが他の場所で先に更新されています（競合）。")
+
+    monkeypatch.setattr(ps, "save_book", racy_save)
+    r = commit_policy_card("保育日誌", "感触遊びは感触語と表情を併記する")
+    assert r["status"] == "rejected"
+    assert "競合" in r["detail"]

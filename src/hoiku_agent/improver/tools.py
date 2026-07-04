@@ -156,7 +156,8 @@ def commit_policy_card(
         return {"status": "error", "detail": "body（カード本文）が空です"}
 
     now = datetime.now()  # runtime 境界でのみ now を注入（harness/schemas は純関数を保つ＝§5）
-    book = policy_store.load_book()
+    # generation＝GCS 外部ストアの楽観ロック前提条件（ローカルは None＝従来動作）。
+    book, generation = policy_store.load_book_meta()
     card = PolicyCard(
         id=policy_store.next_card_id(book),
         scope=sc,
@@ -174,7 +175,11 @@ def commit_policy_card(
     except ValueError as e:
         return {"status": "rejected", "detail": str(e)}
 
-    policy_store.save_book(new_book)  # 即反映
+    try:
+        policy_store.save_book(new_book, if_generation=generation)  # 即反映（GCS は楽観ロック）
+    except ValueError as e:
+        # 読み込み後に他所で更新された（generation 競合）。黙って上書きせず再試行を促す。
+        return {"status": "rejected", "detail": str(e)}
 
     committed = None
     if commit:
