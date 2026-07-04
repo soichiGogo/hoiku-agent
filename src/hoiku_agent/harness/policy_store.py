@@ -12,11 +12,14 @@ v1 で指針の正(SSOT)を markdown から **構造化カード JSON（`knowled
   注入する（純関数を保つ＝finalize.py / FinalizeAgent の日付解決と同じ流儀）。
 - 純関数（add/supersede/remove/render/検索）と IO（load_book/save_book）を分ける。read 経路は降格
   （read_policy が握る）、write 経路は fail-loud（ValueError）で SSOT を黙って壊さない。
-- 置き場は IO 節で解決する＝明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run でも永続・generation
-  precondition の楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`。純関数は置き場を知らない。
+- 置き場は IO 節で解決する＝明示 path ＞ `DATABASE_URL`（Cloud SQL＝書類アーカイブと同じ DB へ統合・
+  Phase 2・version 楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`（git はシード）。
+  純関数は置き場を知らない。
 
-「回した証拠」はカードストア内蔵の変更履歴（history・decided_by 含む）が担う（GCS 運用時は
-オブジェクトバージョニングも併用）。本モジュールは JSON の決定的編集まで・subprocess は叩かない。
+「回した証拠」はカードストア内蔵の変更履歴（history・decided_by 含む）が担う。DB でも **book 丸ごと
+JSON（PG は JSONB）1行を SSOT** とし、カードを行へ射影しない（record_store と同じ「本文 JSON が SSOT・
+検索キーだけ列昇格」の哲学。カードは少数で SQL 検索の実需がなく、二重表現を作らない）。
+本モジュールは JSON の決定的編集まで・subprocess は叩かない。
 """
 
 from __future__ import annotations
@@ -25,6 +28,11 @@ import json
 import os
 from pathlib import Path
 
+import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Mapped, Session, mapped_column
+
+from . import db
 from ..schemas.policy import (
     PolicyBook,
     PolicyCard,
@@ -242,112 +250,130 @@ def render_to_text(book: PolicyBook, scope: PolicyScope | None = None) -> str:
 
 # ──────────────────────────── IO（降格 / fail-loud） ────────────────────────────
 #
-# 置き場の解決順序: 明示 `path` 引数 ＞ `POLICY_STORE_URI`（gs://＝外部永続化・Cloud Run の
-# コンテナFS 揮発を解消） ＞ モジュール既定 `_POLICY_PATH`（ローカル dev）。
-# GCS の read-modify-write 競合は generation precondition（`load_book_meta`→`save_book(if_generation=…)`）
-# で楽観ロックする（複数インスタンス同時書き込みで後勝ちの黙殺をしない＝fail-loud）。
+# 置き場の解決順序: 明示 `path` 引数 ＞ `DATABASE_URL`（Cloud SQL＝書類アーカイブと同じ DB へ統合・
+# Phase 2） ＞ モジュール既定 `_POLICY_PATH`（ローカル dev・git はシード）。
+# DB の read-modify-write 競合は version 列（`load_book_meta`→`save_book(if_version=…)` の
+# compare-and-swap）で楽観ロックする（複数インスタンス同時書き込みで後勝ちの黙殺をしない＝fail-loud。
+# GCS 時代の generation precondition と同じ意味論）。
+
+_BOOK_ROW_ID = "default"  # book は園に1冊＝固定キーの1行（複数園はテナント分離のときに再設計）
+_CONFLICT_MESSAGE = (
+    "指針ストアが他の場所で先に更新されています（競合）。"
+    "最新の指針を読み直してからやり直してください。"
+)
 
 
-def _store_uri() -> str:
-    """外部ストア URI（未設定は空文字＝ローカル降格）。config が唯一の出所。"""
-    from ..config import settings  # 遅延 import（テストの monkeypatch・循環回避）
+class PolicyBookRecord(db.Base):
+    """育つ指針＝カードブックの DB 行（book 丸ごと JSON が SSOT・1行・version は楽観ロック用）。
 
-    return settings.policy_store_uri.strip()
+    タイムスタンプ列は持たない（clock を持たない流儀＝時刻はカード/履歴の中に既にある）。
+    """
+
+    __tablename__ = "policy_books"
+
+    id: Mapped[str] = mapped_column(sa.String(20), primary_key=True)
+    book: Mapped[dict] = mapped_column(db.JSON_VARIANT)
+    version: Mapped[int] = mapped_column(sa.Integer)
 
 
-def _gcs_blob(uri: str):
-    """`gs://<bucket>/<object>` から google-cloud-storage の Blob を返す（テストの注入点）。"""
-    from google.cloud import storage  # 遅延 import（ローカル運用では GCS SDK に触れない）
-
-    bucket_name, _, object_name = uri.removeprefix("gs://").partition("/")
-    if not bucket_name or not object_name:
-        raise ValueError(f"POLICY_STORE_URI が不正です（gs://<bucket>/<object> の形式）: {uri}")
-    return storage.Client().bucket(bucket_name).blob(object_name)
+def _db_active(path: Path | None) -> bool:
+    """DB 経路を使うか（明示 path はローカル経路＝既存テスト・ツールの互換）。"""
+    return path is None and bool(db.database_url())
 
 
 def load_book_meta(path: Path | None = None) -> tuple[PolicyBook, int | None]:
-    """カードストアと書き込み前提条件（GCS generation）を読む。
+    """カードストアと書き込み前提条件（version）を読む。
 
-    戻り値の第2要素は `save_book(if_generation=…)` に渡す楽観ロック用 generation：
-    - GCS（URI 設定・path 未指定）… オブジェクトの generation。**不在は 0**（＝「まだ存在しない」
-      前提の初回作成。`if_generation_match=0` が create-only を意味する GCS 仕様に合わせる）。
+    戻り値の第2要素は `save_book(if_version=…)` に渡す楽観ロック用 version：
+    - DB（DATABASE_URL 設定・path 未指定）… 行の version。**不在は 0**（＝「まだ存在しない」前提の
+      初回作成＝create-only。このとき book はローカル同梱シード（`knowledge/文書作成指針.json`）を
+      返す＝「git はシード」の意味論。初回の書込みでシード＋変更が DB の1行に乗る）。
     - ローカル … None（precondition なし＝従来動作）。
-    不在なら空 PolicyBook（write 経路の初回 add を許す）。壊れ JSON / スキーマ不一致は
-    ValueError（write 経路は fail-loud で SSOT を黙って壊さない）。read 経路（read_policy）は
-    呼び出し側が例外を握って降格する。
+    壊れ JSON / スキーマ不一致は ValueError（write 経路は fail-loud で SSOT を黙って壊さない）。
+    read 経路（read_policy）は呼び出し側が例外を握って降格する。
     """
-    uri = "" if path is not None else _store_uri()
-    if uri:
-        from google.api_core.exceptions import NotFound
+    if _db_active(path):
+        eng = db.engine()
+        with Session(eng) as session:
+            row = session.get(PolicyBookRecord, _BOOK_ROW_ID)
+        if row is None:
+            return _load_local(_POLICY_PATH), 0
+        return PolicyBook.model_validate(row.book), row.version
 
-        blob = _gcs_blob(uri)
-        try:
-            blob.reload()  # メタデータ（generation）を取得。不在は NotFound
-        except NotFound:
-            return PolicyBook(), 0
-        data = json.loads(blob.download_as_bytes().decode("utf-8"))
-        return PolicyBook.model_validate(data), blob.generation
+    return _load_local(path or _POLICY_PATH), None
 
-    path = path or _POLICY_PATH
+
+def _load_local(path: Path) -> PolicyBook:
     if not path.exists():
-        return PolicyBook(), None
+        return PolicyBook()
     data = json.loads(path.read_text(encoding="utf-8"))  # 壊れは JSONDecodeError → 呼び出し側へ
-    return PolicyBook.model_validate(data), None
+    return PolicyBook.model_validate(data)
 
 
 def load_book(path: Path | None = None) -> PolicyBook:
-    """カードストア JSON を読む（読み手用。書き手は `load_book_meta` で generation も取る）。
+    """カードストアを読む（読み手用。書き手は `load_book_meta` で version も取る）。
 
-    path は呼び出し時に解決する（明示 path ＞ POLICY_STORE_URI ＞ `_POLICY_PATH`）＝テストは
+    path は呼び出し時に解決する（明示 path ＞ DATABASE_URL ＞ `_POLICY_PATH`）＝テストは
     `_POLICY_PATH` を monkeypatch で差し替えられる。
     """
     return load_book_meta(path)[0]
 
 
-def save_book(
-    book: PolicyBook, path: Path | None = None, *, if_generation: int | None = None
-) -> None:
-    """カードストアを書き出す（末尾改行つき・人間可読＝write_baseline と同流儀）。
+def save_book(book: PolicyBook, path: Path | None = None, *, if_version: int | None = None) -> None:
+    """カードストアを書き出す。
 
-    GCS（URI 設定・path 未指定）では `if_generation`（`load_book_meta` の第2要素）を渡すと
-    generation precondition で楽観ロックし、競合（他所で先に更新）は ValueError（fail-loud＝
-    唯一の書き手 commit_policy_card が rejected へ変換して improver を落とさない）。
-    ローカルでは if_generation は無視される（単一プロセス dev）。
+    DB（DATABASE_URL 設定・path 未指定）では `if_version`（`load_book_meta` の第2要素）を渡すと
+    compare-and-swap で楽観ロックし、競合（他所で先に更新）は ValueError（fail-loud＝唯一の書き手
+    commit_policy_card が rejected へ変換して improver を落とさない）。if_version=0 は create-only
+    （行が既にあれば競合）。if_version=None は無条件 upsert（データ移行・シード投入用）。
+    ローカルでは if_version は無視され末尾改行つきの人間可読 JSON を書く（git シードと同形）。
     """
-    payload = json.dumps(book.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
+    payload = book.model_dump(mode="json")
 
-    uri = "" if path is not None else _store_uri()
-    if uri:
-        from google.api_core.exceptions import PreconditionFailed
-
-        blob = _gcs_blob(uri)
-        kwargs = {} if if_generation is None else {"if_generation_match": if_generation}
+    if _db_active(path):
+        eng = db.engine()
         try:
-            blob.upload_from_string(payload, content_type="application/json", **kwargs)
-        except PreconditionFailed as e:
-            raise ValueError(
-                "指針ストアが他の場所で先に更新されています（競合）。"
-                "最新の指針を読み直してからやり直してください。"
-            ) from e
+            with Session(eng) as session, session.begin():
+                if if_version is None:
+                    row = session.get(PolicyBookRecord, _BOOK_ROW_ID)
+                    if row is None:
+                        session.add(PolicyBookRecord(id=_BOOK_ROW_ID, book=payload, version=1))
+                    else:
+                        row.book = payload
+                        row.version += 1
+                elif if_version == 0:
+                    session.add(PolicyBookRecord(id=_BOOK_ROW_ID, book=payload, version=1))
+                else:
+                    updated = session.execute(
+                        sa.update(PolicyBookRecord)
+                        .where(
+                            PolicyBookRecord.id == _BOOK_ROW_ID,
+                            PolicyBookRecord.version == if_version,
+                        )
+                        .values(book=payload, version=if_version + 1)
+                    )
+                    if updated.rowcount != 1:
+                        raise ValueError(_CONFLICT_MESSAGE)
+        except IntegrityError as e:  # create-only（if_version=0）で行が既にある＝競合
+            raise ValueError(_CONFLICT_MESSAGE) from e
         return
 
     path = path or _POLICY_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(payload, encoding="utf-8")
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def store_status(path: Path | None = None) -> str:
     """ストアの永続性を正直に表す（UI が偽の永続を出さないため・§8）。
 
-    - "unavailable" … ストア未配線/壊れ/GCS 到達不能（閲覧降格）。
-    - "ephemeral"   … Cloud Run（K_SERVICE）で外部ストア未設定＝コンテナFS は scale-to-zero/
-                      再起動で揮発（恒久は POLICY_STORE_URI の設定）。
-    - "persistent"  … GCS 外部ストア（POLICY_STORE_URI）またはローカルディスク（dev）＝
-                      書込みは再起動後も残る。
+    - "unavailable" … ストア未配線/壊れ/DB 到達不能（閲覧降格）。
+    - "ephemeral"   … Cloud Run（K_SERVICE）で DB 未設定＝コンテナFS は scale-to-zero/
+                      再起動で揮発（恒久は DATABASE_URL の設定＝書類アーカイブと共通）。
+    - "persistent"  … DB（DATABASE_URL）またはローカルディスク（dev）＝書込みは再起動後も残る。
     """
-    if path is None and _store_uri():
+    if _db_active(path):
         try:
-            load_book()  # GCS 読み取り（オブジェクト不在は空 book＝設定済みなら永続）
+            load_book()  # DB 読み取り（行不在はローカルシード＝設定済みなら永続）
         except Exception:  # noqa: BLE001  到達不能/権限/壊れは降格（偽の永続を出さない）
             return "unavailable"
         return "persistent"

@@ -1,4 +1,4 @@
-"""Alembic env：書類アーカイブ（harness/record_store）のスキーマ移行。
+"""Alembic env：ストレージ DB（書類アーカイブ＝record_store ＋ 指針カードブック＝policy_store）の移行。
 
 接続 URL は config.settings.database_url（.env / 環境変数の DATABASE_URL）が唯一の出所。
 未設定なら明示エラーで止める（migration は「DB を使う」意思が前提＝降格しない）。
@@ -17,6 +17,7 @@ from sqlalchemy import create_engine
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hoiku_agent.config import settings  # noqa: E402
+from hoiku_agent.harness import policy_store  # noqa: E402, F401  Base.metadata へ policy_books を登録
 from hoiku_agent.harness.record_store import Base  # noqa: E402
 
 config = context.config

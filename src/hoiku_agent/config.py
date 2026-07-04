@@ -26,21 +26,16 @@ class Settings(BaseSettings):
     # 用途は Memory Bank に限定する（Runtime 名残と混同しない＝設計コンテキスト §9）。
     agent_engine_id: str = ""
 
-    # 育つ指針＝構造化カードストアの外部永続化先（`gs://<bucket>/<object>.json`）。設定すると
-    # policy_store の IO が GCS を読み書きし、Cloud Run のコンテナFS 揮発（再起動で improver の
-    # 即反映が消える）を解消する。未設定はローカルファイル（knowledge/文書作成指針.json）＝
-    # RAG_CORPUS / AGENT_ENGINE_ID と同じ「未設定は降格」パターン（§8/§9）。
-    policy_store_uri: str = ""
-
     # 過去書類アーカイブ（search_past_documents が引くローカルディレクトリ）。空なら repo の data/records。
     # 実データは置かない＝架空児のみ（gitignore 済み・§14）。
     records_dir: str = ""
 
-    # 書類アーカイブ＝確定書類・児童マスタ・監査証跡の DB（Cloud SQL PostgreSQL・harness/record_store）。
+    # ストレージ DB（Cloud SQL PostgreSQL）＝書類アーカイブ（harness/record_store）と
+    # 育つ指針カードブック（harness/policy_store・Phase 2 で GCS から統合）が共有する。
     # SQLAlchemy URL（例: postgresql+psycopg://user:pass@host/db。Cloud Run は
-    # `?host=/cloudsql/<PROJECT:REGION:INSTANCE>` の unix ソケット直結）。未設定は降格＝永続化しない
-    # （確定書類は従来どおり session state 止まり）＝RAG_CORPUS / AGENT_ENGINE_ID / POLICY_STORE_URI
-    # と同じ「未設定は降格」パターン。
+    # `?host=/cloudsql/<PROJECT:REGION:INSTANCE>` の unix ソケット直結）。未設定は降格＝
+    # アーカイブは永続化しない・指針はローカルファイル（knowledge/文書作成指針.json）＝
+    # RAG_CORPUS / AGENT_ENGINE_ID と同じ「未設定は降格」パターン。
     database_url: str = ""
 
     # 配布デモUI（B-full）の簡易共有パスコード。設定すると LLM を回す口（/run・/run_sse・
