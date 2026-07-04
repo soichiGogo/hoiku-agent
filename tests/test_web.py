@@ -334,13 +334,23 @@ def test_records_save_edit_approve_flow(records_db) -> None:
     assert ("approve", "園長") in actions and ("edit", "保育士A") in actions
 
 
-def test_records_not_passcode_gated(records_db, monkeypatch) -> None:
-    """アーカイブ API は LLM 非課金なのでパスコードでゲートしない。"""
+def test_records_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:
+    """アーカイブの**書込**はパスコードでゲート（公開デモ URL からのゴミデータ・偽承認証跡の防止）。
+
+    読み取り（一覧・児童・seed）は従来どおり素通し。正しいパスコードは書込を開ける。
+    """
     monkeypatch.setattr(settings, "demo_passcode", "secret")
-    r = _client().post(
-        "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
-    )
-    assert r.status_code == 200 and r.json()["status"] == "saved"
+    c = _client()
+    payload = {"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
+    # 書込はパスコード無しだと 401
+    assert c.post("/api/records", json=payload).status_code == 401
+    assert c.post("/api/records/approve", json={"kind": "diary", "entry": {}}).status_code == 401
+    # 読み取りは素通し
+    assert c.get("/api/records").status_code == 200
+    assert c.get("/api/children").status_code == 200
+    # 正しいパスコードは書込を開ける
+    ok = c.post("/api/records", json=payload, headers={"X-Demo-Passcode": "secret"})
+    assert ok.status_code == 200 and ok.json()["status"] == "saved"
 
 
 def test_records_diary_entries_returns_seed(records_db) -> None:

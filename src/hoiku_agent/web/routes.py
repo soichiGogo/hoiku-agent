@@ -42,6 +42,9 @@ _COOKIE_NAME = "hoiku_demo"
 # LLM を回す（＝課金が発生する）口だけをパスコードで守る。読み取り・セッション作成は素通し。
 _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
 _GATED_PREFIX = ("/api/improve",)
+# 書類アーカイブの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡の防止＝濫用対策の同枠）。
+# 読み取り（GET /api/records・/api/children）は従来どおり素通し（コスト・改変リスクなし）。
+_GATED_WRITE_PREFIX = ("/api/records",)
 
 
 class GateRequest(BaseModel):
@@ -111,8 +114,11 @@ def _is_authed(request: Request) -> bool:
     return request.cookies.get(_COOKIE_NAME) == pc or request.headers.get("x-demo-passcode") == pc
 
 
-def _needs_gate(path: str) -> bool:
-    return path in _GATED_EXACT or any(path.startswith(p) for p in _GATED_PREFIX)
+def _needs_gate(path: str, method: str = "GET") -> bool:
+    if path in _GATED_EXACT or any(path.startswith(p) for p in _GATED_PREFIX):
+        return True
+    # アーカイブは書込（POST 等）のみゲート（GET＝一覧/児童/seed は素通し）。
+    return method != "GET" and any(path.startswith(p) for p in _GATED_WRITE_PREFIX)
 
 
 def register_web_ui(app: FastAPI) -> FastAPI:
@@ -121,7 +127,11 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     @app.middleware("http")
     async def _passcode_guard(request: Request, call_next):
         # demo_passcode 設定時のみ・LLM を回す口だけをゲートする（静的UI・config・読み取りは素通し）。
-        if settings.demo_passcode and _needs_gate(request.url.path) and not _is_authed(request):
+        if (
+            settings.demo_passcode
+            and _needs_gate(request.url.path, request.method)
+            and not _is_authed(request)
+        ):
             return JSONResponse(
                 {"error": "パスコードが必要です", "code": "passcode_required"},
                 status_code=401,
