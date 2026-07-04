@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     # 実データは置かない＝架空児のみ（gitignore 済み・§14）。
     records_dir: str = ""
 
+    # 書類アーカイブ＝確定書類・児童マスタ・監査証跡の DB（Cloud SQL PostgreSQL・harness/record_store）。
+    # SQLAlchemy URL（例: postgresql+psycopg://user:pass@host/db。Cloud Run は
+    # `?host=/cloudsql/<PROJECT:REGION:INSTANCE>` の unix ソケット直結）。未設定は降格＝永続化しない
+    # （確定書類は従来どおり session state 止まり）＝RAG_CORPUS / AGENT_ENGINE_ID / POLICY_STORE_URI
+    # と同じ「未設定は降格」パターン。
+    database_url: str = ""
+
     # 配布デモUI（B-full）の簡易共有パスコード。設定すると LLM を回す口（/run・/run_sse・
     # /run_live・/api/improve）が要パスコードになり、無認証の公開リンクで Gemini 課金が
     # 野放しになるのを防ぐ。空なら無効＝ローカル開放（src/hoiku_agent/web）。
