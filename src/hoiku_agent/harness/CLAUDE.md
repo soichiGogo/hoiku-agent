@@ -48,7 +48,9 @@
   「回した証拠」＝カード内蔵の変更履歴（decided_by 含む。GCS 運用時はオブジェクトバージョニング併用）。
 - `record_store.py` … 書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL
   PostgreSQL・Phase 1）。本文は JSON（PG は JSONB）が SSOT・検索キーだけ列昇格・版管理
-  （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。**LLM もパイプラインも呼ばない**
+  （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。読取は L2/L3 seed（`list_diary_entries`）に
+  加え `list_child_record_entries`（指定児の児童票の最新版＝年間マトリクス帳票の過去期埋め込み用。
+  列割当・年度の同定は描画側 web/chohyo_pdf の責務＝ここは引くだけ）。**LLM もパイプラインも呼ばない**
   （永続化はフロント→web API→ここの明示フロー）。`DATABASE_URL` 未設定は降格（書込 skipped・読取 空）。
   表示名→children.id（UUID）の解決はここに1つ。スキーマ適用は repo root の Alembic（`migrations/`）。
   clock は外部注入。

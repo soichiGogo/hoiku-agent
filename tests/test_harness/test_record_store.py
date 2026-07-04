@@ -146,6 +146,36 @@ def test_list_diary_entries_filters_by_range(db):
     assert [e["date"] for e in entries] == ["2026-07-01", "2026-07-15"]
 
 
+def test_list_child_record_entries_returns_latest_per_period_for_child(db):
+    """児童票の過去期取得（年間マトリクス帳票の埋め込み用）＝その子の最新版だけ・期間順・他児は混ざらない。"""
+    q1 = {"period": "2026-04〜2026-06", "child_id": "はるとくん", "overall_note": "1期の所見"}
+    rs.save_document("child_record", q1, author_kind="ai", now=_NOW)
+    rs.save_document(
+        "child_record",
+        dict(q1, overall_note="1期の所見（保育士修正）"),
+        author_kind="caregiver",
+        now=_NOW,
+    )
+    rs.save_document(
+        "child_record",
+        {"period": "2026-07〜2026-09", "child_id": "はるとくん", "overall_note": "2期の所見"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "めいちゃん", "overall_note": "別児の所見"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    entries = rs.list_child_record_entries("はるとくん")
+    assert [e["period"] for e in entries] == ["2026-04〜2026-06", "2026-07〜2026-09"]
+    assert entries[0]["overall_note"] == "1期の所見（保育士修正）"  # 最新版が出る
+    # 未登録の子・空文字・降格は空
+    assert rs.list_child_record_entries("未登録ちゃん") == []
+    assert rs.list_child_record_entries("") == []
+
+
 def test_missing_target_is_error(db):
     r = rs.save_document("diary", {"age_band": "0-2"}, author_kind="ai", now=_NOW)
     assert r["status"] == "error"

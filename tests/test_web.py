@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 import server
 from fastapi.testclient import TestClient
@@ -372,3 +374,49 @@ def test_records_diary_entries_returns_seed(records_db) -> None:
     # 不正日付は 400（黙って全件を返さない）
     bad = c.get("/api/records/diary-entries", params={"date_from": "abc", "date_to": "2026-07-31"})
     assert bad.status_code == 400
+
+
+# ──────────────────── 児童票 年間マトリクスの過去期埋め込み（chohyo_pdf × record_store） ────────────────────
+
+
+def test_assign_period_columns_fills_same_fiscal_year_only() -> None:
+    """期→列割当の純関数＝同じ年度だけ他列へ・今回の期が常に優先・読めない期/別児は除外。"""
+    from hoiku_agent.web.chohyo_pdf import assign_period_columns
+
+    current = {"period": "2026-07〜2026-09", "child_id": "はるとくん", "overall_note": "今回"}
+    past_q1 = {"period": "2026-04〜2026-06", "child_id": "はるとくん", "overall_note": "1期"}
+    other_year = {"period": "2025-04〜2025-06", "child_id": "はるとくん"}  # 前年度＝別シート
+    unparseable = {"period": "1学期", "child_id": "はるとくん"}  # 期が読めない＝誤配置しない
+    other_child = {"period": "2026-10〜2026-12", "child_id": "めいちゃん"}  # 別児＝防御的に除外
+    stale_same_q = {"period": "2026-07〜2026-09", "child_id": "はるとくん", "overall_note": "旧版"}
+    cols = assign_period_columns(
+        current, [past_q1, other_year, unparseable, other_child, stale_same_q]
+    )
+    assert set(cols) == {0, 1}
+    assert cols[0] is past_q1
+    assert cols[1] is current  # アーカイブの旧版より今回の entry が勝つ
+
+
+def test_assign_period_columns_unparseable_current_stays_alone() -> None:
+    """今回の期が読めなければ年度を同定できない＝過去期は埋めず先頭列に今回だけ（誤った列に描かない）。"""
+    from hoiku_agent.web.chohyo_pdf import assign_period_columns
+
+    current = {"period": "1学期", "child_id": "はるとくん"}
+    past = {"period": "2026-04〜2026-06", "child_id": "はるとくん"}
+    assert assign_period_columns(current, [past]) == {0: current}
+
+
+def test_export_pdf_child_record_embeds_archived_periods(records_db) -> None:
+    """児童票の帳票PDF はアーカイブの同児・同年度の過去期で他列を埋めて返す（未接続は従来どおり）。"""
+    past = dict(_edit_child_record_entry(), overall_note="1期の所見")
+    saved = record_store.save_document(
+        "child_record", past, author_kind="ai", now=datetime(2026, 7, 5)
+    )
+    assert saved["status"] == "saved"
+    current = dict(
+        _edit_child_record_entry(),
+        period="2026-07〜2026-09",
+        overall_note="2期の所見",
+    )
+    r = _client().post("/api/export-pdf", json={"kind": "child_record", "entry": current})
+    _assert_is_pdf(r)

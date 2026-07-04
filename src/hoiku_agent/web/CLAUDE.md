@@ -39,7 +39,9 @@
 - **帳票PDF（現場でそのまま綴じる最終形＝§18）は presentation**：確定 entry を園の様式に近い罫線帳票へ描くだけ
   （型の保証・validation は harness＝§5・ここは描画のみ）。日誌/月案の欄順は `write_draft`/`write_monthly_draft`（標準様式）と
   一致させる。**児童票は年間マトリクス様式（実様式準拠）**＝A4 横・行＝領域（0–2:3視点/3–5:5領域＋その他）×列＝4期で、
-  今回の期の列だけ埋め他は空欄の罫線（手書き追記可）。テキスト版（`write_child_record_draft`）は期の縦型＝コピー用で役割分担。
+  今回の期に加え**過去期の列はアーカイブの保存済み児童票から自動で埋める**（routes が `record_store.list_child_record_entries`
+  で引き、列割当は `assign_period_columns`＝純関数：同じ子・同じ年度のみ・今回の entry が常に優先・期が読めないものは除外。
+  未接続/該当なしは今回の期のみ＝空欄の罫線で手書き追記可）。テキスト版（`write_child_record_draft`）は期の縦型＝コピー用で役割分担。
 - **実名を出さない**（架空の子のみ＝§14）。対象児・サンプル投入は現場の日誌に寄せた**実在しない仮名**
   （下の名前＋ちゃん/くん・`app.js` の `CHILDREN`）と仮メモのみ（記号名「架空児A」には戻さない）。
 
@@ -75,10 +77,11 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `routes.py` … `register_web_ui(app)`（server.py が1回呼ぶ）。`/api/config`・`/api/policy`（**指針カード＋履歴＋store**・
   `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
   harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
-  `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）・**`/api/records`／`/api/records/approve`／
+  `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート。児童票は同じ子の保存済み児童票を
+  アーカイブから引いて past_entries で渡す＝年間マトリクスの過去期埋め込み・未接続は降格）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/children`**（書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
   **書込＝POST のみパスコードゲート**・読み取りは素通し）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列））。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み児童票で自動埋め＝`assign_period_columns`））。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
