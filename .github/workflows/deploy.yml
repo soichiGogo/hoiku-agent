@@ -7,7 +7,9 @@
 #      持つデプロイ用サービスアカウント。鍵 JSON は作らない（鍵レス）。
 #   2. リポジトリ変数（Settings > Secrets and variables > Actions > Variables）:
 #        GCP_PROJECT_ID / GCP_REGION / CLOUD_RUN_SERVICE / WIF_PROVIDER / DEPLOY_SA
-#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID（未設定なら RAG/Memory は降格＝§9）。
+#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / POLICY_STORE_URI / CLOUDSQL_INSTANCE
+#      （未設定なら RAG/Memory/指針GCS/書類アーカイブは降格＝§9/Phase 1）。
+#      任意 secret: DATABASE_URL（書類アーカイブの接続 URL。パスワードを含むため variable でなく secret）。
 #   WIF/変数が未設定なら job は skip する（誤発火・赤化を避ける）。決定論 CI（ci.yml）とは別物。
 
 name: Deploy (Cloud Run)
@@ -46,7 +48,22 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Cloud Run (build from source, scale-to-zero)
+        # 書類アーカイブ（Cloud SQL・Phase 1）は任意配線：
+        #   - vars.CLOUDSQL_INSTANCE（<PROJECT:REGION:INSTANCE>）→ unix ソケットをマウント
+        #   - secrets.DATABASE_URL（接続 URL・パスワード含むので secret）→ env に注入
+        #   未設定なら従来どおり降格（record_store は skipped/空）。POLICY_STORE_URI（指針カードの
+        #   GCS 永続化）も vars から渡す（未設定はローカル降格）。
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
+          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }},POLICY_STORE_URI=${{ vars.POLICY_STORE_URI }}"
+          EXTRA_FLAGS=()
+          if [ -n "$DATABASE_URL" ]; then
+            ENV_VARS="$ENV_VARS,DATABASE_URL=$DATABASE_URL"
+          fi
+          if [ -n "${{ vars.CLOUDSQL_INSTANCE }}" ]; then
+            EXTRA_FLAGS+=(--add-cloudsql-instances "${{ vars.CLOUDSQL_INSTANCE }}")
+          fi
           gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}" \
             --source . \
             --project "${{ vars.GCP_PROJECT_ID }}" \
@@ -54,4 +71,5 @@ jobs:
             --platform managed \
             --min-instances 0 \
             --allow-unauthenticated \
-            --set-env-vars "GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
+            "${EXTRA_FLAGS[@]}" \
+            --set-env-vars "$ENV_VARS"

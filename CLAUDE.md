@@ -35,6 +35,9 @@
   `google-adk[eval]` ＋ LLM 資格情報）。**evalset JSON（`eval/cases/*.evalset.json`）に `ruff format` を当てない**（Python 扱いで壊れる）。
 - lint: `ruff check .` / `ruff format .`（line-length=100, target=py311。`.` 指定は .py のみ整形）
 - 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
+- 書類アーカイブ（任意・Phase 1）: `.env` に `DATABASE_URL`（Cloud SQL / ローカル Postgres）→
+  `uv run alembic upgrade head`（スキーマ適用＝`migrations/`）。未設定は降格＝永続化なし・seed はサンプル
+  （手順・Cloud SQL 作成は `docs/ライブ実行手順.md`）。
 - 月案（doc_type=月案・L2 還流）は前月日誌を seed して回す専用入口 `uv run python scripts/run_monthly.py
   --child-id はるとくん --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
 - 児童票（doc_type=児童票・L3 還流＝期間日誌の集積）は専用入口 `uv run python scripts/run_child_record.py
@@ -118,8 +121,12 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   `GOOGLE_CLOUD_LOCATION`（regional・global 不可）のまま分離する（`models.build_model`＝§11）。eval の本採点は
   judge（rubric LLM）の genai client が env で Vertex を判定するため、`run_gate.py` の CLI が `.env` を
   自動 load する（未 load だと "No API key" で silently 採点不能になるのを防ぐ）。
+- **書類アーカイブ（Phase 1・本番運用ブラッシュアップ 2026-07）**: `harness/record_store`＝Cloud SQL PostgreSQL
+  （children/documents/document_versions/audit_events・Alembic＝repo root `migrations/`・`uv run alembic upgrade head`）。
+  確定/編集/承認を web（`/api/records` 系＋担当者名＝actor 自己申告）から版管理つきで永続化し、**L2/L3 の seed は
+  アーカイブから自動取得**（scripts/web とも・未接続はサンプル降格＝eval/CI は DB 非依存）。`DATABASE_URL` 未設定は降格。
 - **残課題（コードだけでは閉じられない＝外部依存）**: ① 各自 GCP のプロビジョニング＋env 設定（RAG corpus＝`RAG_CORPUS` /
-  Memory Bank＝`AGENT_ENGINE_ID`。スクリプトは実機検証済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化
+  Memory Bank＝`AGENT_ENGINE_ID` / 書類アーカイブ＝Cloud SQL＋`DATABASE_URL`。スクリプト・手順は実機/テスト済み・未設定は降格）/ ② 層A 実デプロイ・eval ゲートCI の有効化
   （GCP の WIF 設定＋リポジトリ変数。未設定なら job は skip。**baseline 保存・比較はコード実装済み**＝committed
   `eval/baseline.json`・WIF 有効化で nightly が初回採点して埋める）/ ③ 特定園の実様式による微調整（§18・標準様式準拠まではコード到達済み・
   残るは欄差のヒアリング確定）/ ④ 現場の修正差分による eval ケースの質的拡充（PII 非コミットを守る）。詳細は architecture.md。

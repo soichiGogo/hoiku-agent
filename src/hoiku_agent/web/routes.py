@@ -255,6 +255,24 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "store": record_store.store_status(),
         }
 
+    @app.get("/api/records/diary-entries")
+    def web_list_diary_entries(date_from: str, date_to: str) -> dict:
+        """期間内の日誌 entry（最新版 JSON）＝月案 L2／児童票 L3 の seed 取得口。
+
+        フロントは entries が空/未接続なら従来のサンプル seed へ降格する（黙って空 seed で回さない）。
+        """
+        try:
+            f, t = date.fromisoformat(date_from), date.fromisoformat(date_to)
+        except ValueError:
+            return JSONResponse(
+                {"error": "date_from/date_to は YYYY-MM-DD", "code": "invalid_request"},
+                status_code=400,
+            )
+        return {
+            "entries": record_store.list_diary_entries(f, t),
+            "store": record_store.store_status(),
+        }
+
     @app.get("/api/children")
     def web_list_children() -> dict:
         """児童マスタ（アーカイブから auto-create された子）。未設定は空＝フロントは従来チップへ降格。"""

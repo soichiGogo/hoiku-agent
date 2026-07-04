@@ -5,7 +5,8 @@
 `adk web` は doc_type と前月日誌を seed しづらいので、デモ/検証はこの入口を使う）。
 
 このスクリプトは:
-1. 前月日誌（`--prev-entries-file` の JSON 配列。無ければ同梱の仮名サンプル）を読む。
+1. 前月日誌を読む。優先順位＝ `--prev-entries-file`（JSON 配列）＞ 書類アーカイブ
+   （`DATABASE_URL` 設定時・record_store から前月分を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
 2. session state に doc_type="月案" と prev_month_entries を seed して root_agent（DocTypeRouter）を回す。
 3. DigestPrepAgent（monthly_prep）が child_id 別に集計（state["prev_month_digest"]）→ 月案 author が要約・ねらい化
    → reviewer → 月案 finalize（MonthlyPlan を検査・整形）。
@@ -111,6 +112,20 @@ def _sample_prev_entries(child_id: str) -> list[dict]:
     ]
 
 
+def _archive_prev_entries(month: str) -> list[dict]:
+    """書類アーカイブから前月の日誌を引く（L2 seed の本命経路・Phase 1）。
+
+    DATABASE_URL 未設定・月の解釈不能・該当なしは []＝呼び出し側がサンプルへ降格する。
+    """
+    from hoiku_agent.harness import record_store
+
+    try:
+        date_from, date_to = record_store.month_date_range(record_store.prev_month_of(month))
+    except ValueError:
+        return []
+    return record_store.list_diary_entries(date_from, date_to)
+
+
 async def _run(month: str, child_id: str, prev_entries: list[dict]) -> None:
     from google.adk.runners import InMemoryRunner
 
@@ -161,8 +176,14 @@ def main() -> None:
 
     if args.prev_entries_file:
         prev_entries = json.loads(Path(args.prev_entries_file).read_text(encoding="utf-8"))
+        seed_src = f"ファイル {args.prev_entries_file}"
     else:
-        prev_entries = _sample_prev_entries(args.child_id)
+        prev_entries = _archive_prev_entries(args.month)
+        seed_src = "書類アーカイブ（DATABASE_URL）"
+        if not prev_entries:
+            prev_entries = _sample_prev_entries(args.child_id)
+            seed_src = "同梱サンプル（アーカイブ未設定/該当なし＝降格）"
+    print(f"[seed] 前月日誌 {len(prev_entries)} 件（{seed_src}）")
 
     asyncio.run(_run(args.month, args.child_id, prev_entries))
 

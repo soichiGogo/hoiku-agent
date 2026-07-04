@@ -349,6 +349,26 @@ async function main() {
     diaryFlow.run(null, text);
   };
 
+  // 月の初日/末日（"YYYY-MM"）。seed の範囲クエリ用（アーカイブ＝/api/records/diary-entries）。
+  const monthFirst = (ym) => `${ym}-01`;
+  const monthLast = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); // 翌月0日＝当月末日
+  };
+  const prevMonth = (ym) => {
+    const [y, m] = ym.split("-").map(Number);
+    return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+  };
+  // seed の解決：アーカイブ接続時は保存済み日誌（期間内）を使い、空/未接続はサンプルへ降格。
+  // どちらを使ったかを {entries, source} で返し、UI が正直に表示する。
+  async function seedEntries(fromYm, toYm, fallback) {
+    if (cfg.records_connected) {
+      const entries = await adk.getDiaryEntries(monthFirst(fromYm), monthLast(toYm));
+      if (entries.length) return { entries, source: "アーカイブ" };
+    }
+    return { entries: fallback, source: "サンプル" };
+  }
+
   // ── 月案 ──
   const monthlyChild = chipGroup($("monthly-children"), childNames, () => updateSeedCount(), "caregiver");
   const updateSeedCount = () => ($("monthly-seed-count").textContent = samplePrevEntries(monthlyChild()).length + " 件");
@@ -362,11 +382,15 @@ async function main() {
     kind: "monthly",
     status,
   });
-  $("monthly-run").onclick = () => {
+  $("monthly-run").onclick = async () => {
     const child = monthlyChild();
     const month = $("monthly-month").value || "2026-07";
     status.setSubject(child);
-    const seed = { doc_type: "月案", prev_month_entries: samplePrevEntries(child) };
+    // L2 seed＝前月の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
+    const pm = prevMonth(month);
+    const { entries, source } = await seedEntries(pm, pm, samplePrevEntries(child));
+    $("monthly-seed-count").textContent = `${entries.length} 件（${source}）`;
+    const seed = { doc_type: "月案", prev_month_entries: entries };
     monthlyFlow.run(seed, `${month} の ${child} の個別月案を作成してください。`);
   };
 
@@ -384,14 +408,17 @@ async function main() {
     kind: "child_record",
     status,
   });
-  $("record-run").onclick = () => {
+  $("record-run").onclick = async () => {
     const child = recordChild();
     const start = $("record-start").value || "2026-04";
     const end = $("record-end").value || "2026-06";
     const period = `${start}〜${end}`;
     const ageBand = AGE_BAND_OF[child] || "0-2";
     status.setSubject(child);
-    const seed = { doc_type: "児童票", period_entries: samplePeriodEntries(child) };
+    // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
+    const { entries, source } = await seedEntries(start, end, samplePeriodEntries(child));
+    $("record-seed-count").textContent = `${entries.length} 件（${source}）`;
+    const seed = { doc_type: "児童票", period_entries: entries };
     recordFlow.run(
       seed,
       `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の児童票（保育経過記録）を作成してください。period には「${period}」をそのまま書いてください。`,

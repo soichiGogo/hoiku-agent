@@ -95,6 +95,17 @@ export async function approveRecord(kind, entry, actor) {
   }
 }
 
+// 期間内の日誌 entry（アーカイブの最新版）＝月案 L2／児童票 L3 の seed。空＝呼び出し側がサンプルへ降格。
+export async function getDiaryEntries(dateFrom, dateTo) {
+  try {
+    const r = await fetch(`/api/records/diary-entries?date_from=${dateFrom}&date_to=${dateTo}`);
+    if (!r.ok) return [];
+    return (await r.json()).entries || [];
+  } catch {
+    return [];
+  }
+}
+
 // 児童マスタ（アーカイブに登場した子）。未設定/障害は空＝呼び出し側が従来チップへ降格する。
 export async function getChildren() {
   try {

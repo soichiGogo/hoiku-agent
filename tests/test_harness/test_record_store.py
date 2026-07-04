@@ -163,3 +163,24 @@ def test_invalid_kind_and_author_kind(db):
         ]
         == "error"
     )
+
+
+# ──────────────────────────── 期間パース（seed の範囲解決・純関数） ────────────────────────────
+
+
+def test_month_date_range_and_prev_month():
+    assert rs.month_date_range("2026-07") == (date(2026, 7, 1), date(2026, 7, 31))
+    assert rs.month_date_range("2026-02") == (date(2026, 2, 1), date(2026, 2, 28))
+    assert rs.month_date_range("2026-12") == (date(2026, 12, 1), date(2026, 12, 31))
+    assert rs.prev_month_of("2026-07") == "2026-06"
+    assert rs.prev_month_of("2026-01") == "2025-12"
+    with pytest.raises(ValueError):
+        rs.prev_month_of("2026-13")
+
+
+def test_period_date_range_parses_month_span_or_none():
+    assert rs.period_date_range("2026-04〜2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
+    assert rs.period_date_range("2026-04~2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
+    # 期制は園差＝自由記述。月〜月以外は None（黙って誤解釈せず呼び出し側がサンプルへ降格）。
+    assert rs.period_date_range("1学期") is None
+    assert rs.period_date_range("2026-06〜2026-04") is None  # 逆転も None

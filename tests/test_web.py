@@ -341,3 +341,24 @@ def test_records_not_passcode_gated(records_db, monkeypatch) -> None:
         "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
     )
     assert r.status_code == 200 and r.json()["status"] == "saved"
+
+
+def test_records_diary_entries_returns_seed(records_db) -> None:
+    """seed 取得口＝期間内の日誌 entry（最新版）を返す（月案 L2／児童票 L3 の還流を DB から）。"""
+    c = _client()
+    c.post(
+        "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
+    )
+    body = c.get(
+        "/api/records/diary-entries", params={"date_from": "2026-06-01", "date_to": "2026-06-30"}
+    ).json()
+    assert body["store"] == "ok"
+    assert [e["date"] for e in body["entries"]] == ["2026-06-25"]
+    # 範囲外は空
+    empty = c.get(
+        "/api/records/diary-entries", params={"date_from": "2026-07-01", "date_to": "2026-07-31"}
+    ).json()
+    assert empty["entries"] == []
+    # 不正日付は 400（黙って全件を返さない）
+    bad = c.get("/api/records/diary-entries", params={"date_from": "abc", "date_to": "2026-07-31"})
+    assert bad.status_code == 400
