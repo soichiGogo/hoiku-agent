@@ -1,6 +1,6 @@
 # harness/ ＝ 決定的「型の保証」層（責務①）
 
-ここで Claude がすること：**文書というモノの成立**（必須欄・年齢分岐・順序・集積・git適用）を
+ここで Claude がすること：**文書というモノの成立**（必須欄・年齢分岐・順序・集積・指針カードストア）を
 **決定的なコード**で保証する。設計コンテキスト §4「一階＝作成本体」/ §5「責務境界」。
 
 ## 越えてはいけない一線
@@ -45,8 +45,7 @@
   （安全網＝完全重複のみ）。clock を持たず日時は外部注入（§8/§9）。置き場は IO 節に隔離＝
   **明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run 永続・`load_book_meta`→`save_book(if_generation=…)`
   の generation precondition で楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`**。純関数は置き場を知らない。
-- `git_ops.py` … カードストア JSON の git 証拠 commit（`commit_policy_book`・既定 dry_run）。
-  **これはプロダクトが回す git 操作**で、開発者自身のブランチ運用（グローバル CLAUDE.md）とは別物。混同しない。
+  「回した証拠」＝カード内蔵の変更履歴（decided_by 含む。GCS 運用時はオブジェクトバージョニング併用）。
 
 ## スタブを埋めるとき
 

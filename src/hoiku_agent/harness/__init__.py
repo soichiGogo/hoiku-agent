@@ -15,7 +15,6 @@ from .finalize import (
     parse_draft_to_entry,
     parse_draft_to_plan,
 )
-from .git_ops import commit_policy_book
 from .policy_store import (
     active_cards,
     add_card,
@@ -84,5 +83,4 @@ __all__ = [
     "card_view",
     "history_view",
     "book_view",
-    "commit_policy_book",
 ]

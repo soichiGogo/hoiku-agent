@@ -15,8 +15,8 @@ v1 で指針の正(SSOT)を markdown から **構造化カード JSON（`knowled
 - 置き場は IO 節で解決する＝明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run でも永続・generation
   precondition の楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`。純関数は置き場を知らない。
 
-git への証拠 commit は `git_ops.commit_policy_book`（プロダクトが回す git 操作）が担う（本モジュールは
-JSON の決定的編集まで・subprocess は叩かない）。
+「回した証拠」はカードストア内蔵の変更履歴（history・decided_by 含む）が担う（GCS 運用時は
+オブジェクトバージョニングも併用）。本モジュールは JSON の決定的編集まで・subprocess は叩かない。
 """
 
 from __future__ import annotations
@@ -94,11 +94,13 @@ def _truncate(text: str, n: int = 30) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
 
-def add_card(book: PolicyBook, card: PolicyCard, *, summary: str = "") -> PolicyBook:
+def add_card(
+    book: PolicyBook, card: PolicyCard, *, summary: str = "", decided_by: str = "保育士"
+) -> PolicyBook:
     """カードを追加する（純関数・新 PolicyBook を返す）。
 
     id 重複・本文空・同 scope の完全重複は ValueError（fail-loud＝SSOT を黙って壊さない）。
-    history に add を1件追記する（timestamp＝card.created_at）。
+    history に add を1件追記する（timestamp＝card.created_at・decided_by＝即反映の決定者）。
     """
     if not card.body.strip():
         raise ValueError("カード本文（body）が空です")
@@ -115,6 +117,7 @@ def add_card(book: PolicyBook, card: PolicyCard, *, summary: str = "") -> Policy
         card_id=card.id,
         summary=summary or f"{card.scope.value}に「{_truncate(card.body)}」を追加",
         source=card.source,
+        decided_by=decided_by,
     )
     return book.model_copy(
         update={"cards": [*book.cards, card], "history": [*book.history, change]}
@@ -122,7 +125,12 @@ def add_card(book: PolicyBook, card: PolicyCard, *, summary: str = "") -> Policy
 
 
 def supersede_card(
-    book: PolicyBook, *, old_id: str, new_card: PolicyCard, summary: str = ""
+    book: PolicyBook,
+    *,
+    old_id: str,
+    new_card: PolicyCard,
+    summary: str = "",
+    decided_by: str = "保育士",
 ) -> PolicyBook:
     """旧カードを新カードで置き換える（純関数・新 PolicyBook を返す）。
 
@@ -164,6 +172,7 @@ def supersede_card(
         summary=summary
         or f"{new_card.scope.value}の指針を更新（「{_truncate(old.body)}」→「{_truncate(new_card.body)}」）",
         source=new_card.source,
+        decided_by=decided_by,
     )
     return book.model_copy(update={"cards": cards, "history": [*book.history, change]})
 
@@ -244,15 +253,6 @@ def _store_uri() -> str:
     from ..config import settings  # 遅延 import（テストの monkeypatch・循環回避）
 
     return settings.policy_store_uri.strip()
-
-
-def uses_external_store() -> bool:
-    """外部ストア（POLICY_STORE_URI）で運用中か。
-
-    git 証拠 commit の要否判定に使う（外部ストア運用中はローカル JSON が正でないため
-    commit すると古い内容を「証拠」にしてしまう。履歴は GCS バージョニング＋カード内蔵 history が担う）。
-    """
-    return bool(_store_uri())
 
 
 def _gcs_blob(uri: str):

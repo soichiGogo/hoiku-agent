@@ -7,9 +7,10 @@
 - propose_policy_card … 修正差分から追加/改訂案を作り、**意味的に競合する既存カードを自分で申告**する。
   決定的な完全重複は安全網（policy_store.find_exact_duplicate）が併せて検出する。
 - ask_caregiver … 競合があれば該当カードと新案を**比較相談**、無くても反映可否を確認（人に訊く口は一階と共用）。
-- commit_policy_card … 保育士の決定で**即反映**（add／supersede→save_book）。任意で git に証拠 commit。
+- commit_policy_card … 保育士の決定で**即反映**（add／supersede→save_book。「回した証拠」＝カード内蔵の
+  変更履歴。GCS 運用時はオブジェクトバージョニングも併用）。
 
-決定的ロジックの実体は harness（policy_store / git_ops）に1つ（§5）。ここは harness を呼ぶ薄いラッパ＋
+決定的ロジックの実体は harness（policy_store）に1つ（§5）。ここは harness を呼ぶ薄いラッパ＋
 runtime 境界（`datetime.now()` の注入）だけ。意味的競合の判定は LLM（このエージェント）の責務で、
 harness は完全重複の安全網のみを持つ（決定的）。run_eval/評価ゲートは取り込みフローから外す（eval は
 CI の品質回帰として別系統で温存＝decouple・§12）。
@@ -20,7 +21,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..harness import policy_store
-from ..harness.git_ops import commit_policy_book
 from ..schemas.policy import PolicyCard, PolicyScope
 from ..tools import ask_caregiver as ask_caregiver  # noqa: PLC0414  人に訊く口は一階と共用
 
@@ -139,16 +139,15 @@ def commit_policy_card(
     op: str = "add",
     supersede_id: str = "",
     decided_by: str = "保育士",
-    commit: bool = False,
 ) -> dict:
     """保育士の決定で指針カードを**即反映**する（add／supersede→save_book・§8）。
 
     runtime 境界として `datetime.now()` を注入し PolicyCard を生成 → harness の policy_store で
-    add/supersede → save_book（即反映）。`commit=True` で git_ops.commit_policy_book による証拠 commit。
+    add/supersede → save_book（即反映）。「回した証拠」はカード内蔵の変更履歴（decided_by 含む）が担う。
     完全重複・対象不在・不正 scope は status="rejected"/"error" を返し、改善エージェントを落とさない。
 
     Returns:
-        {status, card:{…card_view…}, history_entry:{at,by,summary,card_id}, store, committed}
+        {status, card:{…card_view…}, history_entry:{at,by,summary,card_id}, store}
     """
     sc = _parse_scope(scope)
     if sc is None:
@@ -170,9 +169,11 @@ def commit_policy_card(
     )
     try:
         if op == "supersede" and supersede_id.strip():
-            new_book = policy_store.supersede_card(book, old_id=supersede_id.strip(), new_card=card)
+            new_book = policy_store.supersede_card(
+                book, old_id=supersede_id.strip(), new_card=card, decided_by=decided_by
+            )
         else:
-            new_book = policy_store.add_card(book, card)
+            new_book = policy_store.add_card(book, card, decided_by=decided_by)
     except ValueError as e:
         return {"status": "rejected", "detail": str(e)}
 
@@ -182,25 +183,10 @@ def commit_policy_card(
         # 読み込み後に他所で更新された（generation 競合）。黙って上書きせず再試行を促す。
         return {"status": "rejected", "detail": str(e)}
 
-    committed = None
-    if commit:
-        if policy_store.uses_external_store():
-            # 外部ストア（GCS）運用中はローカル JSON が正でない＝古い内容を「証拠」に commit しない。
-            # 履歴は GCS オブジェクトバージョニング＋カード内蔵 history が担う。
-            committed = {
-                "status": "skipped",
-                "reason": "外部ストア（GCS）運用中は git 証拠 commit 不要",
-            }
-        else:
-            committed = commit_policy_book(
-                title=f"policy: {sc.value} を更新（{card.id}・{decided_by}）", dry_run=False
-            )
-
     change = new_book.history[-1]
     return {
         "status": "committed",
         "card": policy_store.card_view(card),
         "history_entry": policy_store.history_view(change),
         "store": policy_store.store_status(),
-        "committed": committed,
     }

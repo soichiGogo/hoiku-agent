@@ -262,7 +262,7 @@ async def persist_visit_to_memory(callback_context: CallbackContext) -> None:
 
     pipeline の `after_agent_callback`（finalize の後段）として実行する。書き戻しの "実行" は
     ADK のマネージドメモリに委ね、harness は "判定（_should_persist_visit）" と配線だけを持つ
-    （git_ops と同じく外部 I/O は managed サービス越し・LLM は呼ばない）。
+    （外部 I/O は managed サービス越し・LLM は呼ばない）。
 
     memory_service 未配線（ローカル / `agentengine://` 未指定）では ADK が `ValueError` を投げる。
     ライブ Memory Bank の一時障害も含め、書き戻しの失敗で日誌の実行を止めない＝降格する
