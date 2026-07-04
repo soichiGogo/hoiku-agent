@@ -66,8 +66,9 @@
    （CI の品質回帰として温存＝decouple）。
 
 **メモリ3分類**: 子ども長期記憶＝Agent Engine Memory Bank（repo外）／ 育つ指針＝構造化カード
-（runtime の正は `POLICY_STORE_URI`（gs://）設定時 **GCS オブジェクト**＝Cloud Run でも永続・楽観ロック付き。
-未設定はローカル `knowledge/文書作成指針.json`＝git はシード。agent は読み取り＝`read_policy`、
+（runtime の正は `DATABASE_URL` 設定時 **Cloud SQL の policy_books 1行（book 丸ごと JSONB・version 楽観ロック）**
+＝書類アーカイブと同じ DB へ統合（Phase 2・GCS は廃止）。未設定はローカル `knowledge/文書作成指針.json`＝
+git はシード（DB 行不在時のフォールバックシードも兼ねる）。agent は読み取り＝`read_policy`、
 improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。
 「全部ファイルベース」にしない。
 

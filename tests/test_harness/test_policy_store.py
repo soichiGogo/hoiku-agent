@@ -181,56 +181,80 @@ def test_book_view_shapes():
     assert view["history"][0]["card_id"] == "card-0002"
 
 
-# ──────────────────────────── GCS 外部ストア（POLICY_STORE_URI） ────────────────────────────
-# フェイク Blob と gcs_store fixture は tests/conftest.py（test_improver.py と共用）。
+# ──────────────────────────── DB ストア（DATABASE_URL＝Cloud SQL 統合・Phase 2） ────────────────────────────
+# policy_db fixture は tests/conftest.py（test_improver.py と共用・sqlite で creds 不要）。
 
 
-def test_gcs_missing_returns_empty_and_create_generation(gcs_store):
-    book, generation = ps.load_book_meta()
-    assert book.cards == []
-    assert generation == 0  # 不在＝if_generation_match=0（create-only）で初回作成
+def test_db_missing_row_returns_local_seed_and_version_zero(policy_db):
+    """DB 行不在＝ローカルシードを返し version 0（create-only の初回書込みでシードごと DB へ乗る）。"""
+    ps.save_book(_seeded(), ps._POLICY_PATH)  # ローカルシード（git 同梱相当）
+    book, version = ps.load_book_meta()
+    assert [c.id for c in book.cards] == ["card-0001", "card-0002"]
+    assert version == 0
 
 
-def test_gcs_save_load_roundtrip_with_lock(gcs_store):
-    book, generation = ps.load_book_meta()
-    ps.save_book(_seeded(), if_generation=generation)
-    loaded, generation2 = ps.load_book_meta()
+def test_db_missing_row_and_no_seed_is_empty(policy_db):
+    book, version = ps.load_book_meta()
+    assert book.cards == [] and version == 0
+
+
+def test_db_save_load_roundtrip_with_lock(policy_db):
+    book, version = ps.load_book_meta()
+    ps.save_book(_seeded(), if_version=version)  # 0＝create-only
+    loaded, version2 = ps.load_book_meta()
     assert [c.id for c in loaded.cards] == ["card-0001", "card-0002"]
     assert loaded.cards[0].created_at == T
-    assert generation2 == 1
+    assert version2 == 1
+    # 2回目の保存で version が進む
+    ps.save_book(ps.add_card(loaded, _card("card-0003", PolicyScope.保育日誌, "x")), if_version=1)
+    assert ps.load_book_meta()[1] == 2
 
 
-def test_gcs_generation_conflict_raises(gcs_store):
-    ps.save_book(_seeded())  # generation 1
-    _, generation = ps.load_book_meta()
-    ps.save_book(_seeded())  # 他所の更新（generation 2）
+def test_db_version_conflict_raises(policy_db):
+    ps.save_book(_seeded())  # version 1
+    _, version = ps.load_book_meta()
+    ps.save_book(_seeded())  # 他所の更新（version 2）
     with pytest.raises(ValueError, match="競合"):
-        ps.save_book(_seeded(), if_generation=generation)
+        ps.save_book(_seeded(), if_version=version)
 
 
-def test_gcs_corrupt_raises(gcs_store):
-    gcs_store["data"] = b"{ not json"
-    gcs_store["generation"] = 1
+def test_db_create_only_conflict_raises(policy_db):
+    ps.save_book(_seeded())  # 行が既にある
+    with pytest.raises(ValueError, match="競合"):
+        ps.save_book(_seeded(), if_version=0)  # create-only は競合
+
+
+def test_db_corrupt_row_raises(policy_db):
+    """DB の book がスキーマ不一致なら ValueError（write 経路 fail-loud・read は呼び出し側が降格）。"""
+    from hoiku_agent.harness import db
+
+    from sqlalchemy.orm import Session
+
+    with Session(db.engine()) as session, session.begin():
+        session.add(ps.PolicyBookRecord(id="default", book={"cards": "壊れ"}, version=1))
     with pytest.raises(ValueError):
         ps.load_book()
 
 
-def test_gcs_explicit_path_wins_over_uri(gcs_store, tmp_path):
-    """明示 path はローカル経路＝URI 設定下でも GCS に触れない（既存テスト・ツールの互換）。"""
+def test_db_explicit_path_wins_over_database_url(policy_db, tmp_path):
+    """明示 path はローカル経路＝DATABASE_URL 設定下でも DB に触れない（既存テスト・ツールの互換）。"""
     p = tmp_path / "文書作成指針.json"
     ps.save_book(_seeded(), p)
-    assert gcs_store["data"] is None  # フェイク GCS は未使用
+    assert ps.load_book_meta()[1] == 0  # DB 側は行なしのまま
     assert [c.id for c in ps.load_book(p).cards] == ["card-0001", "card-0002"]
 
 
-def test_gcs_store_status(gcs_store, monkeypatch):
-    # 設定済み＋読める（不在でも空 book）＝Cloud Run 上でも persistent
+def test_db_store_status(policy_db, monkeypatch):
+    from hoiku_agent.config import settings
+    from hoiku_agent.harness import db
+
+    # 設定済み＋読める（行不在でもローカルシード）＝Cloud Run 上でも persistent
     monkeypatch.setenv("K_SERVICE", "hoiku")
     assert ps.store_status() == "persistent"
     ps.save_book(_seeded())
     assert ps.store_status() == "persistent"
-    # 到達不能（クライアント生成/権限エラー等）は unavailable（偽の永続を出さない）
-    monkeypatch.setattr(
-        ps, "_gcs_blob", lambda uri: (_ for _ in ()).throw(RuntimeError("unreachable"))
-    )
+    # 到達不能は unavailable（偽の永続を出さない）
+    monkeypatch.setattr(settings, "database_url", "postgresql+psycopg://x:x@127.0.0.1:1/none")
+    db.reset_engine_cache()
     assert ps.store_status() == "unavailable"
+    db.reset_engine_cache()

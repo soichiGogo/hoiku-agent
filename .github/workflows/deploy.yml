@@ -7,8 +7,8 @@
 #      持つデプロイ用サービスアカウント。鍵 JSON は作らない（鍵レス）。
 #   2. リポジトリ変数（Settings > Secrets and variables > Actions > Variables）:
 #        GCP_PROJECT_ID / GCP_REGION / CLOUD_RUN_SERVICE / WIF_PROVIDER / DEPLOY_SA
-#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / POLICY_STORE_URI / CLOUDSQL_INSTANCE / IAP_AUDIENCE
-#      （未設定なら RAG/Memory/指針GCS/書類アーカイブは降格＝§9/Phase 1）。
+#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / CLOUDSQL_INSTANCE / IAP_AUDIENCE
+#      （未設定なら RAG/Memory/DB（アーカイブ＋指針）は降格＝§9/Phase 1/2）。
 #      任意 secret: DATABASE_URL（書類アーカイブの接続 URL。パスワードを含むため variable でなく secret）。
 #   WIF/変数が未設定なら job は skip する（誤発火・赤化を避ける）。決定論 CI（ci.yml）とは別物。
 
@@ -51,12 +51,12 @@ jobs:
         # 書類アーカイブ（Cloud SQL・Phase 1）は任意配線：
         #   - vars.CLOUDSQL_INSTANCE（<PROJECT:REGION:INSTANCE>）→ unix ソケットをマウント
         #   - secrets.DATABASE_URL（接続 URL・パスワード含むので secret）→ env に注入
-        #   未設定なら従来どおり降格（record_store は skipped/空）。POLICY_STORE_URI（指針カードの
-        #   GCS 永続化）も vars から渡す（未設定はローカル降格）。
+        #   未設定なら従来どおり降格（record_store は skipped/空・policy_store はローカル）。
+        #   指針カードブックも同じ DATABASE_URL に統合済み（Phase 2・GCS は廃止）。
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }},POLICY_STORE_URI=${{ vars.POLICY_STORE_URI }}"
+          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
           EXTRA_FLAGS=()
           if [ -n "$DATABASE_URL" ]; then
             ENV_VARS="$ENV_VARS,DATABASE_URL=$DATABASE_URL"

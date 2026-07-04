@@ -1,7 +1,7 @@
 """改善エージェント（二階）固有のツール。
 
 設計コンテキスト §8。育つ指針の正(SSOT)は構造化カードストア（置き場の解決は harness/policy_store＝
-`POLICY_STORE_URI` の GCS またはローカル `knowledge/文書作成指針.json`。この層は置き場を知らない）。
+`DATABASE_URL` の Cloud SQL（書類アーカイブと同じ DB）またはローカル `knowledge/文書作成指針.json`。この層は置き場を知らない）。
 改善エージェントは次を回す（番人＝意味的競合精査＋保育士の決定）:
 - read_policy_cards … 既存 active カードを読む（意味的競合を精査する材料）。
 - propose_policy_card … 修正差分から追加/改訂案を作り、**意味的に競合する既存カードを自分で申告**する。
@@ -157,7 +157,7 @@ def commit_policy_card(
 
     now = datetime.now()  # runtime 境界でのみ now を注入（harness/schemas は純関数を保つ＝§5）
     # generation＝GCS 外部ストアの楽観ロック前提条件（ローカルは None＝従来動作）。
-    book, generation = policy_store.load_book_meta()
+    book, version = policy_store.load_book_meta()
     card = PolicyCard(
         id=policy_store.next_card_id(book),
         scope=sc,
@@ -178,7 +178,7 @@ def commit_policy_card(
         return {"status": "rejected", "detail": str(e)}
 
     try:
-        policy_store.save_book(new_book, if_generation=generation)  # 即反映（GCS は楽観ロック）
+        policy_store.save_book(new_book, if_version=version)  # 即反映（DB は version 楽観ロック）
     except ValueError as e:
         # 読み込み後に他所で更新された（generation 競合）。黙って上書きせず再試行を促す。
         return {"status": "rejected", "detail": str(e)}

@@ -1,7 +1,7 @@
 """テスト全体の共通フィクスチャ。
 
-開発者の `.env`（POLICY_STORE_URI 等）がテストへ漏れて実 GCS に触れないよう、
-外部ストア設定を既定で空にする（各テストは必要時に fixture 内で上書きする）。
+開発者の `.env`（DATABASE_URL 等）がテストへ漏れて実 DB（Cloud SQL）に触れないよう、
+ストレージ設定を既定で空にする（各テストは必要時に fixture 内で上書きする）。
 """
 
 from __future__ import annotations
@@ -12,43 +12,24 @@ from hoiku_agent.config import settings
 
 
 @pytest.fixture(autouse=True)
-def _isolate_policy_store_uri(monkeypatch):
-    """policy_store の外部ストア（GCS）設定をテストから隔離する（既定＝ローカル経路）。"""
-    monkeypatch.setattr(settings, "policy_store_uri", "")
-
-
-class FakeGcsBlob:
-    """google-cloud-storage Blob の最小フェイク（reload/download/upload＋generation precondition）。"""
-
-    def __init__(self, store: dict):
-        self._store = store  # {"data": bytes|None, "generation": int}
-
-    def reload(self):
-        from google.api_core.exceptions import NotFound
-
-        if self._store["data"] is None:
-            raise NotFound("object not found")
-        self.generation = self._store["generation"]
-
-    def download_as_bytes(self) -> bytes:
-        return self._store["data"]
-
-    def upload_from_string(self, payload, content_type=None, if_generation_match=None):
-        from google.api_core.exceptions import PreconditionFailed
-
-        current = self._store["generation"] if self._store["data"] is not None else 0
-        if if_generation_match is not None and if_generation_match != current:
-            raise PreconditionFailed("generation mismatch")
-        self._store["data"] = payload.encode("utf-8")
-        self._store["generation"] = current + 1
+def _isolate_database_url(monkeypatch):
+    """ストレージ DB（書類アーカイブ＋指針カードブック）をテストから隔離する（既定＝降格/ローカル経路）。"""
+    monkeypatch.setattr(settings, "database_url", "")
 
 
 @pytest.fixture()
-def gcs_store(monkeypatch):
-    """policy_store の外部ストアをフェイク GCS へ向ける（creds 不要・決定的）。"""
-    from hoiku_agent.harness import policy_store as ps
+def policy_db(tmp_path, monkeypatch):
+    """指針カードブックを sqlite の一時 DB へ向ける（creds 不要・決定的。test_policy_store / test_improver 共用）。
 
-    store = {"data": None, "generation": 0}
-    monkeypatch.setattr(ps, "_gcs_blob", lambda uri: FakeGcsBlob(store))
-    monkeypatch.setattr(settings, "policy_store_uri", "gs://bucket/文書作成指針.json")
-    return store
+    ローカルシード（`_POLICY_PATH`）も一時ファイルへ差し替える＝「DB 行不在→ローカルシード」の
+    フォールバックが repo の実シードに依存しないようにする（既定は空 book）。
+    """
+    from hoiku_agent.harness import db, policy_store as ps
+
+    url = f"sqlite:///{tmp_path}/store.db"
+    monkeypatch.setattr(settings, "database_url", url)
+    monkeypatch.setattr(ps, "_POLICY_PATH", tmp_path / "seed.json")
+    db.reset_engine_cache()
+    db.Base.metadata.create_all(db.engine())
+    yield url
+    db.reset_engine_cache()

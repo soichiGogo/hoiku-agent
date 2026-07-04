@@ -25,23 +25,22 @@ import uuid
 from datetime import date, datetime, timedelta
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column
+
+from . import db
 
 # ──────────────────────────── ORM モデル（テーブル定義の SSOT） ────────────────────────────
 
-# PostgreSQL では JSONB、テスト（sqlite）では素の JSON にフォールバックする。
-_JSON = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
+# 接続基盤（engine キャッシュ・Base・JSONB variant）は harness/db.py で policy_store と共有する。
+# 既存の公開名（Base / _engine / reset_engine_cache）は互換のため本モジュールから引き続き使える。
+Base = db.Base
+_JSON = db.JSON_VARIANT
 
 DOC_KINDS = ("diary", "monthly", "child_record")
 AUTHOR_KINDS = ("ai", "caregiver")
 # 監査アクション：finalize（AI 確定の保存）/ edit（保育士編集の保存）/ approve（承認）
 AUDIT_ACTIONS = ("finalize", "edit", "approve")
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 class Child(Base):
@@ -134,33 +133,10 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
 
 
-# ──────────────────────────── engine（config が唯一の出所・未設定は降格） ────────────────────────────
+# ──────────────────────────── engine（実体は harness/db.py・config が唯一の出所） ────────────────────────────
 
-_ENGINES: dict[str, sa.Engine] = {}
-
-
-def _database_url() -> str:
-    """接続 URL（未設定は空文字＝降格）。config が唯一の出所（policy_store._store_uri と同じ流儀）。"""
-    from ..config import settings  # 遅延 import（テストの monkeypatch・循環回避）
-
-    return settings.database_url.strip()
-
-
-def _engine() -> sa.Engine | None:
-    url = _database_url()
-    if not url:
-        return None
-    if url not in _ENGINES:
-        # Cloud Run（複数リクエスト並行）でも素直に働く控えめなプール。sqlite（テスト）はそのまま。
-        _ENGINES[url] = sa.create_engine(url, pool_pre_ping=True)
-    return _ENGINES[url]
-
-
-def reset_engine_cache() -> None:
-    """テスト用：URL 差し替え後に engine キャッシュを破棄する。"""
-    for eng in _ENGINES.values():
-        eng.dispose()
-    _ENGINES.clear()
+_engine = db.engine
+reset_engine_cache = db.reset_engine_cache
 
 
 def store_status() -> str:

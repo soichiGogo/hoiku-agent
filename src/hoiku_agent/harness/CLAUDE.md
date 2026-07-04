@@ -43,9 +43,13 @@
   （`render_to_text`）・view（`/api/policy` 用）。**指針編集の決定的実体はここに1つ**（improver/tools・
   read_policy はこれを呼ぶ薄いラッパ）。意味的競合の判定は LLM（improver）の責務でここは持たない
   （安全網＝完全重複のみ）。clock を持たず日時は外部注入（§8/§9）。置き場は IO 節に隔離＝
-  **明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run 永続・`load_book_meta`→`save_book(if_generation=…)`
-  の generation precondition で楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`**。純関数は置き場を知らない。
-  「回した証拠」＝カード内蔵の変更履歴（decided_by 含む。GCS 運用時はオブジェクトバージョニング併用）。
+  **明示 path ＞ `DATABASE_URL`（Cloud SQL＝書類アーカイブと同じ DB・`policy_books` 1行に book 丸ごと JSONB・
+  `load_book_meta`→`save_book(if_version=…)` の compare-and-swap で楽観ロック・行不在はローカルシードを
+  返し version 0＝create-only） ＞ ローカル `knowledge/文書作成指針.json`（git はシード）**。純関数は置き場を知らない。
+  カードを行へ射影しない（「本文 JSON が SSOT」＝record_store と同じ哲学）。
+  「回した証拠」＝カード内蔵の変更履歴（decided_by 含む）。
+- `db.py` … harness 共通の DB 接続基盤（engine キャッシュ・Declarative Base・JSONB variant）。
+  record_store と policy_store が同じ `DATABASE_URL` を共有するための最小インフラ＝ドメインロジックを置かない。
 - `record_store.py` … 書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL
   PostgreSQL・Phase 1）。本文は JSON（PG は JSONB）が SSOT・検索キーだけ列昇格・版管理
   （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。読取は L2/L3 seed（`list_diary_entries`）に
