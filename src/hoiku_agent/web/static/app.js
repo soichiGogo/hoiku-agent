@@ -286,10 +286,19 @@ function setupGate(cfg) {
 /* ============================================================
    起動
    ============================================================ */
+// 担当者名（自己申告）を localStorage に永続化する（audit の actor＝認証導入までのつなぎ）。
+function setupActor() {
+  const inp = $("actor-name");
+  if (!inp) return;
+  inp.value = localStorage.getItem("hoiku_actor") || "";
+  inp.addEventListener("change", () => localStorage.setItem("hoiku_actor", inp.value.trim()));
+}
+
 async function main() {
   hydrateIcons();
   setupTheme();
   setupTabs();
+  setupActor();
 
   let cfg;
   try {
@@ -301,8 +310,21 @@ async function main() {
   buildStatusline();
   setupGate(cfg);
 
+  // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名チップに降格。
+  // マスタの子が増えるとそのまま選択肢に出る（auto-create＝書類に登場した子・§14 実名はDBのみ）。
+  let childNames = CHILDREN;
+  let recordChildNames = RECORD_CHILDREN;
+  if (cfg.records_connected) {
+    const dbChildren = await adk.getChildren();
+    const names = dbChildren.map((c) => c.display_name);
+    if (names.length) {
+      childNames = names;
+      recordChildNames = names;
+    }
+  }
+
   // ── 日誌 ──
-  const diaryChild = chipGroup($("diary-children"), CHILDREN, null, "caregiver");
+  const diaryChild = chipGroup($("diary-children"), childNames, null, "caregiver");
   const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
   sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
   const diaryFlow = makeDocFlow({
@@ -328,7 +350,7 @@ async function main() {
   };
 
   // ── 月案 ──
-  const monthlyChild = chipGroup($("monthly-children"), CHILDREN, () => updateSeedCount(), "caregiver");
+  const monthlyChild = chipGroup($("monthly-children"), childNames, () => updateSeedCount(), "caregiver");
   const updateSeedCount = () => ($("monthly-seed-count").textContent = samplePrevEntries(monthlyChild()).length + " 件");
   updateSeedCount();
   const monthlyFlow = makeDocFlow({
@@ -349,7 +371,7 @@ async function main() {
   };
 
   // ── 児童票（期ごとの保育経過記録・L3 還流） ──
-  const recordChild = chipGroup($("record-children"), RECORD_CHILDREN, () => updateRecordSeed(), "caregiver");
+  const recordChild = chipGroup($("record-children"), recordChildNames, () => updateRecordSeed(), "caregiver");
   const updateRecordSeed = () =>
     ($("record-seed-count").textContent = samplePeriodEntries(recordChild()).length + " 件");
   updateRecordSeed();

@@ -16,6 +16,12 @@ export function esc(s) {
 export function clear(node) {
   node.innerHTML = "";
 }
+// 担当者名（ヘッダの自己申告入力・localStorage 永続）。アーカイブ証跡（audit_events）の actor に使う。
+// 認証（Phase 3=IAP）導入までのつなぎ＝入力が無ければ空文字（record_store 側は空でも受ける）。
+export function actorName() {
+  const inp = document.getElementById("actor-name");
+  return ((inp && inp.value) || localStorage.getItem("hoiku_actor") || "").trim();
+}
 
 /* ============================================================
    アイコン（24pxグリッド・stroke・currentColor で色追従。装飾は aria-hidden）

@@ -26,6 +26,11 @@
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
 - **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`）だけを
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
+- **書類アーカイブ（Phase 1）は中継のみ**：確定/編集保存/承認のタイミングでフロントが `/api/records`・
+  `/api/records/approve` を呼び、実体は `harness/record_store`（web は now 注入だけ＝runtime 境界）。
+  actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝認証（Phase 3=IAP）までのつなぎ。
+  **アーカイブの失敗で本流（state 保存・承認）を壊さない**が、skipped/error は表示行で正直に出す（偽の緑を出さない）。
+  子ども選択肢は `/api/children`（児童マスタ）があればそこから・無ければ従来の仮名チップへ降格。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
   **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
   （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/児童票）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
@@ -69,7 +74,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `routes.py` … `register_web_ui(app)`（server.py が1回呼ぶ）。`/api/config`・`/api/policy`（**指針カード＋履歴＋store**・
   `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
   harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
-  `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
+  `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）・**`/api/records`／`/api/records/approve`／
+  `/api/children`**（書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列））。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる

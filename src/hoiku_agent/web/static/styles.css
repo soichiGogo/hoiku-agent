@@ -143,6 +143,13 @@ a{color:var(--primary-d)}
 .chip-deg .ic{width:13px;height:13px}
 
 .header-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto}
+/* 担当者名（自己申告・audit の actor）。ヘッダに常設＝どのタブの保存/承認にも証跡が付く */
+.actor-field{display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;border-radius:var(--r-md);
+  border:1px solid var(--line);background:var(--surface);color:var(--muted)}
+.actor-field .ic{width:16px;height:16px;flex:0 0 auto}
+.actor-field input{border:0;background:transparent;color:var(--ink);width:7.5em;font:inherit;font-size:13px}
+.actor-field input:focus{outline:none}
+.actor-field:focus-within{border-color:var(--line-strong)}
 .icon-btn{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--r-md);border:1px solid var(--line);
   background:var(--surface);color:var(--muted);cursor:pointer;transition:.15s}
 .icon-btn:hover{color:var(--ink);border-color:var(--line-strong)}
