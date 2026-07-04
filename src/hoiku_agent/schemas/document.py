@@ -271,3 +271,11 @@ class ChildRecord(BaseModel):
     next_aims: _BlankableStr = Field(
         default="", description="次期に向けて（課題・ねらいへの橋渡し。任意）"
     )
+    # 身体測定（原簿系＝実様式の年間マトリクスに枠がある）。**LLM は生成しない**（測定値の創作禁止）＝
+    # 保育士が編集フォームで記入するか、帳票の空欄に手書きする。任意・validate も要求しない。
+    height_cm: _BlankableStr = Field(
+        default="", description="身長（例: 78.5。任意・原簿系＝保育士記入。AI は創作しない）"
+    )
+    weight_kg: _BlankableStr = Field(
+        default="", description="体重（例: 10.2。任意・原簿系＝保育士記入。AI は創作しない）"
+    )

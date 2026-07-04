@@ -149,6 +149,8 @@ CHILD_RECORD_AUTHOR_INSTRUCTION = f"""\
   }}
 - development_notes の tags は次の語彙から **完全一致** で選ぶ（年齢分岐の必須を満たすこと）:
 {_TAG_VOCAB}
+- **身長・体重（height_cm / weight_kg）は JSON に含めない**。測定値は原簿系のデータで、創作は厳禁
+  （保育士が編集フォームで記入するか帳票に手書きする）。
 - 実名は書かない（架空児の仮名のみ＝§14）。
 """
 
