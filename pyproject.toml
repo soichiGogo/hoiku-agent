@@ -21,6 +21,13 @@ dependencies = [
     # 日本語は IPAex ゴシックを埋め込む（src/hoiku_agent/web/fonts/ipaexg.ttf・再配布可＝IPA Font License v1.0・
     # reportlab がサブセット埋め込み）。フォントは COPY src で同梱＝Dockerfile 不変（web/chohyo_pdf.py）。
     "reportlab>=4.0",
+    # 書類アーカイブ＝確定書類・児童マスタ・監査証跡（harness/record_store・Cloud SQL PostgreSQL）。
+    # DATABASE_URL 未設定は降格＝接続しない（RAG/Memory/GCS と同じ）。テストは sqlite で回るため
+    # 決定論 CI に creds は不要。Cloud SQL へは unix ソケット（/cloudsql/…）を psycopg で直結し
+    # 追加のコネクタライブラリは持たない。
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
 ]
 
 [project.optional-dependencies]

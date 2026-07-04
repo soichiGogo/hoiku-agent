@@ -46,6 +46,12 @@
   **明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run 永続・`load_book_meta`→`save_book(if_generation=…)`
   の generation precondition で楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`**。純関数は置き場を知らない。
   「回した証拠」＝カード内蔵の変更履歴（decided_by 含む。GCS 運用時はオブジェクトバージョニング併用）。
+- `record_store.py` … 書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL
+  PostgreSQL・Phase 1）。本文は JSON（PG は JSONB）が SSOT・検索キーだけ列昇格・版管理
+  （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。**LLM もパイプラインも呼ばない**
+  （永続化はフロント→web API→ここの明示フロー）。`DATABASE_URL` 未設定は降格（書込 skipped・読取 空）。
+  表示名→children.id（UUID）の解決はここに1つ。スキーマ適用は repo root の Alembic（`migrations/`）。
+  clock は外部注入。
 
 ## スタブを埋めるとき
 
