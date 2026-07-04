@@ -203,13 +203,24 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         }
 
     @app.post("/api/export-pdf")
-    async def web_export_pdf(req: ExportPdfRequest):
+    def web_export_pdf(req: ExportPdfRequest):
         """確定 entry を園の帳票PDFに描いて返す（現場でそのまま綴じる最終形・§11/§18）。
 
-        描画のみ（型の保証は harness）。kind/entry 不正は 400（握りつぶさず可視化）。LLM 非課金で非ゲート。
+        sync def＝FastAPI が threadpool で回す（アーカイブ読取＋ReportLab 描画のブロッキングを
+        イベントループに載せない・アーカイブ系エンドポイントと同じ流儀）。
+
+        児童票（年間マトリクス）は、同じ子の保存済み児童票をアーカイブ（record_store）から引いて
+        過去期の列も自動で埋める（同じ年度だけ・割当は chohyo_pdf の純関数。アーカイブ未接続/該当なしは
+        従来どおり今回の期のみ＝降格）。描画のみ（型の保証は harness）。kind/entry 不正は 400
+        （握りつぶさず可視化）。LLM 非課金で非ゲート。
         """
+        past_entries: list[dict] = []
+        if req.kind == "child_record":
+            child = str(req.entry.get("child_id") or "").strip()
+            if child:
+                past_entries = record_store.list_child_record_entries(child)
         try:
-            pdf = render_pdf(req.kind, req.entry)
+            pdf = render_pdf(req.kind, req.entry, past_entries)
         except ValueError as e:
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
         filename = _pdf_filename(req.kind, req.entry)

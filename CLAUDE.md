@@ -111,7 +111,7 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   期間日誌 seed）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
   保育士が欄ごとに自由に編集**でき、保存時 `/api/finalize-edit`（harness `finalize_entry` 中継）で再検査・再整形→承認（`PATCH`
   で `caregiver_approved`）。タグ語彙は `/api/form-meta`（schemas Enum が SSOT）。**現場でそのまま綴じる最終形＝園の帳票PDF**は
-  「帳票PDFをダウンロード」→ `/api/export-pdf`（`web/chohyo_pdf.py`＝ReportLab。日誌/月案＝A4 縦・欄順は標準様式に一致、児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・実様式準拠・今回の期のみ記載）・
+  「帳票PDFをダウンロード」→ `/api/export-pdf`（`web/chohyo_pdf.py`＝ReportLab。日誌/月案＝A4 縦・欄順は標準様式に一致、児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・実様式準拠・過去期の列はアーカイブの保存済み児童票から自動で埋める＝同じ子・同じ年度のみ・未接続は今回の期のみ）・
   **末尾に確認印欄（担任/主任/園長）**・**描画のみ／型の保証は harness**・日本語は IPAex ゴシック `web/fonts/ipaexg.ttf` を埋め込み＝閲覧側フォント非依存・純 pip で Dockerfile 不変・非ゲート）。
   **改善エージェント（指針を育てる＝`policy.js`）は
   `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。

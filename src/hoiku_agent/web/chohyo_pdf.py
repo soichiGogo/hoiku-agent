@@ -327,8 +327,9 @@ def _monthly_story(entry: dict) -> list:
 # ── 児童票＝年間マトリクス様式（現場の実様式に準拠・§19） ──
 # 行＝領域（0–2:3つの視点／3–5:5領域＝告示準拠）＋「その他」、列＝4期（4〜6月/7〜9月/10〜12月/1〜3月）。
 # 児童票は年間1枚に期ごと追記していく運用（ヒアリング「3ヶ月に1回書く」）のため、帳票は年間シートとし、
-# 今回の期の列だけ埋めて他の期は空欄の罫線で出す（手書き追記できる＝現場品質）。A4 横で描く。
-# 過去期の自動集約は書類アーカイブ導入後の課題（v0 は生成した期のみ・生成単位は期のまま）。
+# 今回の期の列に加え**同じ子・同じ年度の過去期の列を書類アーカイブ（record_store）から自動で埋める**
+# （routes.py が引いて past_entries で渡す＝ここは割当と描画のみ）。アーカイブ未接続・該当なしは
+# 従来どおり今回の期だけ＋他は空欄の罫線（手書き追記できる＝現場品質）。A4 横で描く。
 
 _L_CONTENT_W = A4[1] - 2 * _MARGIN  # A4 横の本文幅（landscape で幅は A4 の長辺）
 _QUARTER_LABELS = ["4月〜6月", "7月〜9月", "10月〜12月", "1月〜3月"]
@@ -352,24 +353,44 @@ def _P_multi(texts: list[str], style: ParagraphStyle = _SMALL) -> Paragraph:
     return Paragraph(body if body else "&nbsp;<br/>&nbsp;<br/>&nbsp;", style)
 
 
-def _child_record_story(entry: dict) -> list:
-    """児童票＝年間マトリクス（行＝領域×列＝4期）。今回の期の列に development_notes をタグで振り分けて描く。
+def _fiscal_year(start: tuple[int, int] | None) -> int | None:
+    """(年, 月) → 年度（4月始まり）。不明は None。"""
+    if start is None:
+        return None
+    return start[0] if start[1] >= 4 else start[0] - 1
 
-    行ラベルは告示準拠（0–2＝3つの視点／3–5＝5領域）＋「その他」（枠組みタグの無い叙述と配慮・特記を集約）。
-    身長・体重は原簿系の任意欄（AI は生成しない＝保育士が編集フォームで記入 or 手書き）。総合所見・家庭連携・
-    次期に向けては表の下に全幅で添える。行構成の園差（例: 運動行・環境なし）は §18 の実様式微調整で対応。
+
+def assign_period_columns(entry: dict, past_entries: list[dict] | None = None) -> dict[int, dict]:
+    """年間マトリクスの列（0〜3＝4期）へ entry を割り当てる純関数（テスト可能な割当の実体）。
+
+    - 今回の entry は自分の期の列（period が読めなければ先頭列）に置き、**常に優先**する
+      （アーカイブに同じ期の旧版があっても、いま出力しようとしている内容が正）。
+    - past_entries（アーカイブ由来）は「同じ子・同じ年度・期が読める」ものだけ他の列へ置く。
+      年度が違う/期が読めない/別の子は黙って除外（誤った列に描かない）。同じ列に複数来たら後勝ち
+      （record_store が期間順で返す＝新しい期間表記が残る）。
     """
-    age = entry.get("age_band") or "0-2"
-    row_labels = [e.value for e in (FiveDomains if age == "3-5" else ThreeViewpoint)] + ["その他"]
+    current_start = _period_start(str(entry.get("period") or ""))
+    quarter = _MONTH_TO_QUARTER[current_start[1]] if current_start else 0
+    columns: dict[int, dict] = {}
+    fiscal = _fiscal_year(current_start)
+    child = str(entry.get("child_id") or "").strip()
+    if fiscal is not None:
+        for past in past_entries or []:
+            if not isinstance(past, dict):
+                continue
+            past_child = str(past.get("child_id") or "").strip()
+            if child and past_child and past_child != child:
+                continue
+            past_start = _period_start(str(past.get("period") or ""))
+            if _fiscal_year(past_start) != fiscal:
+                continue
+            columns[_MONTH_TO_QUARTER[past_start[1]]] = past
+    columns[quarter] = entry  # 今回の期が常に勝つ
+    return columns
 
-    period = str(entry.get("period") or "")
-    start = _period_start(period)
-    quarter = _MONTH_TO_QUARTER[start[1]] if start else 0  # 期が読めない場合は先頭列に置く
-    fiscal = ""
-    if start:
-        fiscal = f"{start[0] if start[1] >= 4 else start[0] - 1}年度"
 
-    # development_notes をタグで行に振り分ける（最初に一致した枠組みタグの行へ。無ければ「その他」）。
+def _entry_cells(entry: dict, row_labels: list[str]) -> dict[str, list[str]]:
+    """1期分の entry を行（領域）別の叙述リストへ振り分ける（最初に一致した枠組みタグの行へ。無ければ「その他」）。"""
     cells: dict[str, list[str]] = {label: [] for label in row_labels}
     for note in entry.get("development_notes") or []:
         note = note or {}
@@ -381,6 +402,30 @@ def _child_record_story(entry: dict) -> list:
     care = str(entry.get("care_notes") or "").strip()
     if care:
         cells["その他"].append(f"【配慮・特記】{care}")
+    return cells
+
+
+def _child_record_story(entry: dict, past_entries: list[dict] | None = None) -> list:
+    """児童票＝年間マトリクス（行＝領域×列＝4期）。各列に該当期の development_notes をタグで振り分けて描く。
+
+    行ラベルは告示準拠（0–2＝3つの視点／3–5＝5領域）＋「その他」（枠組みタグの無い叙述と配慮・特記を集約）。
+    今回の期に加え、past_entries（アーカイブの同じ子・同じ年度の児童票）で他の期の列も埋める＝年間1枚が
+    期を追うごとに育つ。行ラベルは**今回の entry の年齢帯**で固定（年度途中の帯替わりは §18 の実様式微調整）。
+    身長・体重は原簿系の任意欄（AI は生成しない＝保育士が編集フォームで記入 or 手書き）。総合所見・家庭連携・
+    次期に向けては**今回の期の記載**として表の下に全幅で添える。
+    """
+    age = entry.get("age_band") or "0-2"
+    row_labels = [e.value for e in (FiveDomains if age == "3-5" else ThreeViewpoint)] + ["その他"]
+
+    period = str(entry.get("period") or "")
+    start = _period_start(period)
+    fiscal = ""
+    if start:
+        fiscal = f"{start[0] if start[1] >= 4 else start[0] - 1}年度"
+
+    # 列（4期）ごとに割当 entry の行別セルを作る（割当の実体は assign_period_columns＝純関数）。
+    columns = assign_period_columns(entry, past_entries)
+    col_cells = {qi: _entry_cells(e, row_labels) for qi, e in columns.items()}
 
     # ── ヘッダ（年度・クラス・タイトル／担任印。児童名・生年月日欄は実様式どおり＝生年月日は手書き） ──
     subject = entry.get("child_id") or "（対象児）"
@@ -413,7 +458,7 @@ def _child_record_story(entry: dict) -> list:
         )
     )
 
-    # ── マトリクス本体（ラベル列＋4期列。今回の期の列だけ内容が入る） ──
+    # ── マトリクス本体（ラベル列＋4期列。割当のある期の列に内容が入る・他は空欄の罫線） ──
     label_w = 24 * mm
     col_w = (_L_CONTENT_W - label_w) / 4
     header_row = [_P("子どもの姿（園での様子）", _LABEL)] + [_P(q, _LABEL) for q in _QUARTER_LABELS]
@@ -421,15 +466,14 @@ def _child_record_story(entry: dict) -> list:
     for label in row_labels:
         row: list = [_P(label, _LABEL)]
         for qi in range(4):
-            row.append(_P_multi(cells[label] if qi == quarter else []))
+            row.append(_P_multi(col_cells[qi][label] if qi in col_cells else []))
         matrix.append(row)
-    # 身長・体重（原簿系の任意欄。値があれば今回の期の列に、無ければ単位だけ＝手書き用）
-    height = str(entry.get("height_cm") or "").strip()
-    weight = str(entry.get("weight_kg") or "").strip()
-    for label, value, unit in (("身長", height, "cm"), ("体重", weight, "kg")):
+    # 身長・体重（原簿系の任意欄。値があればその期の列に、無ければ単位だけ＝手書き用）
+    for label, key, unit in (("身長", "height_cm", "cm"), ("体重", "weight_kg", "kg")):
         row = [_P(label, _LABEL)]
         for qi in range(4):
-            text = f"{value} {unit}" if (qi == quarter and value) else unit
+            value = str(columns.get(qi, {}).get(key) or "").strip()
+            text = f"{value} {unit}" if value else unit
             p = Paragraph(_t(text), _SMALL)
             row.append(p)
         matrix.append(row)
@@ -453,10 +497,13 @@ def _child_record_story(entry: dict) -> list:
         )
     )
 
+    filled_note = "（該当する期の列に記載）"
+    if len(columns) > 1:
+        filled_note = "（過去の期は保存済みの児童票から記載）"
     story: list = [
         head,
         Spacer(1, 2 * mm),
-        _P(f"今回の記入: {_t(period) or '（対象期間 未指定）'}（該当する期の列に記載）", _META),
+        _P(f"今回の記入: {_t(period) or '（対象期間 未指定）'}{filled_note}", _META),
         Spacer(1, 1.5 * mm),
         tbl,
         Spacer(1, 3 * mm),
@@ -476,9 +523,11 @@ def _child_record_story(entry: dict) -> list:
 _BUILDERS = {"diary": _diary_story, "monthly": _monthly_story, "child_record": _child_record_story}
 
 
-def render_pdf(kind: str, entry: dict) -> bytes:
+def render_pdf(kind: str, entry: dict, past_entries: list[dict] | None = None) -> bytes:
     """確定 entry（dict）を帳票PDF（bytes）へ描画する。kind = "diary" | "monthly" | "child_record"。
 
+    past_entries は児童票のみ有効＝同じ子の保存済み児童票（アーカイブ由来）。同じ年度のものだけ
+    年間マトリクスの他の期の列に埋める（割当は assign_period_columns・今回の entry が常に優先）。
     描画のみ（型検査はしない＝空欄は空セルで出す）。entry が dict でない・kind 不正は ValueError。
     """
     if kind not in _BUILDERS:
@@ -496,5 +545,8 @@ def render_pdf(kind: str, entry: dict) -> bytes:
         bottomMargin=_MARGIN,
         title={"diary": "保育日誌", "monthly": "個別月案", "child_record": "児童票"}[kind],
     )
-    doc.build(_BUILDERS[kind](entry))
+    if kind == "child_record":
+        doc.build(_child_record_story(entry, past_entries))
+    else:
+        doc.build(_BUILDERS[kind](entry))
     return buf.getvalue()

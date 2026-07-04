@@ -463,6 +463,41 @@ def list_diary_entries(
         return []
 
 
+def list_child_record_entries(child_display_name: str) -> list[dict]:
+    """指定児の児童票の最新版 entry（JSON）を期間順に返す＝年間マトリクス帳票の過去期埋め込み用。
+
+    どの期をどの列に置くか（年度の同定・期→列の割当）は帳票描画側（web/chohyo_pdf）の責務で、
+    ここは「その子の児童票を全部引く」だけ（責務を重ねない）。降格・障害・該当なしは空。
+    """
+    name = child_display_name.strip()
+    eng = _engine()
+    if eng is None or not name:
+        return []
+    try:
+        with Session(eng) as session:
+            child = session.scalar(sa.select(Child).where(Child.display_name == name))
+            if child is None:
+                return []
+            q = (
+                sa.select(DocumentRecord)
+                .where(
+                    DocumentRecord.doc_type == "child_record",
+                    DocumentRecord.child_id == child.id,
+                )
+                .order_by(DocumentRecord.target_period)
+            )
+            entries: list[dict] = []
+            for doc in session.scalars(q):
+                version = session.scalar(
+                    sa.select(DocumentVersion).where(DocumentVersion.id == doc.current_version_id)
+                )
+                if version is not None:
+                    entries.append(version.entry)
+            return entries
+    except SQLAlchemyError:
+        return []
+
+
 def list_children() -> list[dict]:
     """児童マスタ（active のみ・表示名順）。UI の子ども選択肢（降格は空＝従来チップへ）。"""
     eng = _engine()
