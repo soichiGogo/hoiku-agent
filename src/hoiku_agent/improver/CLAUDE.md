@@ -14,8 +14,8 @@
   で**該当カードと新案を比較相談**（無くても反映可否を確認）→ `commit_policy_card`（保育士の決定で
   **即反映**＝add／supersede→`policy_store.save_book`）。**評価ゲート（eval）は取り込みフローから外す**
   （eval は CI の品質回帰として別系統で温存＝decouple）。**保育士の決定＝確定**（保育士OK≠マージOK は撤回）。
-- **指針の編集の決定的実体は harness/policy_store**（CRUD/render/完全重複ガード/履歴）。git への証拠 commit は
-  `harness/git_ops.commit_policy_book`（既定 dry_run）。ここで subprocess・採点・JSON 編集を再実装しない。
+- **指針の編集の決定的実体は harness/policy_store**（CRUD/render/完全重複ガード/履歴）。「回した証拠」＝
+  カード内蔵の変更履歴（decided_by 含む）。ここで subprocess・採点・JSON 編集を再実装しない。
 - **意味的競合の判定はこのエージェント（LLM）の責務**。harness は完全重複の安全網のみ（決定的）。
 - **単一 LlmAgent＋少数ツール**（多層化しない＝§4）。factory `build_improver_agent` で返す。
 - v0 スコープ：add／supersede（置換）。「閉じる1事例」を提出前に必達（捕捉→精査→提案→比較相談→即反映 を1周）。

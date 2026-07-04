@@ -185,12 +185,7 @@ def test_book_view_shapes():
 # フェイク Blob と gcs_store fixture は tests/conftest.py（test_improver.py と共用）。
 
 
-def test_uses_external_store_default_false():
-    assert ps.uses_external_store() is False  # autouse fixture でローカル経路に隔離済み
-
-
 def test_gcs_missing_returns_empty_and_create_generation(gcs_store):
-    assert ps.uses_external_store() is True
     book, generation = ps.load_book_meta()
     assert book.cards == []
     assert generation == 0  # 不在＝if_generation_match=0（create-only）で初回作成

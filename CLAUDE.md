@@ -50,7 +50,7 @@
 
 # アーキ＝3責務（実装で混ぜてはいけない線。詳細は各層の CLAUDE.md）
 
-1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・git適用。
+1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・指針カードストア。
    LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。`tools/validate_fields.py`・`tools/write_draft.py` は
    これを呼ぶ**薄いラッパ**（二重実装しない）。Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
 2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）/ child_record_author（児童票）＝
@@ -59,12 +59,12 @@
    開示前提の表現観点を含む）。巡回制御・早期終了は harness 側。
 3. **improver/（二階・回す）** — 修正メモ→育つ指針カードの追加/改訂を自走提案。**既存カードとの意味的競合を
    精査し、競合は保育士に比較相談、保育士の決定で即反映**（add/supersede。番人＝意味的競合精査＋保育士決定）。
-   指針編集の決定的実体は harness/policy_store、git 証拠 commit は harness/git_ops。**eval は取り込みから外す**
+   指針編集の決定的実体は harness/policy_store（「回した証拠」＝カード内蔵の変更履歴）。**eval は取り込みから外す**
    （CI の品質回帰として温存＝decouple）。
 
 **メモリ3分類**: 子ども長期記憶＝Agent Engine Memory Bank（repo外）／ 育つ指針＝構造化カード
 （runtime の正は `POLICY_STORE_URI`（gs://）設定時 **GCS オブジェクト**＝Cloud Run でも永続・楽観ロック付き。
-未設定はローカル `knowledge/文書作成指針.json`＝git はシード＋dev 証拠。agent は読み取り＝`read_policy`、
+未設定はローカル `knowledge/文書作成指針.json`＝git はシード。agent は読み取り＝`read_policy`、
 improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。
 「全部ファイルベース」にしない。
 
@@ -94,7 +94,7 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   **児童票パス＋L3 還流**（`DigestPrepAgent`（period_prep）→`period_digest`→`child_record_author`・開示前提の表現指針＝§19）/
   HITL（`ask_caregiver`・`awaiting_caregiver_approval`）/ Memory Bank 配線＋**真の承認ゲート**（書き戻しは
   `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/
-  **育つ指針＝構造化カード（§8 v1）**（`policy_store`＝決定的 CRUD/render/完全重複ガード/履歴・`git_ops.commit_policy_book`＝証拠 commit・
+  **育つ指針＝構造化カード（§8 v1）**（`policy_store`＝決定的 CRUD/render/完全重複ガード/履歴＝「回した証拠」・
   improver は read→propose（意味的競合の申告）→ask（比較相談）→commit（保育士決定で即反映）の4ツール・eval は decouple）/
   **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格・**CI 品質回帰専用**）/
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
@@ -139,5 +139,3 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
 # ブランチ・コミット・PR
 
 グローバル CLAUDE.md のブランチ戦略・コミット/PR 規約に従う（ここでは再定義しない）。
-**注意**: improver/harness が行う git/PR 操作は「プロダクト自身が育つ指針を回す」ための処理であり、
-開発者（人）のブランチ運用とは別物。同じ「git/PR」語彙で混同しない。
