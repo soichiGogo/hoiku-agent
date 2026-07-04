@@ -29,7 +29,10 @@
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
 - **書類アーカイブ（Phase 1）は中継のみ**：確定/編集保存/承認のタイミングでフロントが `/api/records`・
   `/api/records/approve` を呼び、実体は `harness/record_store`（web は now 注入だけ＝runtime 境界）。
-  actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝認証（Phase 3=IAP）までのつなぎ。
+  actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝認証までのつなぎ。
+  **IAP（Phase 3）配下では `iap.py` の検証済み Google アカウント email が actor に優先**され
+  （`IAP_AUDIENCE` 設定時のみ JWT 署名検証・users へ auto-provision＝`record_store.touch_user`・
+  表示名設定済みなら「表示名（email）」）、未設定は完全降格＝ヘッダを信用しない（fail-closed）。
   **アーカイブの失敗で本流（state 保存・承認）を壊さない**が、skipped/error は表示行で正直に出す（偽の緑を出さない）。
   子ども選択肢は `/api/children`（児童マスタ）があればそこから・無ければ従来の仮名チップへ降格。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
@@ -85,6 +88,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
+- `iap.py` … IAP for Cloud Run の検証済み identity 取得（`verified_iap_email`）。`IAP_AUDIENCE` 設定時のみ
+  `x-goog-iap-jwt-assertion` を IAP 公開鍵で署名検証して email を返す（未設定/検証失敗は None＝匿名・
+  fail-closed）。「誰か」を確定するだけ＝users への記録は harness/record_store、actor の採用は routes。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
 - `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得）／`docflow.js`（日誌・月案・児童票 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・

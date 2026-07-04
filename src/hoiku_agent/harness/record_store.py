@@ -100,7 +100,11 @@ class DocumentVersion(Base):
 
 
 class AuditEvent(Base):
-    """誰が・いつ・何をしたか（承認・編集・確定の証跡）。actor は自己申告（認証導入＝Phase 3 で users と突合）。"""
+    """誰が・いつ・何をしたか（承認・編集・確定の証跡）。
+
+    actor は自己申告（Phase 1 のつなぎ）だが、IAP（Phase 3）配下では web が検証済みの Google
+    アカウント email を渡す＝偽装不可の証跡になる（どちらが来たかは users への登録有無で分かる）。
+    """
 
     __tablename__ = "audit_events"
 
@@ -110,6 +114,24 @@ class AuditEvent(Base):
     action: Mapped[str] = mapped_column(sa.String(30))
     detail: Mapped[dict] = mapped_column(_JSON, default=dict)
     at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
+
+
+class User(Base):
+    """認証済みユーザー（IAP の Google アカウント・Phase 3）。
+
+    IAP を通った email を初回アクセス時に auto-provision し（children と同じ流儀）、
+    display_name（園内での呼び名）を後から DB で設定できるようにする。v0 では認可（ロール別の
+    権限制御）は持たない＝identity の記録と表示名の対応だけ（承認フローの多段化は将来）。
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(sa.String(200), unique=True)
+    display_name: Mapped[str] = mapped_column(sa.String(100), default="")
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
 
 
 # ──────────────────────────── engine（config が唯一の出所・未設定は降格） ────────────────────────────
@@ -354,6 +376,34 @@ def save_document(
                 "doc_status": doc.status,
             }
     except (ValueError, SQLAlchemyError) as e:
+        return {"status": "error", "detail": str(e)}
+
+
+def touch_user(email: str, *, now: datetime) -> dict:
+    """検証済みユーザー（IAP の email）を users へ auto-provision し、表示用情報を返す（Phase 3）。
+
+    children と同じ流儀＝初回アクセス時に行を作る（登録画面を待たせない）。display_name は
+    後から DB で設定でき、設定済みなら actor 表示に使える。降格・障害・空 email は
+    {"status": "skipped"/"error"}（本流＝書類の保存・承認を壊さない）。
+    """
+    email = email.strip()
+    eng = _engine()
+    if eng is None or not email:
+        return {"status": "skipped"}
+    try:
+        with Session(eng) as session, session.begin():
+            user = session.scalar(sa.select(User).where(User.email == email))
+            if user is None:
+                user = User(email=email, created_at=now, updated_at=now)
+                session.add(user)
+                session.flush()
+            return {
+                "status": "ok",
+                "email": user.email,
+                "display_name": user.display_name,
+                "active": user.active,
+            }
+    except SQLAlchemyError as e:
         return {"status": "error", "detail": str(e)}
 
 

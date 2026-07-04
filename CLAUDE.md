@@ -121,6 +121,10 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   `GOOGLE_CLOUD_LOCATION`（regional・global 不可）のまま分離する（`models.build_model`＝§11）。eval の本採点は
   judge（rubric LLM）の genai client が env で Vertex を判定するため、`run_gate.py` の CLI が `.env` を
   自動 load する（未 load だと "No API key" で silently 採点不能になるのを防ぐ）。
+- **IAP 認証の土台（Phase 3 着手）**: `web/iap.py`（`IAP_AUDIENCE` 設定時のみ IAP JWT を署名検証・未設定は
+  完全降格＝ヘッダを信用しない）＋ `record_store.users`/`touch_user`（検証済み email の auto-provision・
+  migration 0002）＋ actor 解決（検証済み email ＞ 自己申告）。**IAP 自体の有効化は運用判断＝未実施**
+  （現行の公開デモ＋パスコード運用は不変）。
 - **書類アーカイブ（Phase 1・本番運用ブラッシュアップ 2026-07）**: `harness/record_store`＝Cloud SQL PostgreSQL
   （children/documents/document_versions/audit_events・Alembic＝repo root `migrations/`・`uv run alembic upgrade head`）。
   確定/編集/承認を web（`/api/records` 系＋担当者名＝actor 自己申告）から版管理つきで永続化し、**L2/L3 の seed は

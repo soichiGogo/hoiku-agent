@@ -28,6 +28,7 @@ from ..harness import policy_store, record_store
 from ..harness.finalize import finalize_entry
 from ..schemas import FiveDomains, TenNoSugata, ThreeViewpoint
 from .chohyo_pdf import render_pdf
+from .iap import verified_iap_email
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
@@ -145,8 +146,11 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         return response
 
     @app.get("/api/config")
-    async def web_config() -> dict:
-        """フロントの起動時設定。接続状況は env から導出（未接続は降格表示に使う）。"""
+    async def web_config(request: Request) -> dict:
+        """フロントの起動時設定。接続状況は env から導出（未接続は降格表示に使う）。
+
+        user_email は IAP（Phase 3）の検証済み identity（IAP 未配線/未認証は None＝従来表示）。
+        """
         return {
             "app_name": APP_NAME,
             "default_user_id": DEFAULT_USER_ID,
@@ -155,6 +159,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "records_connected": bool(settings.database_url),
             "passcode_required": bool(settings.demo_passcode),
             "model": settings.gemini_model,
+            "user_email": verified_iap_email(request),
         }
 
     @app.get("/api/policy")
@@ -236,23 +241,38 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     # sync def＝FastAPI が threadpool で回す（同期 DB I/O でイベントループを塞がない）。
     # now の注入だけが runtime 境界（record_store は clock を持たない＝§5 の流儀）。
 
+    def _resolve_actor(request: Request, declared: str, now: datetime) -> str:
+        """証跡の actor を決める：IAP の検証済み email ＞ 自己申告（Phase 1 のつなぎ・Phase 3）。
+
+        IAP identity があれば users へ auto-provision し、display_name 設定済みなら
+        「表示名（email）」で残す＝読める証跡と偽装不可の identity を両立。IAP 未配線は従来どおり。
+        """
+        email = verified_iap_email(request)
+        if not email:
+            return declared
+        user = record_store.touch_user(email, now=now)
+        display = str(user.get("display_name") or "").strip()
+        return f"{display}（{email}）" if display else email
+
     @app.post("/api/records")
-    def web_save_record(req: RecordSaveRequest) -> dict:
+    def web_save_record(req: RecordSaveRequest, request: Request) -> dict:
         """確定書類をアーカイブへ保存（AI 確定＝finalize / 保育士編集＝edit の版を積む）。"""
+        now = datetime.now()
         return record_store.save_document(
             req.kind,
             req.entry,
             req.rendered_text,
             author_kind=req.author_kind,
-            actor=req.actor,
-            now=datetime.now(),
+            actor=_resolve_actor(request, req.actor, now),
+            now=now,
         )
 
     @app.post("/api/records/approve")
-    def web_approve_record(req: RecordApproveRequest) -> dict:
-        """書類を承認済みにし証跡を残す（誰が承認したか＝actor 自己申告）。"""
+    def web_approve_record(req: RecordApproveRequest, request: Request) -> dict:
+        """書類を承認済みにし証跡を残す（actor＝IAP の検証済み email ＞ 自己申告）。"""
+        now = datetime.now()
         return record_store.approve_document(
-            req.kind, req.entry, actor=req.actor, now=datetime.now()
+            req.kind, req.entry, actor=_resolve_actor(request, req.actor, now), now=now
         )
 
     @app.get("/api/records")

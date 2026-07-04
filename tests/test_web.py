@@ -420,3 +420,66 @@ def test_export_pdf_child_record_embeds_archived_periods(records_db) -> None:
     )
     r = _client().post("/api/export-pdf", json={"kind": "child_record", "entry": current})
     _assert_is_pdf(r)
+
+
+# ──────────────────── IAP identity（Phase 3・検証済み actor と users） ────────────────────
+
+
+def test_iap_headers_ignored_when_audience_unset() -> None:
+    """IAP_AUDIENCE 未設定＝ヘッダを一切信用しない（IAP を経由しない面での偽装防止・fail-closed）。"""
+    r = _client().get("/api/config", headers={"x-goog-iap-jwt-assertion": "spoofed"})
+    assert r.json()["user_email"] is None
+
+
+def test_iap_verified_email_becomes_actor_and_provisions_user(records_db, monkeypatch) -> None:
+    """検証済み email が config に出て、証跡 actor は自己申告より優先され、users へ auto-provision される。"""
+    from hoiku_agent.web import iap
+
+    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
+    monkeypatch.setattr(
+        iap,
+        "_verify_assertion",
+        lambda assertion, audience: {"email": "accounts.google.com:sensei@example.com"},
+    )
+    c = _client()
+    headers = {"x-goog-iap-jwt-assertion": "signed-jwt"}
+    assert c.get("/api/config", headers=headers).json()["user_email"] == "sensei@example.com"
+    payload = {
+        "kind": "diary",
+        "entry": _edit_diary_entry(),
+        "author_kind": "ai",
+        "actor": "なりすまし名義",
+    }
+    assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
+    approve = {"kind": "diary", "entry": _edit_diary_entry(), "actor": "なりすまし名義"}
+    assert (
+        c.post("/api/records/approve", json=approve, headers=headers).json()["status"] == "approved"
+    )
+    assert {e["actor"] for e in record_store.list_audit_events()} == {"sensei@example.com"}
+    # users へ auto-provision（表示名は後から DB で設定できる）
+    with record_store.Session(record_store._engine()) as session:
+        users = list(session.scalars(record_store.sa.select(record_store.User)))
+    assert [u.email for u in users] == ["sensei@example.com"]
+
+
+def test_iap_verification_failure_falls_back_to_declared_actor(records_db, monkeypatch) -> None:
+    """署名検証に失敗したら匿名扱い＝actor は従来の自己申告（偽の認証を通さない・本流は壊さない）。"""
+    from hoiku_agent.web import iap
+
+    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
+
+    def _boom(assertion: str, audience: str) -> dict:
+        raise ValueError("bad signature")
+
+    monkeypatch.setattr(iap, "_verify_assertion", _boom)
+    c = _client()
+    headers = {"x-goog-iap-jwt-assertion": "tampered"}
+    assert c.get("/api/config", headers=headers).json()["user_email"] is None
+    payload = {
+        "kind": "diary",
+        "entry": _edit_diary_entry(),
+        "author_kind": "ai",
+        "actor": "保育士A",
+    }
+    assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
+    assert record_store.list_audit_events()[0]["actor"] == "保育士A"
