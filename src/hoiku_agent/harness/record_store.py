@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -159,7 +159,42 @@ def store_status() -> str:
         return "unavailable"
 
 
-# ──────────────────────────── 純関数（kind→キー抽出・child 解決） ────────────────────────────
+# ──────────────────────────── 純関数（kind→キー抽出・期間パース・child 解決） ────────────────────────────
+
+
+def month_date_range(month: str) -> tuple[date, date]:
+    """ "YYYY-MM" → その月の（初日, 末日）。L2 seed（前月日誌）の範囲クエリ用。不正は ValueError。"""
+    y, m = (int(x) for x in month.strip().split("-"))
+    first = date(y, m, 1)
+    last = date(y + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)
+    return first, last
+
+
+def prev_month_of(month: str) -> str:
+    """ "YYYY-MM" → 前月の "YYYY-MM"（月案の L2 seed＝前月日誌の対象月）。不正は ValueError。"""
+    y, m = (int(x) for x in month.strip().split("-"))
+    if not 1 <= m <= 12:
+        raise ValueError(f"month が不正です: {month!r}")
+    return f"{y - (m == 1)}-{(m - 2) % 12 + 1:02d}"
+
+
+def period_date_range(period: str) -> tuple[date, date] | None:
+    """児童票の期間（例 "2026-04〜2026-06"。〜/~/− 区切り）→（開始月初日, 終了月末日）。
+
+    期制は園差＝自由記述（§19）なので、月〜月の形だけ決定的に解釈し、それ以外は None を返す
+    （呼び出し側がサンプル/手渡し seed へ降格する＝黙って誤解釈しない）。
+    """
+    raw = period.strip()
+    for sep in ("〜", "~", "−", "―"):
+        if sep in raw:
+            start_s, _, end_s = raw.partition(sep)
+            try:
+                start, _ = month_date_range(start_s)
+                _, end = month_date_range(end_s)
+            except ValueError:
+                return None
+            return (start, end) if start <= end else None
+    return None
 
 
 def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, str | None]:

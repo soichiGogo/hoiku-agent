@@ -5,7 +5,8 @@
 seed しづらいので、デモ/検証はこの入口を使う）。
 
 このスクリプトは:
-1. 期間中の日誌（`--entries-file` の JSON 配列。無ければ同梱の仮名サンプル＝3ヶ月の発達推移）を読む。
+1. 期間中の日誌を読む。優先順位＝ `--entries-file`（JSON 配列）＞ 書類アーカイブ
+   （`DATABASE_URL` 設定時・record_store から期間分を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
 2. session state に doc_type="児童票" と period_entries を seed して root_agent（DocTypeRouter）を回す。
 3. DigestPrepAgent（period_prep）が child_id 別に集計（state["period_digest"]）→ 児童票 author が
    領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer → 児童票 finalize（ChildRecord を検査・整形）。
@@ -138,6 +139,20 @@ def _sample_period_entries(child_id: str) -> list[dict]:
     ]
 
 
+def _archive_period_entries(period: str) -> list[dict]:
+    """書類アーカイブから期間中の日誌を引く（L3 seed の本命経路・Phase 1）。
+
+    DATABASE_URL 未設定・期間の解釈不能（期制は園差＝自由記述）・該当なしは []＝
+    呼び出し側がサンプルへ降格する（黙って誤解釈しない）。
+    """
+    from hoiku_agent.harness import record_store
+
+    span = record_store.period_date_range(period)
+    if span is None:
+        return []
+    return record_store.list_diary_entries(*span)
+
+
 async def _run(period: str, child_id: str, period_entries: list[dict]) -> None:
     from google.adk.runners import InMemoryRunner
 
@@ -193,8 +208,14 @@ def main() -> None:
 
     if args.entries_file:
         period_entries = json.loads(Path(args.entries_file).read_text(encoding="utf-8"))
+        seed_src = f"ファイル {args.entries_file}"
     else:
-        period_entries = _sample_period_entries(args.child_id)
+        period_entries = _archive_period_entries(args.period)
+        seed_src = "書類アーカイブ（DATABASE_URL）"
+        if not period_entries:
+            period_entries = _sample_period_entries(args.child_id)
+            seed_src = "同梱サンプル（アーカイブ未設定/該当なし＝降格）"
+    print(f"[seed] 期間日誌 {len(period_entries)} 件（{seed_src}）")
 
     asyncio.run(_run(args.period, args.child_id, period_entries))
 
