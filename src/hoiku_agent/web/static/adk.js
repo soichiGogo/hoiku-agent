@@ -55,6 +55,57 @@ export async function finalizeEdit(kind, entry, docDate) {
   return await r.json(); // { formatted, problems, parse_error, ok }
 }
 
+// ── 書類アーカイブ（harness/record_store の中継・Phase 1）────────────────────────────
+// アーカイブの失敗で本流（state 保存・承認）を壊さない＝通信例外も status:"error" に畳んで返し、
+// 呼び出し側が正直に表示する（skipped＝未接続降格 / error＝失敗。偽の緑を出さない）。
+
+// 確定書類をアーカイブへ保存（AI 確定＝"ai" / 保育士の編集保存＝"caregiver"）。
+export async function saveRecord(kind, entry, renderedText, authorKind, actor) {
+  try {
+    const r = await fetch("/api/records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind,
+        entry,
+        rendered_text: renderedText || "",
+        author_kind: authorKind,
+        actor: actor || "",
+      }),
+    });
+    if (!r.ok) return { status: "error", detail: "アーカイブ保存に失敗 (" + r.status + ")" };
+    return await r.json();
+  } catch (e) {
+    return { status: "error", detail: e.message };
+  }
+}
+
+// 書類の承認を記録する（承認証跡＝誰が承認したか。ADK state の caregiver_approved と並走）。
+export async function approveRecord(kind, entry, actor) {
+  try {
+    const r = await fetch("/api/records/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, entry, actor: actor || "" }),
+    });
+    if (!r.ok) return { status: "error", detail: "承認記録に失敗 (" + r.status + ")" };
+    return await r.json();
+  } catch (e) {
+    return { status: "error", detail: e.message };
+  }
+}
+
+// 児童マスタ（アーカイブに登場した子）。未設定/障害は空＝呼び出し側が従来チップへ降格する。
+export async function getChildren() {
+  try {
+    const r = await fetch("/api/children");
+    if (!r.ok) return [];
+    return (await r.json()).children || [];
+  } catch {
+    return [];
+  }
+}
+
 // 確定 entry を園の帳票PDFに描いて受け取る（現場でそのまま綴じる最終形）。{ blob, filename } を返す。
 export async function exportPdf(kind, entry) {
   const r = await fetch("/api/export-pdf", {

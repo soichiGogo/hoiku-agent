@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import pytest
 import server
 from fastapi.testclient import TestClient
 from hoiku_agent.config import settings
+from hoiku_agent.harness import record_store
 
 
 def _client() -> TestClient:
@@ -265,3 +267,77 @@ def test_export_pdf_not_passcode_gated(monkeypatch) -> None:
     monkeypatch.setattr(settings, "demo_passcode", "secret")
     r = _client().post("/api/export-pdf", json={"kind": "diary", "entry": _edit_diary_entry()})
     _assert_is_pdf(r)
+
+
+# ──────────────────── 書類アーカイブ（/api/records・/api/children＝record_store 中継・Phase 1） ────────────────────
+
+
+@pytest.fixture()
+def records_db(tmp_path, monkeypatch):
+    """sqlite の一時 DB に向けてアーカイブのスキーマを作る（web 経由の決定論検証）。"""
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/archive.db")
+    record_store.reset_engine_cache()
+    record_store.Base.metadata.create_all(record_store._engine())
+    yield
+    record_store.reset_engine_cache()
+
+
+def test_records_degrade_when_db_unset(monkeypatch) -> None:
+    """DATABASE_URL 未設定＝降格（保存 skipped・一覧/児童は空・config は未接続を正直に返す）。"""
+    monkeypatch.setattr(settings, "database_url", "")
+    record_store.reset_engine_cache()
+    c = _client()
+    assert c.get("/api/config").json()["records_connected"] is False
+    r = c.post(
+        "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
+    )
+    assert r.json()["status"] == "skipped"
+    assert c.get("/api/children").json() == {"children": [], "store": "disabled"}
+    assert c.get("/api/records").json()["documents"] == []
+
+
+def test_records_save_edit_approve_flow(records_db) -> None:
+    """AI 確定→編集保存→承認 のアーカイブ一連（版が積まれ・児童が登録され・証跡が残る）。"""
+    c = _client()
+    entry = _edit_diary_entry()
+    # AI 確定（author_kind=ai）
+    r1 = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": entry, "rendered_text": "整形", "author_kind": "ai"},
+    ).json()
+    assert r1["status"] == "saved" and r1["version_seq"] == 1
+    # 保育士の編集保存（同一書類に版が積まれる）
+    r2 = c.post(
+        "/api/records",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "author_kind": "caregiver",
+            "actor": "保育士A",
+        },
+    ).json()
+    assert r2["status"] == "saved" and r2["version_seq"] == 2
+    assert r2["document_id"] == r1["document_id"]
+    # 承認（証跡＝actor が残る）
+    r3 = c.post(
+        "/api/records/approve", json={"kind": "diary", "entry": entry, "actor": "園長"}
+    ).json()
+    assert r3["status"] == "approved"
+    docs = c.get("/api/records").json()
+    assert docs["store"] == "ok"
+    assert docs["documents"][0]["status"] == "approved"
+    # 児童マスタへ auto-create → /api/children で選択肢に出る
+    children = c.get("/api/children").json()["children"]
+    assert [x["display_name"] for x in children] == ["架空児A"]
+    # 監査証跡（誰が・いつ・何を）
+    actions = [(e["action"], e["actor"]) for e in record_store.list_audit_events()]
+    assert ("approve", "園長") in actions and ("edit", "保育士A") in actions
+
+
+def test_records_not_passcode_gated(records_db, monkeypatch) -> None:
+    """アーカイブ API は LLM 非課金なのでパスコードでゲートしない。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    r = _client().post(
+        "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
+    )
+    assert r.status_code == 200 and r.json()["status"] == "saved"

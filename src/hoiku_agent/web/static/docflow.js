@@ -5,7 +5,7 @@
 // 「最終下書き＋不足内容」だけにする（過程は経過として開けば見られる）。
 
 import * as adk from "./adk.js";
-import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner } from "./ui.js";
+import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner, actorName } from "./ui.js";
 import { renderEditableDoc } from "./docedit.js";
 
 const DOC_META = {
@@ -285,11 +285,32 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
 
     pdfDownloadRow(editor, docKind); // 園の帳票PDF（現場でそのまま綴じる最終形）は承認後も残す
     editBar(sessionId, st, editor, v, preview, docKind);
+    // アーカイブ状態の表示行（保存/承認のたびに更新。skipped/error も正直に出す＝偽の緑を出さない）。
+    const archNote = el("div", "persist-note archive-note");
+    editor.panel._archNote = archNote;
+    editor.panel._body.appendChild(archNote);
     area.appendChild(editor.panel);
 
     procStop("AI のやりとり（経過）");
     stepper.allDone();
     phase("保育士の確認・編集をお待ちしています", "waiting");
+
+    // AI 確定版を書類アーカイブへ保存（Phase 1・author_kind=ai。表示より後＝UI をブロックしない）。
+    setArchiveNote(archNote, await adk.saveRecord(docKind, entry, doc, "ai", actorName()), "確定下書きの保存");
+  }
+
+  // アーカイブ（書類の永続保存）の結果表示。saved/approved＝済・skipped＝未接続降格・error＝失敗。
+  function setArchiveNote(node, res, label) {
+    if (!node || !res) return;
+    if (res.status === "saved") {
+      node.innerHTML = `${iconHTML("check")}アーカイブに保存しました（版 ${res.version_seq}${res.doc_status === "approved" ? "・承認済み書類" : ""}）`;
+    } else if (res.status === "approved") {
+      node.innerHTML = `${iconHTML("check")}承認をアーカイブに記録しました（承認証跡）`;
+    } else if (res.status === "skipped") {
+      node.innerHTML = `${iconHTML("info")}アーカイブ未接続（DATABASE_URL 未設定）＝この書類は DB に永続保存されません`;
+    } else {
+      node.innerHTML = `${iconHTML("alert")}${esc(label)}に失敗: ${esc(res.detail || "原因不明")}`;
+    }
   }
 
   // validation チップの中身を（保存後も）更新する。
@@ -384,6 +405,13 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       });
       setValidation(vNode, problems);
       if (preview._pre && res.formatted) preview._pre.textContent = res.formatted;
+      // 編集内容を書類アーカイブにも版として積む（author_kind=caregiver＝AIとの修正差分が残る）。
+      // アーカイブ失敗は本流（state 保存）を壊さず、表示行で正直に知らせる。
+      setArchiveNote(
+        editor.panel._archNote,
+        await adk.saveRecord(docKind, entry, res.formatted, "caregiver", actorName()),
+        "編集内容のアーカイブ保存",
+      );
       return res;
     }
 
@@ -411,6 +439,12 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       try {
         await save(); // 直前の編集を必ず保存・再検査してから承認する
         await adk.patchState(sessionId, { caregiver_approved: true });
+        // 承認証跡をアーカイブに記録（誰が承認したか＝担当者名。ADK state の承認と並走）。
+        setArchiveNote(
+          editor.panel._archNote,
+          await adk.approveRecord(docKind, editor.collect(), actorName()),
+          "承認記録",
+        );
         lockEditor(editor.panel);
         clear(bar);
         bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
