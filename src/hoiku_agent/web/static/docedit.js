@@ -369,12 +369,17 @@ function buildChildRecord(body, entry, formMeta) {
   const basic = section("基本情報");
   const child = inp(entry.child_id, "はるとくん");
   const months = inp(entry.age_months, "1歳6か月（任意）");
+  // 身長・体重は原簿系＝AI は生成しない（保育士が記入）。帳票PDF（年間マトリクス）の該当期の列に載る。
+  const height = inp(entry.height_cm, "身長 cm（任意・例: 78.5）");
+  const weight = inp(entry.weight_kg, "体重 kg（任意・例: 10.2）");
   const brow = el("div", "de-grid");
   brow.append(
     roField("対象期間", entry.period),
     field("対象児", child),
     field("月齢・年齢", months),
     roField("クラス", AGE_LABEL[ageBand] || ageBand),
+    field("身長（cm）", height),
+    field("体重（kg）", weight),
   );
   basic._b.appendChild(brow);
   body.appendChild(basic);
@@ -414,6 +419,8 @@ function buildChildRecord(body, entry, formMeta) {
     family_liaison: family.value,
     overall_note: overall.value,
     next_aims: next.value,
+    height_cm: height.value.trim(),
+    weight_kg: weight.value.trim(),
   });
 }
 

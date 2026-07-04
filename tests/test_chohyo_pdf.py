@@ -102,10 +102,27 @@ def test_render_diary_with_temperature_and_class():
 
 
 def test_render_child_record_pdf():
-    """児童票（期ごとの保育経過記録）も帳票PDF に描ける（欄順は write_child_record_draft と一致・§19）。"""
+    """児童票は年間マトリクス様式（A4 横・行＝領域×列＝4期・実様式準拠）で描ける（§19）。"""
     b = render_pdf("child_record", _CHILD_RECORD)
     assert b[:4] == b"%PDF"
     assert len(b) > 10_000
+
+
+def test_render_child_record_period_quarters_and_extras():
+    """期→列の割当（10〜12月期）・3–5の5領域行・身長体重・不明期間のフォールバックが落ちない。"""
+    entry = {
+        **_CHILD_RECORD,
+        "age_band": "3-5",
+        "period": "2026-10〜2026-12",
+        "height_cm": "104.2",
+        "weight_kg": "16.8",
+        "development_notes": [
+            {"description": "ルールのある遊びを友だちと楽しんだ", "tags": ["人間関係"]},
+        ],
+    }
+    assert render_pdf("child_record", entry)[:4] == b"%PDF"
+    # 期間が読めない自由記述でも落ちない（先頭列へフォールバック）。
+    assert render_pdf("child_record", {**_CHILD_RECORD, "period": "第1期"})[:4] == b"%PDF"
 
 
 def test_render_diary_3_5_without_life_record():

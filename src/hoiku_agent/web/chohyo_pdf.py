@@ -1,9 +1,10 @@
 """確定書類（final_entry）→ 園の様式に近い「帳票PDF」への描画（層A/web の presentation）。
 
 設計コンテキスト §11（配信UI）／ §18（“園の様式で出す”最終形）。ここは **描画だけ** で、必須欄・年齢分岐等の
-決定的ロジック（型の保証）は harness が持つ（§5）。欄順は harness の `write_draft`/`write_monthly_draft`
-（ネット調査で裏取りした 0–2 個別の標準様式）と同じにそろえる（テキスト版と帳票版で様式順を一致させる。
-validation/判断は持たない＝二重定義ではない）。
+決定的ロジック（型の保証）は harness が持つ（§5）。日誌/月案の欄順は harness の `write_draft`/
+`write_monthly_draft`（ネット調査で裏取りした標準様式）と同じにそろえる（テキスト版と帳票版で様式順を一致させる。
+validation/判断は持たない＝二重定義ではない）。**児童票は年間マトリクス様式（実様式準拠・§19）**＝A4 横・
+行＝領域×列＝4期の年間1枚（テキスト版は期の縦型＝コピー用で役割分担）。
 
 PDF は ReportLab で生成する：純 pip・**システムライブラリ不要**（apt/Cairo/Pango 不要＝Dockerfile 不変）。
 日本語は **IPAex ゴシックを埋め込む**（`web/fonts/ipaexg.ttf`・再配布可＝IPA Font License v1.0）。組み込み CID
@@ -19,7 +20,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
@@ -32,6 +33,8 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+
+from ..schemas import FiveDomains, ThreeViewpoint
 
 # 日本語フォント（IPAex ゴシックを埋め込む）。モジュールロード時に1回だけ登録する。
 # 実行は source から（uvicorn server:app）＝モジュール相対で解決。Docker も COPY src で同梱される。
@@ -71,11 +74,14 @@ def _P(value: object, style: ParagraphStyle = _BODY) -> Paragraph:
     return Paragraph(text if text else "&nbsp;", style)
 
 
-def _section(label: str, content) -> Table:
-    """ラベル列＋内容列の1セクション行（帳票の基本ブロック）。content は Paragraph か flowable のリスト。"""
+def _section(label: str, content, width: float = _CONTENT_W) -> Table:
+    """ラベル列＋内容列の1セクション行（帳票の基本ブロック）。content は Paragraph か flowable のリスト。
+
+    width は本文幅（既定＝A4 縦。児童票の年間マトリクスは A4 横なので横幅を渡す）。
+    """
     tbl = Table(
         [[_P(label, _LABEL), content]],
-        colWidths=[_LABEL_W, _CONTENT_W - _LABEL_W],
+        colWidths=[_LABEL_W, width - _LABEL_W],
     )
     tbl.setStyle(
         TableStyle(
@@ -181,34 +187,6 @@ def _child_block(note: dict, life_record_always: bool = True) -> KeepTogether:
         parts.append(_section("個人のねらい", _P(aim, _SMALL)))
     parts.append(Spacer(1, 3 * mm))
     return KeepTogether(parts)
-
-
-def _development_block(note: dict) -> KeepTogether:
-    """児童票「発達の経過」1件（叙述＋対応する姿・領域）。ページ跨ぎを避けてまとめて出す。"""
-    note = note or {}
-    tags = note.get("tags") or []
-    tag_text = "、".join(str(t) for t in tags) if tags else "（タグ未付与）"
-    inner = Table(
-        [
-            [_P("経過（叙述）", _LABEL), _P(note.get("description"), _SMALL)],
-            [_P("対応する姿・領域", _LABEL), _P(tag_text, _SMALL)],
-        ],
-        colWidths=[_LABEL_W, _CONTENT_W - _LABEL_W],
-    )
-    inner.setStyle(
-        TableStyle(
-            [
-                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
-                ("BACKGROUND", (0, 0), (0, -1), _HEADER_BG),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                ("TOPPADDING", (0, 0), (-1, -1), 3),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ]
-        )
-    )
-    return KeepTogether([inner, Spacer(1, 2 * mm)])
 
 
 def _attendance_text(attendance: list) -> str:
@@ -346,35 +324,152 @@ def _monthly_story(entry: dict) -> list:
     return story
 
 
+# ── 児童票＝年間マトリクス様式（現場の実様式に準拠・§19） ──
+# 行＝領域（0–2:3つの視点／3–5:5領域＝告示準拠）＋「その他」、列＝4期（4〜6月/7〜9月/10〜12月/1〜3月）。
+# 児童票は年間1枚に期ごと追記していく運用（ヒアリング「3ヶ月に1回書く」）のため、帳票は年間シートとし、
+# 今回の期の列だけ埋めて他の期は空欄の罫線で出す（手書き追記できる＝現場品質）。A4 横で描く。
+# 過去期の自動集約は書類アーカイブ導入後の課題（v0 は生成した期のみ・生成単位は期のまま）。
+
+_L_CONTENT_W = A4[1] - 2 * _MARGIN  # A4 横の本文幅（landscape で幅は A4 の長辺）
+_QUARTER_LABELS = ["4月〜6月", "7月〜9月", "10月〜12月", "1月〜3月"]
+_MONTH_TO_QUARTER = {4: 0, 5: 0, 6: 0, 7: 1, 8: 1, 9: 1, 10: 2, 11: 2, 12: 2, 1: 3, 2: 3, 3: 3}
+
+
+def _period_start(period: str) -> tuple[int, int] | None:
+    """period 自由記述の先頭から (年, 月) を読み取る（例 "2026-04〜2026-06" → (2026, 4)）。不明は None。"""
+    import re
+
+    m = re.search(r"(\d{4})\s*[-/年]\s*(\d{1,2})", str(period or ""))
+    if not m:
+        return None
+    year, month = int(m.group(1)), int(m.group(2))
+    return (year, month) if 1 <= month <= 12 else None
+
+
+def _P_multi(texts: list[str], style: ParagraphStyle = _SMALL) -> Paragraph:
+    """複数の叙述を1セルに積む（各要素をエスケープして <br/> 連結。空はスペーサ行＝空欄の高さ確保）。"""
+    body = "<br/><br/>".join(_t(t) for t in texts if str(t).strip())
+    return Paragraph(body if body else "&nbsp;<br/>&nbsp;<br/>&nbsp;", style)
+
+
 def _child_record_story(entry: dict) -> list:
-    """児童票（期ごとの保育経過記録）。欄順は harness の write_child_record_draft（標準様式）と一致させる。"""
+    """児童票＝年間マトリクス（行＝領域×列＝4期）。今回の期の列に development_notes をタグで振り分けて描く。
+
+    行ラベルは告示準拠（0–2＝3つの視点／3–5＝5領域）＋「その他」（枠組みタグの無い叙述と配慮・特記を集約）。
+    身長・体重は原簿系の任意欄（AI は生成しない＝保育士が編集フォームで記入 or 手書き）。総合所見・家庭連携・
+    次期に向けては表の下に全幅で添える。行構成の園差（例: 運動行・環境なし）は §18 の実様式微調整で対応。
+    """
     age = entry.get("age_band") or "0-2"
+    row_labels = [e.value for e in (FiveDomains if age == "3-5" else ThreeViewpoint)] + ["その他"]
+
+    period = str(entry.get("period") or "")
+    start = _period_start(period)
+    quarter = _MONTH_TO_QUARTER[start[1]] if start else 0  # 期が読めない場合は先頭列に置く
+    fiscal = ""
+    if start:
+        fiscal = f"{start[0] if start[1] >= 4 else start[0] - 1}年度"
+
+    # development_notes をタグで行に振り分ける（最初に一致した枠組みタグの行へ。無ければ「その他」）。
+    cells: dict[str, list[str]] = {label: [] for label in row_labels}
+    for note in entry.get("development_notes") or []:
+        note = note or {}
+        tags = [str(t) for t in (note.get("tags") or [])]
+        row = next((label for label in row_labels[:-1] if label in tags), "その他")
+        desc = str(note.get("description") or "").strip()
+        if desc:
+            cells[row].append(desc)
+    care = str(entry.get("care_notes") or "").strip()
+    if care:
+        cells["その他"].append(f"【配慮・特記】{care}")
+
+    # ── ヘッダ（年度・クラス・タイトル／担任印。児童名・生年月日欄は実様式どおり＝生年月日は手書き） ──
     subject = entry.get("child_id") or "（対象児）"
     months = str(entry.get("age_months") or "").strip()
-    if months:
-        subject = f"{subject}（{months}）"
-    story: list = [
-        _P(f"児童票・保育経過記録（{_AGE_LABEL.get(age, age)}）", _TITLE),
-        # _P が1回だけエスケープするため生値を渡す（f-string 内 _t は二重エスケープになる）。
-        _P(f"対象期間: {entry.get('period') or ''}　　対象児: {subject}", _META),
-        Spacer(1, 3 * mm),
-        _P("発達の経過（領域別の叙述）", _LABEL),
-        Spacer(1, 1.5 * mm),
-    ]
-    notes = entry.get("development_notes") or []
-    if notes:
-        story.extend(_development_block(n) for n in notes)
-    else:
-        story.append(_section("", _P("（発達の経過 未記入）")))
-    story.extend(
+    head = Table(
         [
-            _section("配慮事項・特記", _P(entry.get("care_notes") or "（なし）")),
-            _section("家庭との連携", _P(entry.get("family_liaison") or "（なし）")),
-            _section("総合所見", _P(entry.get("overall_note"))),
-            _section("次期に向けて", _P(entry.get("next_aims") or "（なし）")),
-        ]
+            [
+                _P(
+                    f"{fiscal or '　　　　年度'}　{_AGE_LABEL.get(age, age)}クラス　保育経過記録",
+                    _TITLE,
+                ),
+                _P("担任　　　　　　　　　印", _LABEL),
+            ],
+            [
+                _P(f"児童名　{_t(subject)}" + (f"（{_t(months)}）" if months else ""), _BODY),
+                _P("　　　　年　　月　　日 生まれ", _LABEL),
+            ],
+        ],
+        colWidths=[_L_CONTENT_W * 0.62, _L_CONTENT_W * 0.38],
     )
-    story.append(_signoff_block())
+    head.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+                ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+
+    # ── マトリクス本体（ラベル列＋4期列。今回の期の列だけ内容が入る） ──
+    label_w = 24 * mm
+    col_w = (_L_CONTENT_W - label_w) / 4
+    header_row = [_P("子どもの姿（園での様子）", _LABEL)] + [_P(q, _LABEL) for q in _QUARTER_LABELS]
+    matrix: list[list] = [header_row]
+    for label in row_labels:
+        row: list = [_P(label, _LABEL)]
+        for qi in range(4):
+            row.append(_P_multi(cells[label] if qi == quarter else []))
+        matrix.append(row)
+    # 身長・体重（原簿系の任意欄。値があれば今回の期の列に、無ければ単位だけ＝手書き用）
+    height = str(entry.get("height_cm") or "").strip()
+    weight = str(entry.get("weight_kg") or "").strip()
+    for label, value, unit in (("身長", height, "cm"), ("体重", weight, "kg")):
+        row = [_P(label, _LABEL)]
+        for qi in range(4):
+            text = f"{value} {unit}" if (qi == quarter and value) else unit
+            p = Paragraph(_t(text), _SMALL)
+            row.append(p)
+        matrix.append(row)
+
+    tbl = Table(matrix, colWidths=[label_w] + [col_w] * 4)
+    tbl.hAlign = "LEFT"
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+                ("BACKGROUND", (0, 0), (-1, 0), _HEADER_BG),
+                ("BACKGROUND", (0, 1), (0, -1), _HEADER_BG),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("ALIGN", (1, -2), (-1, -1), "RIGHT"),  # 身長・体重は右寄せ（実様式）
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+
+    story: list = [
+        head,
+        Spacer(1, 2 * mm),
+        _P(f"今回の記入: {_t(period) or '（対象期間 未指定）'}（該当する期の列に記載）", _META),
+        Spacer(1, 1.5 * mm),
+        tbl,
+        Spacer(1, 3 * mm),
+        _section("総合所見", _P(entry.get("overall_note"), _SMALL), width=_L_CONTENT_W),
+        _section(
+            "家庭との連携",
+            _P(entry.get("family_liaison") or "（なし）", _SMALL),
+            width=_L_CONTENT_W,
+        ),
+        _section(
+            "次期に向けて", _P(entry.get("next_aims") or "（なし）", _SMALL), width=_L_CONTENT_W
+        ),
+    ]
     return story
 
 
@@ -393,7 +488,8 @@ def render_pdf(kind: str, entry: dict) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
-        pagesize=A4,
+        # 児童票は年間マトリクス（4期の列）を横に並べるため A4 横（実様式に一致）。他は A4 縦。
+        pagesize=landscape(A4) if kind == "child_record" else A4,
         leftMargin=_MARGIN,
         rightMargin=_MARGIN,
         topMargin=_MARGIN,

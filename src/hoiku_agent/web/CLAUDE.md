@@ -31,7 +31,9 @@
   （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/児童票）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
   日本語フォントは `web/fonts/ipaexg.ttf` を**同梱**して埋め込む＝実行時に外部取得しない＝ローカル完結は保つ。）
 - **帳票PDF（現場でそのまま綴じる最終形＝§18）は presentation**：確定 entry を園の様式に近い罫線帳票へ描くだけ
-  （型の保証・validation は harness＝§5・ここは描画のみ）。欄順は `write_draft`/`write_monthly_draft`/`write_child_record_draft`（標準様式）と一致させる。
+  （型の保証・validation は harness＝§5・ここは描画のみ）。日誌/月案の欄順は `write_draft`/`write_monthly_draft`（標準様式）と
+  一致させる。**児童票は年間マトリクス様式（実様式準拠）**＝A4 横・行＝領域（0–2:3視点/3–5:5領域＋その他）×列＝4期で、
+  今回の期の列だけ埋め他は空欄の罫線（手書き追記可）。テキスト版（`write_child_record_draft`）は期の縦型＝コピー用で役割分担。
 - **実名を出さない**（架空の子のみ＝§14）。対象児・サンプル投入は現場の日誌に寄せた**実在しない仮名**
   （下の名前＋ちゃん/くん・`app.js` の `CHILDREN`）と仮メモのみ（記号名「架空児A」には戻さない）。
 
@@ -68,7 +70,7 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
   harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
   `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・A4 罫線帳票・日誌/月案/児童票）。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列））。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
