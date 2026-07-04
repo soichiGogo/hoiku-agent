@@ -98,3 +98,28 @@ def test_commit_exact_duplicate_rejected(store):
 
 def test_commit_invalid_scope(store):
     assert commit_policy_card("不明", "x")["status"] == "error"
+
+
+def test_commit_generation_conflict_rejected(gcs_store, monkeypatch):
+    """GCS 外部ストアで読み込み後に他所が先に更新 → 黙って上書きせず rejected（楽観ロック・§8）。"""
+    ps.save_book(PolicyBook())  # シード（generation 1）
+
+    orig = ps.load_book_meta
+
+    def racy_load(path=None):
+        book, generation = orig(path)
+        gcs_store["generation"] += 1  # 読み込み直後に他所の更新が入ったことをシミュレート
+        return book, generation
+
+    monkeypatch.setattr(ps, "load_book_meta", racy_load)
+    r = commit_policy_card("保育日誌", "感触遊びは感触語と表情を併記する")
+    assert r["status"] == "rejected"
+    assert "競合" in r["detail"]
+
+
+def test_commit_git_evidence_skipped_on_external_store(gcs_store):
+    """GCS 運用中はローカル JSON が正でない＝commit=True でも git 証拠 commit を行わない。"""
+    r = commit_policy_card("保育日誌", "感触遊びは感触語と表情を併記する", commit=True)
+    assert r["status"] == "committed"
+    assert r["store"] == "persistent"
+    assert r["committed"]["status"] == "skipped"

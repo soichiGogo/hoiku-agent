@@ -62,9 +62,11 @@
    指針編集の決定的実体は harness/policy_store、git 証拠 commit は harness/git_ops。**eval は取り込みから外す**
    （CI の品質回帰として温存＝decouple）。
 
-**メモリ3分類**: 子ども長期記憶＝Agent Engine Memory Bank（repo外）／ 育つ指針＝git
-`knowledge/文書作成指針.json`（構造化カード・agent は読み取り＝`read_policy`、improver が保育士決定で即反映）／
-静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。「全部ファイルベース」にしない。
+**メモリ3分類**: 子ども長期記憶＝Agent Engine Memory Bank（repo外）／ 育つ指針＝構造化カード
+（runtime の正は `POLICY_STORE_URI`（gs://）設定時 **GCS オブジェクト**＝Cloud Run でも永続・楽観ロック付き。
+未設定はローカル `knowledge/文書作成指針.json`＝git はシード＋dev 証拠。agent は読み取り＝`read_policy`、
+improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。
+「全部ファイルベース」にしない。
 
 # コード規約（このリポジトリ固有）
 

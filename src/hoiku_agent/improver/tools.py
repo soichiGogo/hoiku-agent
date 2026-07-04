@@ -1,6 +1,7 @@
 """改善エージェント（二階）固有のツール。
 
-設計コンテキスト §8。育つ指針の正(SSOT)は構造化カードストア（`knowledge/文書作成指針.json`）。
+設計コンテキスト §8。育つ指針の正(SSOT)は構造化カードストア（置き場の解決は harness/policy_store＝
+`POLICY_STORE_URI` の GCS またはローカル `knowledge/文書作成指針.json`。この層は置き場を知らない）。
 改善エージェントは次を回す（番人＝意味的競合精査＋保育士の決定）:
 - read_policy_cards … 既存 active カードを読む（意味的競合を精査する材料）。
 - propose_policy_card … 修正差分から追加/改訂案を作り、**意味的に競合する既存カードを自分で申告**する。
@@ -156,7 +157,8 @@ def commit_policy_card(
         return {"status": "error", "detail": "body（カード本文）が空です"}
 
     now = datetime.now()  # runtime 境界でのみ now を注入（harness/schemas は純関数を保つ＝§5）
-    book = policy_store.load_book()
+    # generation＝GCS 外部ストアの楽観ロック前提条件（ローカルは None＝従来動作）。
+    book, generation = policy_store.load_book_meta()
     card = PolicyCard(
         id=policy_store.next_card_id(book),
         scope=sc,
@@ -174,13 +176,25 @@ def commit_policy_card(
     except ValueError as e:
         return {"status": "rejected", "detail": str(e)}
 
-    policy_store.save_book(new_book)  # 即反映
+    try:
+        policy_store.save_book(new_book, if_generation=generation)  # 即反映（GCS は楽観ロック）
+    except ValueError as e:
+        # 読み込み後に他所で更新された（generation 競合）。黙って上書きせず再試行を促す。
+        return {"status": "rejected", "detail": str(e)}
 
     committed = None
     if commit:
-        committed = commit_policy_book(
-            title=f"policy: {sc.value} を更新（{card.id}・{decided_by}）", dry_run=False
-        )
+        if policy_store.uses_external_store():
+            # 外部ストア（GCS）運用中はローカル JSON が正でない＝古い内容を「証拠」に commit しない。
+            # 履歴は GCS オブジェクトバージョニング＋カード内蔵 history が担う。
+            committed = {
+                "status": "skipped",
+                "reason": "外部ストア（GCS）運用中は git 証拠 commit 不要",
+            }
+        else:
+            committed = commit_policy_book(
+                title=f"policy: {sc.value} を更新（{card.id}・{decided_by}）", dry_run=False
+            )
 
     change = new_book.history[-1]
     return {

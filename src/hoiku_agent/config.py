@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # 用途は Memory Bank に限定する（Runtime 名残と混同しない＝設計コンテキスト §9）。
     agent_engine_id: str = ""
 
+    # 育つ指針＝構造化カードストアの外部永続化先（`gs://<bucket>/<object>.json`）。設定すると
+    # policy_store の IO が GCS を読み書きし、Cloud Run のコンテナFS 揮発（再起動で improver の
+    # 即反映が消える）を解消する。未設定はローカルファイル（knowledge/文書作成指針.json）＝
+    # RAG_CORPUS / AGENT_ENGINE_ID と同じ「未設定は降格」パターン（§8/§9）。
+    policy_store_uri: str = ""
+
     # 過去書類アーカイブ（search_past_documents が引くローカルディレクトリ）。空なら repo の data/records。
     # 実データは置かない＝架空児のみ（gitignore 済み・§14）。
     records_dir: str = ""

@@ -39,10 +39,12 @@
   児童票 author の authoring_loop（共用）→ finalize(kind="child_record")。`build_child_record_pipeline`。
 - `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／児童票を振り分ける
   決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§19）。
-- `policy_store.py` … 育つ指針＝構造化カードストア（`knowledge/文書作成指針.json`）の決定的 CRUD・
-  完全重複ガード・履歴・テキスト再生（`render_to_text`）・view（`/api/policy` 用）。**指針編集の決定的実体は
-  ここに1つ**（improver/tools・read_policy はこれを呼ぶ薄いラッパ）。意味的競合の判定は LLM（improver）の
-  責務でここは持たない（安全網＝完全重複のみ）。clock を持たず日時は外部注入（§8/§9）。
+- `policy_store.py` … 育つ指針＝構造化カードストアの決定的 CRUD・完全重複ガード・履歴・テキスト再生
+  （`render_to_text`）・view（`/api/policy` 用）。**指針編集の決定的実体はここに1つ**（improver/tools・
+  read_policy はこれを呼ぶ薄いラッパ）。意味的競合の判定は LLM（improver）の責務でここは持たない
+  （安全網＝完全重複のみ）。clock を持たず日時は外部注入（§8/§9）。置き場は IO 節に隔離＝
+  **明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run 永続・`load_book_meta`→`save_book(if_generation=…)`
+  の generation precondition で楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`**。純関数は置き場を知らない。
 - `git_ops.py` … カードストア JSON の git 証拠 commit（`commit_policy_book`・既定 dry_run）。
   **これはプロダクトが回す git 操作**で、開発者自身のブランチ運用（グローバル CLAUDE.md）とは別物。混同しない。
 
