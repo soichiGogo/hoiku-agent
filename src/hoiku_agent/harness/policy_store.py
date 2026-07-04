@@ -12,6 +12,8 @@ v1 で指針の正(SSOT)を markdown から **構造化カード JSON（`knowled
   注入する（純関数を保つ＝finalize.py / FinalizeAgent の日付解決と同じ流儀）。
 - 純関数（add/supersede/remove/render/検索）と IO（load_book/save_book）を分ける。read 経路は降格
   （read_policy が握る）、write 経路は fail-loud（ValueError）で SSOT を黙って壊さない。
+- 置き場は IO 節で解決する＝明示 path ＞ `POLICY_STORE_URI`（gs://＝Cloud Run でも永続・generation
+  precondition の楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`。純関数は置き場を知らない。
 
 git への証拠 commit は `git_ops.commit_policy_book`（プロダクトが回す git 操作）が担う（本モジュールは
 JSON の決定的編集まで・subprocess は叩かない）。
