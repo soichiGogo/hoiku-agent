@@ -52,8 +52,9 @@
   加え `list_child_record_entries`（指定児の児童票の最新版＝年間マトリクス帳票の過去期埋め込み用。
   列割当・年度の同定は描画側 web/chohyo_pdf の責務＝ここは引くだけ）。**LLM もパイプラインも呼ばない**
   （永続化はフロント→web API→ここの明示フロー）。`DATABASE_URL` 未設定は降格（書込 skipped・読取 空）。
-  表示名→children.id（UUID）の解決はここに1つ。スキーマ適用は repo root の Alembic（`migrations/`）。
-  clock は外部注入。
+  表示名→children.id（UUID）の解決はここに1つ。`users`＋`touch_user`（Phase 3）＝IAP の検証済み email を
+  初回アクセスで auto-provision（children と同じ流儀・display_name は後から DB で設定・認可は持たない）。
+  スキーマ適用は repo root の Alembic（`migrations/`）。clock は外部注入。
 
 ## スタブを埋めるとき
 

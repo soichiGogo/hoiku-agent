@@ -195,6 +195,31 @@ def test_invalid_kind_and_author_kind(db):
     )
 
 
+# ──────────────────────────── users（IAP identity の auto-provision・Phase 3） ────────────────────────────
+
+
+def test_touch_user_provisions_and_is_idempotent(db):
+    r1 = rs.touch_user("sensei@example.com", now=_NOW)
+    assert r1 == {
+        "status": "ok",
+        "email": "sensei@example.com",
+        "display_name": "",
+        "active": True,
+    }
+    r2 = rs.touch_user("sensei@example.com", now=_NOW)  # 2回目も同じ行（重複を作らない）
+    assert r2["status"] == "ok"
+    with rs.Session(rs._engine()) as session:
+        emails = [u.email for u in session.scalars(rs.sa.select(rs.User))]
+    assert emails == ["sensei@example.com"]
+
+
+def test_touch_user_degrades(monkeypatch, db):
+    assert rs.touch_user("", now=_NOW)["status"] == "skipped"  # 空 email
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.touch_user("sensei@example.com", now=_NOW)["status"] == "skipped"  # DB 未設定
+
+
 # ──────────────────────────── 期間パース（seed の範囲解決・純関数） ────────────────────────────
 
 

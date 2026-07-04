@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # 野放しになるのを防ぐ。空なら無効＝ローカル開放（src/hoiku_agent/web）。
     demo_passcode: str = ""
 
+    # IAP for Cloud Run（Phase 3 認証）の JWT audience（IAP 設定画面/ドキュメントの値）。
+    # 設定すると web が `x-goog-iap-jwt-assertion` ヘッダを署名検証し、検証済みの Google アカウント
+    # email を actor（承認・編集の証跡）に使う。未設定は完全降格＝ヘッダを一切信用しない
+    # （actor は従来どおり自己申告。IAP を有効化していない面でヘッダ偽装を防ぐ fail-closed）。
+    iap_audience: str = ""
+
     @property
     def memory_service_uri(self) -> str | None:
         """Memory Bank の接続 URI（ADK の --memory_service_uri 互換）。

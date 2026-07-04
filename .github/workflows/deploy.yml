@@ -7,7 +7,7 @@
 #      持つデプロイ用サービスアカウント。鍵 JSON は作らない（鍵レス）。
 #   2. リポジトリ変数（Settings > Secrets and variables > Actions > Variables）:
 #        GCP_PROJECT_ID / GCP_REGION / CLOUD_RUN_SERVICE / WIF_PROVIDER / DEPLOY_SA
-#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / POLICY_STORE_URI / CLOUDSQL_INSTANCE
+#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / POLICY_STORE_URI / CLOUDSQL_INSTANCE / IAP_AUDIENCE
 #      （未設定なら RAG/Memory/指針GCS/書類アーカイブは降格＝§9/Phase 1）。
 #      任意 secret: DATABASE_URL（書類アーカイブの接続 URL。パスワードを含むため variable でなく secret）。
 #   WIF/変数が未設定なら job は skip する（誤発火・赤化を避ける）。決定論 CI（ci.yml）とは別物。
@@ -60,6 +60,11 @@ jobs:
           EXTRA_FLAGS=()
           if [ -n "$DATABASE_URL" ]; then
             ENV_VARS="$ENV_VARS,DATABASE_URL=$DATABASE_URL"
+          fi
+          # IAP（Phase 3 認証）は任意配線：vars.IAP_AUDIENCE を設定した場合のみ JWT 検証が有効になる
+          # （IAP 自体の有効化＝`gcloud run services update --iap` は運用側の操作。未設定は従来どおり）。
+          if [ -n "${{ vars.IAP_AUDIENCE }}" ]; then
+            ENV_VARS="$ENV_VARS,IAP_AUDIENCE=${{ vars.IAP_AUDIENCE }}"
           fi
           if [ -n "${{ vars.CLOUDSQL_INSTANCE }}" ]; then
             EXTRA_FLAGS+=(--add-cloudsql-instances "${{ vars.CLOUDSQL_INSTANCE }}")

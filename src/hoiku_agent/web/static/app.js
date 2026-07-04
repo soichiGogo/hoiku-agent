@@ -310,6 +310,16 @@ async function main() {
   buildStatusline();
   setupGate(cfg);
 
+  // IAP（Phase 3）でサインイン済みなら、証跡の actor はサーバ側で検証済み email が使われる
+  // （自己申告の担当者名より優先）。UI では担当者名欄にその旨を示す（偽の自由入力感を出さない）。
+  if (cfg.user_email) {
+    const inp = $("actor-name");
+    if (inp) {
+      inp.placeholder = cfg.user_email;
+      inp.title = `サインイン済み: ${cfg.user_email}（保存・承認の記録にはこのアカウントが残ります）`;
+    }
+  }
+
   // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名チップに降格。
   // マスタの子が増えるとそのまま選択肢に出る（auto-create＝書類に登場した子・§14 実名はDBのみ）。
   let childNames = CHILDREN;
