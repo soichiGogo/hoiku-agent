@@ -182,46 +182,15 @@ def test_book_view_shapes():
 
 
 # ──────────────────────────── GCS 外部ストア（POLICY_STORE_URI） ────────────────────────────
+# フェイク Blob と gcs_store fixture は tests/conftest.py（test_improver.py と共用）。
 
 
-class _FakeBlob:
-    """google-cloud-storage Blob の最小フェイク（reload/download/upload＋generation precondition）。"""
-
-    def __init__(self, store: dict):
-        self._store = store  # {"data": bytes|None, "generation": int}
-
-    def reload(self):
-        from google.api_core.exceptions import NotFound
-
-        if self._store["data"] is None:
-            raise NotFound("object not found")
-        self.generation = self._store["generation"]
-
-    def download_as_bytes(self) -> bytes:
-        return self._store["data"]
-
-    def upload_from_string(self, payload, content_type=None, if_generation_match=None):
-        from google.api_core.exceptions import PreconditionFailed
-
-        current = self._store["generation"] if self._store["data"] is not None else 0
-        if if_generation_match is not None and if_generation_match != current:
-            raise PreconditionFailed("generation mismatch")
-        self._store["data"] = payload.encode("utf-8")
-        self._store["generation"] = current + 1
-
-
-@pytest.fixture()
-def gcs_store(monkeypatch):
-    """外部ストアをフェイク GCS へ向ける（creds 不要・決定的）。"""
-    from hoiku_agent.config import settings
-
-    store = {"data": None, "generation": 0}
-    monkeypatch.setattr(ps, "_gcs_blob", lambda uri: _FakeBlob(store))
-    monkeypatch.setattr(settings, "policy_store_uri", "gs://bucket/文書作成指針.json")
-    return store
+def test_uses_external_store_default_false():
+    assert ps.uses_external_store() is False  # autouse fixture でローカル経路に隔離済み
 
 
 def test_gcs_missing_returns_empty_and_create_generation(gcs_store):
+    assert ps.uses_external_store() is True
     book, generation = ps.load_book_meta()
     assert book.cards == []
     assert generation == 0  # 不在＝if_generation_match=0（create-only）で初回作成

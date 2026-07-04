@@ -183,9 +183,17 @@ def commit_policy_card(
 
     committed = None
     if commit:
-        committed = commit_policy_book(
-            title=f"policy: {sc.value} を更新（{card.id}・{decided_by}）", dry_run=False
-        )
+        if policy_store.uses_external_store():
+            # 外部ストア（GCS）運用中はローカル JSON が正でない＝古い内容を「証拠」に commit しない。
+            # 履歴は GCS オブジェクトバージョニング＋カード内蔵 history が担う。
+            committed = {
+                "status": "skipped",
+                "reason": "外部ストア（GCS）運用中は git 証拠 commit 不要",
+            }
+        else:
+            committed = commit_policy_book(
+                title=f"policy: {sc.value} を更新（{card.id}・{decided_by}）", dry_run=False
+            )
 
     change = new_book.history[-1]
     return {

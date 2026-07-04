@@ -246,6 +246,15 @@ def _store_uri() -> str:
     return settings.policy_store_uri.strip()
 
 
+def uses_external_store() -> bool:
+    """外部ストア（POLICY_STORE_URI）で運用中か。
+
+    git 証拠 commit の要否判定に使う（外部ストア運用中はローカル JSON が正でないため
+    commit すると古い内容を「証拠」にしてしまう。履歴は GCS バージョニング＋カード内蔵 history が担う）。
+    """
+    return bool(_store_uri())
+
+
 def _gcs_blob(uri: str):
     """`gs://<bucket>/<object>` から google-cloud-storage の Blob を返す（テストの注入点）。"""
     from google.cloud import storage  # 遅延 import（ローカル運用では GCS SDK に触れない）
