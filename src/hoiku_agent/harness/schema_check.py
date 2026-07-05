@@ -17,7 +17,15 @@ LLM は呼ばない。判定は純粋関数で、tests/test_harness/ から LLM 
 
 from __future__ import annotations
 
-from ..schemas import AgeBand, ChildRecord, DiaryEntry, FiveDomains, MonthlyPlan, ThreeViewpoint
+from ..schemas import (
+    AgeBand,
+    ChildRecord,
+    DiaryEntry,
+    FiveDomains,
+    MonthlyPlan,
+    NurseryRecord,
+    ThreeViewpoint,
+)
 
 
 def _required_tag_type(age_band: AgeBand) -> tuple[type, str]:
@@ -162,6 +170,51 @@ def validate_child_record_fields(record: ChildRecord) -> list[str]:
         if not any(isinstance(t, required_tag_type) for t in note.tags):
             problems.append(
                 f"発達の経過[{i}]: {record.age_band.value} は{tag_label}のタグが1つ以上必要"
+            )
+
+    return problems
+
+
+def validate_nursery_record_fields(record: NurseryRecord) -> list[str]:
+    """保育要録（保育に関する記録）ドラフトの必須欄・年齢分岐を検査する（空＝充足・§19・L4）。
+
+    日誌・月案・児童票と同じく「型としての成立」だけを決定的に検査する（開示前提の肯定的・
+    非断定的表現はレビューAI／指針整合＝eval の責務）。要録は年長（5歳児）専用のため年齢分岐は
+    実質 5領域に畳まれるが、共通の _required_tag_type（三から五歳＝FiveDomains）を流用し
+    「保育の展開と子どもの育ち（development_notes）」の各叙述にタグを課す（実装の二重化を避ける・§19）。
+
+    Args:
+        record: 検査対象の保育要録ドラフト（NurseryRecord）。
+
+    Returns:
+        違反メッセージのリスト。空リストなら "型" として成立。
+    """
+    problems: list[str] = []
+
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ── §19 保育要録：保育に関する記録
+    if not record.fiscal_year.strip():
+        problems.append("対象年度（fiscal_year）が未記入")
+    if not record.child_id.strip():
+        problems.append("対象児（child_id）が未記入（要録は児童別＝§19）")
+    if not record.final_year_focus.strip():
+        problems.append("最終年度の重点（final_year_focus）が未記入（§19）")
+    if not record.individual_focus.strip():
+        problems.append("個人の重点（individual_focus）が未記入（§19）")
+    if not record.growth_until_final.strip():
+        problems.append("最終年度に至るまでの育ち（growth_until_final）が未記入（§19）")
+    if not record.development_notes:
+        problems.append(
+            "保育の展開と子どもの育ち（development_notes）が空：年齢分岐タグ付きで1つ以上必要（§19）"
+        )
+
+    # ── 年齢分岐：保育の展開に必須タグ体系を課す（年長＝5領域） ──
+    required_tag_type, tag_label = _required_tag_type(record.age_band)
+    for i, note in enumerate(record.development_notes):
+        if not note.description.strip():
+            problems.append(f"保育の展開と子どもの育ち[{i}]: 叙述（description）が未記入")
+        if not any(isinstance(t, required_tag_type) for t in note.tags):
+            problems.append(
+                f"保育の展開と子どもの育ち[{i}]: {record.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
 
     return problems

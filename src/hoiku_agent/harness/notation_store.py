@@ -69,6 +69,13 @@ NARRATIVE_FIELDS: dict[str, list[str]] = {
         "overall_note",
         "next_aims",
     ],
+    "nursery_record": [
+        "final_year_focus",
+        "individual_focus",
+        "development_notes[].description",
+        "special_notes",
+        "growth_until_final",
+    ],
 }
 
 _SPACE_RULE_ID = "_space"  # スペース除去の擬似ルール id（変更点の集計表示用）

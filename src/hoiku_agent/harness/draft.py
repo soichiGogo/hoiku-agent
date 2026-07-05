@@ -24,6 +24,7 @@ from ..schemas import (
     IndividualNote,
     MonthlyEducationNote,
     MonthlyPlan,
+    NurseryRecord,
 )
 
 
@@ -227,6 +228,56 @@ def write_child_record_draft(record: ChildRecord, template_ref: str | None = Non
         f"  {record.overall_note}",
         "",
         f"【次期に向けて】 {record.next_aims or '（なし）'}",
+    ]
+    if template_ref:
+        lines.append("")
+        lines.append(f"（様式参照: {template_ref}）")
+    return "\n".join(lines) + "\n"
+
+
+def write_nursery_record_draft(record: NurseryRecord, template_ref: str | None = None) -> str:
+    """保育要録（保育に関する記録）ドラフトを標準様式テキストへ整形して返す（§19・L4）。
+
+    全国統一様式（こども家庭庁の参考例）の並び：ヘッダ（年度・対象児・年齢帯・就学先）→
+    最終年度の重点 → 個人の重点 → 保育の展開と子どもの育ち（5領域＋10の姿タグ明示）→
+    特に配慮すべき事項 → 最終年度に至るまでの育ち。児童票・月案（write_*_draft）と同じく
+    枠組みタグ（5領域／10の姿）を明示出力する（§13）。3列レイアウトの帳票化・確認印欄は
+    帳票PDF（web/chohyo_pdf）側で描く（テキスト版は本文のみ）。
+
+    Args:
+        record: 整形対象の保育要録ドラフト。
+        template_ref: 雛形のパス等（あれば様式に従う）。園差で拡張可。
+
+    Returns:
+        様式に整形した文字列（枠組みタグを明示）。
+    """
+    development_block = (
+        "\n".join(_format_development(n) for n in record.development_notes)
+        if record.development_notes
+        else "  （保育の展開と子どもの育ち 未記入）"
+    )
+    subject = record.child_id
+    if record.age_months.strip():
+        subject += f"（{record.age_months}）"
+    header = f"■ 保育所児童保育要録（{record.age_band.value} 歳児）　対象年度: {record.fiscal_year}　対象児: {subject}"
+    if record.school_name.strip():
+        header += f"　就学先: {record.school_name}"
+    lines = [
+        header,
+        "",
+        "【最終年度の重点】",
+        f"  {record.final_year_focus}",
+        "",
+        "【個人の重点】",
+        f"  {record.individual_focus}",
+        "",
+        "【保育の展開と子どもの育ち（5領域・10の姿の視点）】",
+        development_block,
+        "",
+        f"【特に配慮すべき事項】 {record.special_notes or 'なし'}",
+        "",
+        "【最終年度に至るまでの育ちに関する事項】",
+        f"  {record.growth_until_final}",
     ]
     if template_ref:
         lines.append("")
