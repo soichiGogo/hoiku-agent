@@ -212,6 +212,24 @@ a{color:var(--primary-d)}
 .chip .ic{width:15px;height:15px;color:var(--muted)}
 .chip.is-active .ic{color:var(--primary)}
 
+/* 対象児コンボボックス（前方一致＋Tab補完・30人規模でもスケールする入力式） */
+.combo{position:relative;max-width:340px}
+.combo-ic{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:var(--actor-caregiver);pointer-events:none;display:flex}
+.combo-ic .ic{width:16px;height:16px}
+.combo-input{width:100%;border:1.5px solid var(--line-strong);border-radius:var(--r-md);padding:11px 14px 11px 38px;
+  font-family:inherit;font-size:var(--fs-body);line-height:1.5;color:var(--ink);background:var(--surface)}
+.combo-input::placeholder{color:color-mix(in srgb,var(--muted) 75%,transparent)}
+.combo-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.combo-list{position:absolute;z-index:40;top:calc(100% + 4px);left:0;right:0;margin:0;padding:5px;list-style:none;
+  background:var(--surface);border:1.5px solid var(--line-strong);border-radius:var(--r-md);box-shadow:var(--sh-md);
+  max-height:280px;overflow-y:auto}
+.combo-list[hidden]{display:none}
+.combo-option{display:flex;align-items:center;min-height:40px;padding:9px 12px;border-radius:var(--r-sm);
+  font-size:var(--fs-sm);color:var(--ink);cursor:pointer}
+.combo-option:hover,.combo-option.is-active{background:var(--primary-soft);color:var(--primary-d)}
+.combo-option b{font-weight:800;color:var(--primary-d)}
+.combo-empty{padding:9px 12px;font-size:var(--fs-sm);color:var(--muted)}
+
 /* ============================================================
    ボタン
    ============================================================ */
