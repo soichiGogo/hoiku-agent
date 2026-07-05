@@ -52,6 +52,7 @@ _SCOPE_HEADINGS: dict[PolicyScope, str] = {
     PolicyScope.保育日誌: "### 保育日誌",
     PolicyScope.月案: "### 月案 / 週案 / 日案",
     PolicyScope.児童票: "### 児童票（期ごとの保育経過記録）",
+    PolicyScope.保育要録: "### 保育要録（保育所児童保育要録・小学校引継ぎ）",
 }
 _KANSHO_HEADING = "## 書類別の勘所"
 _HISTORY_HEADING = "## 変更履歴（誰の指摘で・何を変えたか＝「回した証拠」）"
@@ -246,6 +247,12 @@ def render_to_text(book: PolicyBook, scope: PolicyScope | None = None) -> str:
         *_render_bullets(book, PolicyScope.児童票),
         "",
     ]
+    lines += [
+        _SCOPE_HEADINGS[PolicyScope.保育要録],
+        "",
+        *_render_bullets(book, PolicyScope.保育要録),
+        "",
+    ]
     lines += [_HISTORY_HEADING, ""]
     if book.history:
         for ch in book.history:
@@ -403,12 +410,14 @@ _SCOPE_DOC_TYPE: dict[PolicyScope, str] = {
     PolicyScope.保育日誌: "diary",
     PolicyScope.月案: "monthly",
     PolicyScope.児童票: "child_record",
+    PolicyScope.保育要録: "nursery_record",
 }
 _SCOPE_DOC_LABEL: dict[PolicyScope, str] = {
     PolicyScope.共通: "共通",
     PolicyScope.保育日誌: "保育日誌",
     PolicyScope.月案: "個別月案",
     PolicyScope.児童票: "児童票",
+    PolicyScope.保育要録: "保育要録",
 }
 
 

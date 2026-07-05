@@ -183,6 +183,21 @@ def test_monthly_and_child_record_targets(db):
     assert len([d for d in rs.list_documents() if d["doc_type"] == "monthly"]) == 2
 
 
+def test_nursery_record_target_is_fiscal_year(db):
+    """保育要録（L4）は fiscal_year を対象期間キーにして保存でき、同年度・別児は別書類（§19）。"""
+    rec = {"fiscal_year": "2026", "child_id": "はるとくん", "age_band": "3-5"}
+    assert rs.save_document("nursery_record", rec, author_kind="ai", now=_NOW)["status"] == "saved"
+    types = {d["doc_type"] for d in rs.list_documents()}
+    assert "nursery_record" in types
+    # 同年度・別児は別書類
+    rec2 = dict(rec, child_id="めいちゃん")
+    assert rs.save_document("nursery_record", rec2, author_kind="ai", now=_NOW)["status"] == "saved"
+    assert len([d for d in rs.list_documents() if d["doc_type"] == "nursery_record"]) == 2
+    # fiscal_year 欠落は fail-loud（同一性キーを黙って空にしない）
+    bad = rs.save_document("nursery_record", {"child_id": "はるとくん"}, now=_NOW)
+    assert bad["status"] == "error"
+
+
 def test_list_diary_entries_filters_by_range(db):
     for day in ("2026-06-30", "2026-07-01", "2026-07-15", "2026-08-01"):
         rs.save_document("diary", _diary_entry(day), author_kind="ai", now=_NOW)

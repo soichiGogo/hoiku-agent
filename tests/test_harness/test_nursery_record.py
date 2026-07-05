@@ -10,10 +10,13 @@ from __future__ import annotations
 import json
 
 from hoiku_agent.harness import (
+    child_record_digest,
     finalize_nursery_record_document,
+    format_record_digest_for_prompt,
     validate_nursery_record_fields,
     write_nursery_record_draft,
 )
+from hoiku_agent.schemas import ChildRecord as _ChildRecord
 from hoiku_agent.schemas import (
     AgeBand,
     DevelopmentNote,
@@ -156,3 +159,43 @@ def test_finalize_nursery_record_dict_roundtrip():
     payload = json.loads(_record().model_dump_json())
     draft = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
     assert finalize_nursery_record_document(draft).ok
+
+
+# ──────────────────────── child_record_digest（L4 還流の集計） ────────────────────────
+
+
+def _cr(period: str, tag, desc: str, overall: str) -> _ChildRecord:
+    return _ChildRecord(
+        period=period,
+        age_band=AgeBand.三から五歳,
+        child_id="架空児A",
+        development_notes=[DevelopmentNote(description=desc, tags=[tag])],
+        overall_note=overall,
+    )
+
+
+def test_child_record_digest_aggregates_by_child_and_period():
+    """最終年度の児童票を child_id 別・期順に集計し、領域頻度・発達叙述・総合所見を事実として集める。"""
+    records = [
+        _cr("2026-04〜2026-07", FiveDomains.健康, "運動遊びに親しんだ", "自分を発揮し始めた"),
+        _cr("2026-08〜2026-11", FiveDomains.人間関係, "友だちと協力した", "関わりが広がった"),
+    ]
+    digest = child_record_digest(records)
+    assert set(digest) == {"架空児A"}
+    slot = digest["架空児A"]
+    assert slot["record_count"] == 2
+    assert slot["periods"] == ["2026-04〜2026-07", "2026-08〜2026-11"]
+    assert slot["tag_freq"] == {"健康": 1, "人間関係": 1}
+    assert len(slot["development"]) == 2 and len(slot["overall_notes"]) == 2
+
+
+def test_child_record_digest_empty_and_format_degrades():
+    assert child_record_digest([]) == {}
+    text = format_record_digest_for_prompt({}, label="最終年度")
+    assert "児童票データがありません" in text
+
+
+def test_format_record_digest_lists_facts():
+    records = [_cr("2026-04〜2026-07", FiveDomains.表現, "劇遊びを楽しんだ", "表現が豊かになった")]
+    text = format_record_digest_for_prompt(child_record_digest(records))
+    assert "架空児A" in text and "劇遊びを楽しんだ" in text and "表現×1" in text

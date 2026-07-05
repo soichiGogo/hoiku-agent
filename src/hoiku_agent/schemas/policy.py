@@ -26,16 +26,18 @@ from pydantic import BaseModel, Field
 
 
 class PolicyScope(str, Enum):
-    """カードの対象書類スコープ（共通ルール／保育日誌／月案／児童票）。
+    """カードの対象書類スコープ（共通ルール／保育日誌／月案／児童票／保育要録）。
 
     旧 markdown 指針の3バケツ（共通/保育日誌/月案）に、§19 で加わった児童票（期ごとの保育経過記録・
-    開示前提の表現の勘所）を足す。作成AI（child_record_author）・レビューAI は read_policy でこれを
-    参照し、improver が保育士の決定で育てる（＝日誌/月案と同じ機構に相乗り・二重実装しない）。"""
+    開示前提の表現の勘所）と保育要録（L4＝小学校引継ぎ・入所〜最終年度の育ちの勘所）を足す。作成AI
+    （child_record_author / nursery_record_author）・レビューAI は read_policy でこれを参照し、improver が
+    保育士の決定で育てる（＝日誌/月案と同じ機構に相乗り・二重実装しない）。"""
 
     共通 = "共通"
     保育日誌 = "保育日誌"
     月案 = "月案"
     児童票 = "児童票"
+    保育要録 = "保育要録"
 
 
 class PolicyStatus(str, Enum):

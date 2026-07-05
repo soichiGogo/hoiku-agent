@@ -37,7 +37,7 @@ from . import db
 Base = db.Base
 _JSON = db.JSON_VARIANT
 
-DOC_KINDS = ("diary", "monthly", "child_record")
+DOC_KINDS = ("diary", "monthly", "child_record", "nursery_record")
 AUTHOR_KINDS = ("ai", "caregiver")
 # 監査アクション：finalize（AI 確定の保存）/ edit（保育士編集の保存）/ approve（承認）
 AUDIT_ACTIONS = ("finalize", "edit", "approve")
@@ -215,6 +215,12 @@ def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, st
         if not period:
             raise ValueError("児童票 entry に period（対象期間）がありません")
         return None, None, period
+    if kind == "nursery_record":
+        # 要録は年度が対象期間（例 "2026"）。target_period 列に格納して同一性キーに使う（§19・L4）。
+        fiscal_year = str(entry.get("fiscal_year") or "").strip()
+        if not fiscal_year:
+            raise ValueError("保育要録 entry に fiscal_year（対象年度）がありません")
+        return None, None, fiscal_year
     raise ValueError(f"kind は {DOC_KINDS} のいずれか: {kind!r}")
 
 
