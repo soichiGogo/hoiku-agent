@@ -47,6 +47,7 @@
       <button class="tab" data-tab="monthly" role="tab" id="tabbtn-monthly" aria-controls="tab-monthly" aria-selected="false"><span data-ic="calendar"></span><span class="tab-label">個別月案</span></button>
       <button class="tab" data-tab="record" role="tab" id="tabbtn-record" aria-controls="tab-record" aria-selected="false"><span data-ic="chart"></span><span class="tab-label">児童票</span></button>
       <button class="tab" data-tab="policy" role="tab" id="tabbtn-policy" aria-controls="tab-policy" aria-selected="false"><span data-ic="sprout"></span><span class="tab-label">指針を育てる</span></button>
+      <button class="tab" data-tab="notation" role="tab" id="tabbtn-notation" aria-controls="tab-notation" aria-selected="false"><span data-ic="hash"></span><span class="tab-label">表記ルール</span></button>
     </nav>
   </header>
 
@@ -165,6 +166,38 @@
 
       <div id="policy-stepper" class="stepper hidden"></div>
       <div id="policy-flow" class="flow-area"></div>
+    </section>
+
+    <!-- ───────── 表記ルール（ひらがな表記DX） ───────── -->
+    <section id="tab-notation" class="panel" role="tabpanel" aria-labelledby="tabbtn-notation" tabindex="0">
+      <div class="hero">
+        <h1>表記のゆれを、確定時に自動でそろえる</h1>
+        <p>「子供→子ども」「友達→友だち」などの保育の表記や、混入した空白を、AI が下書きを確定するときに自動で整えます。どの表記をそろえるかは、この辞書で自由に増やせます（対象児の名前やタグには触れません）。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span data-ic="edit"></span>ルールを追加</div>
+        <div class="nadd">
+          <div class="nadd-map">
+            <input id="notation-pattern" class="input" placeholder="変換元（例: 子供）" aria-label="変換元">
+            <span class="narr" aria-hidden="true">→</span>
+            <input id="notation-replacement" class="input" placeholder="変換先（例: 子ども）" aria-label="変換先">
+          </div>
+          <select id="notation-kind" class="input" aria-label="種別">
+            <option value="ひらがな化" selected>ひらがな化</option>
+            <option value="表記統一">表記統一</option>
+            <option value="その他">その他</option>
+          </select>
+          <input id="notation-note" class="input" placeholder="メモ（任意・なぜこの表記か）" aria-label="メモ">
+          <button id="notation-add" class="btn btn-primary"><span data-ic="check"></span>追加</button>
+        </div>
+        <p id="notation-msg" class="nmsg hidden" aria-live="polite"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span data-ic="clipboard"></span>いまの表記ルール<span id="notation-store" class="badge"></span></div>
+        <div id="notation-list" class="nlist"></div>
+      </div>
     </section>
 
   </main>
