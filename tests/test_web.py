@@ -338,6 +338,13 @@ def test_export_docx_monthly_returns_docx() -> None:
     _assert_is_docx(r)
 
 
+def test_export_docx_nursery_record_returns_docx() -> None:
+    r = _client().post(
+        "/api/export-docx", json={"kind": "nursery_record", "entry": _edit_nursery_record_entry()}
+    )
+    _assert_is_docx(r)
+
+
 def test_export_docx_unsupported_kind_400() -> None:
     """docx 未対応の kind（現状 diary 等）は 400 で正直に返す（握りつぶさない）。"""
     r = _client().post("/api/export-docx", json={"kind": "diary", "entry": _edit_diary_entry()})

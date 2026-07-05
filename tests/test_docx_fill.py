@@ -19,9 +19,27 @@ from hoiku_agent.schemas import (
     FiveDomains,
     MonthlyEducationNote,
     MonthlyPlan,
+    NurseryRecord,
     ThreeViewpoint,
 )
 from hoiku_agent.web.docx_fill import fill_docx, supported_kinds
+
+
+def _nursery() -> dict:
+    return NurseryRecord(
+        fiscal_year="2026",
+        age_band=AgeBand.三から五歳,
+        child_id="かなたくん",
+        final_year_focus="共通の目的に向かって活動を楽しむ",
+        individual_focus="友だちと協力してやり遂げる",
+        development_notes=[
+            DevelopmentNote(description="鉄棒に挑戦する姿が育った", tags=[FiveDomains.健康]),
+            DevelopmentNote(description="考えを伝え合うようになった", tags=[FiveDomains.言葉]),
+        ],
+        special_notes="就学先と見通しの持ち方を引き継ぐ",
+        growth_until_final="入園当初の不安から生き生きと表現する姿へ育った",
+        school_name="市立ひがし小学校",
+    ).model_dump(mode="json")
 
 
 def _monthly(age_band: AgeBand = AgeBand.零から二歳) -> dict:
@@ -126,6 +144,32 @@ def test_fill_monthly_3_5_has_no_goals_table_but_renders():
     assert not any("個人目標" in t.rows[0].cells[0].text for t in tables)
     header = next(t for t in tables if "年度・月" in "".join(c.text for c in t.rows[0].cells))
     assert "3〜5歳児" in "".join(c.text for c in header.rows[1].cells)
+
+
+def test_supported_kinds_has_nursery_record():
+    assert "nursery_record" in supported_kinds()
+
+
+def test_fill_nursery_record_appends_under_labels():
+    """公式様式の括弧ラベル（最終年度の重点 等）直下に内容が追記され、ラベルは残る。"""
+    tables = _tables(fill_docx("nursery_record", _nursery()))
+    rec = next(t for t in tables if "保育の過程" in "".join(c.text for c in t.rows[0].cells))
+    joined = "\n".join(c.text for row in rec.rows for c in row.cells)
+    # ガイドラベルは残す＋内容が入る（追記方式）。
+    assert "（最終年度の重点）" in joined and "共通の目的に向かって活動を楽しむ" in joined
+    assert "（個人の重点）" in joined and "友だちと協力してやり遂げる" in joined
+    assert "鉄棒に挑戦する姿が育った" in joined  # 保育の展開（development_notes）
+    assert "就学先と見通しの持ち方を引き継ぐ" in joined  # 特に配慮すべき事項
+    assert (
+        "入園当初の不安から生き生きと表現する姿へ育った" in joined
+    )  # 列4＝最終年度に至るまでの育ち
+
+
+def test_fill_nursery_record_fills_name_and_school():
+    tables = _tables(fill_docx("nursery_record", _nursery()))
+    enroll = next(t for t in tables if "就学先" in "".join(c.text for r in t.rows for c in r.cells))
+    joined = "".join(c.text for r in enroll.rows for c in r.cells)
+    assert "かなたくん" in joined and "市立ひがし小学校" in joined
 
 
 def test_fill_unknown_kind_raises():

@@ -12,8 +12,10 @@ Word で開いて微修正・印刷・PDF 化できる（＝Word が母艦の現
 
 配線済みスライス：**児童票（保育経過記録）**＝5領域×子どもの姿（3–5）。**月案**＝園フォームは
 クラス月案だが、決定に従い**個別月案の中身を「個人目標」小表へ写像**しクラス欄は保育士記入で温存
-（個人目標小表がある 0-2 フォームが本命・3-5 フォームは小表が無くヘッダのみ）。保育要録（要 保育所
-様式の入手）は後続（`_FILLERS` に kind を追加するだけで拡張できる形にしてある）。
+（個人目標小表がある 0-2 フォームが本命・3-5 フォームは小表が無くヘッダのみ）。**保育要録**＝公式様式
+（こども家庭庁 保育所児童保育要録・参考例）の「保育に関する記録」の括弧ラベル（最終年度の重点/個人の重点/
+保育の展開と子どもの育ち/特に配慮すべき事項）直下と列4（最終年度に至るまでの育ち）へ追記（ガイドラベルは残す）。
+拡張は `_FILLERS` に kind を追加するだけ。
 """
 
 from __future__ import annotations
@@ -58,6 +60,15 @@ def _find_table(doc: Document, *, header_contains: tuple[str, ...]) -> Table | N
             continue
         head = "".join(c.text for c in tbl.rows[0].cells)
         if all(tok in head for tok in header_contains):
+            return tbl
+    return None
+
+
+def _find_table_by_any_cell(doc: Document, *tokens: str) -> Table | None:
+    """全セルを走査し、tokens をすべて含む表を返す（見出しが row0 に無い様式用＝入所記録表 等）。"""
+    for tbl in doc.tables:
+        text = "".join(c.text for row in tbl.rows for c in row.cells)
+        if all(tok in text for tok in tokens):
             return tbl
     return None
 
@@ -220,10 +231,92 @@ def _fill_monthly(entry: dict) -> Document:
     return doc
 
 
+def _append_cell_lines(cell, lines: list[str]) -> None:
+    """セルの既存内容（括弧ラベル等）を残したまま、内容を段落として下に追記する。
+
+    `_set_cell`（置換）と違い、公式様式の（最終年度の重点）等のガイドラベルを消さずに内容を足す。
+    空行は追記しない。
+    """
+    for line in lines:
+        text = str(line).strip()
+        if not text:
+            continue
+        cell.add_paragraph().add_run(text)
+
+
+def _fill_nursery_record(entry: dict) -> Document:
+    """保育要録（保育所児童保育要録・保育に関する記録）を公式様式（こども家庭庁 参考例）へ流し込む。
+
+    様式は「入所に関する記録」（原簿系＝AI外・手書き）と「保育に関する記録」（AI 生成部）の2部。
+    後者の列3「保育の過程と子どもの育ちに関する事項」に（最終年度の重点）（個人の重点）
+    （保育の展開と子どもの育ち）（特に配慮すべき事項）が段組みで並び、列4に「最終年度に至るまでの
+    育ち」が入る。**各括弧ラベルの直下に内容を追記**し（ラベルは残す＝様式のガイドを壊さない）、
+    列4に growth を追記する。氏名・就学先だけ入所記録表に添える（生年月日・押印等は手書き欄のまま）。
+    5領域のねらい参考列・別紙（10の姿）は様式の固定参照＝触らない。描画のみ（型の保証は harness＝§5）。
+    """
+    doc = Document(str(_TEMPLATE_DIR / "nursery_record.docx"))
+
+    # ── 入所に関する記録（原簿系）：氏名・就学先だけ添える（他は手書き。見出しが row0 に無い様式なので
+    #    全セル走査で表を同定する） ──
+    enroll = _find_table_by_any_cell(doc, "就学先", "保護者")
+    if enroll is not None:
+        for row in enroll.rows:
+            cells = row.cells
+            head = cells[0].text.replace("　", "").replace(" ", "").strip()
+            label1 = (
+                cells[1].text.replace("　", "").replace(" ", "").strip() if len(cells) > 1 else ""
+            )
+            if head.startswith("児") and "氏名" in label1 and len(cells) > 3:
+                _set_cell(cells[3], str(entry.get("child_id") or ""))
+            elif head.startswith("就学先") and len(cells) > 1:
+                school = str(entry.get("school_name") or "").strip()
+                if school:
+                    _set_cell(cells[1], school)
+
+    # ── 保育に関する記録（AI 生成部）：括弧ラベル直下へ内容を追記 ──
+    rec = _find_table(doc, header_contains=("保育の過程と子どもの育ちに関する事項",))
+    if rec is None:
+        return doc
+    dev_lines = []
+    for note in entry.get("development_notes") or []:
+        note = note or {}
+        desc = str(note.get("description") or "").strip()
+        if not desc:
+            continue
+        tags = "・".join(str(t) for t in (note.get("tags") or []))
+        dev_lines.append(f"{desc}（{tags}）" if tags else desc)
+    # 括弧ラベル → 追記する内容（列3）。各ラベルの最初の出現セルにだけ追記する。
+    col3_content = {
+        "（最終年度の重点）": [str(entry.get("final_year_focus") or "")],
+        "（個人の重点）": [str(entry.get("individual_focus") or "")],
+        "（保育の展開と子どもの育ち）": dev_lines,
+        "（特に配慮すべき事項）": [str(entry.get("special_notes") or "")],
+    }
+    done: set[str] = set()
+    growth_done = False
+    for row in rec.rows:
+        cells = row.cells
+        if len(cells) > 3:
+            label = cells[3].text.strip().split("\n")[0].strip()
+            if label in col3_content and label not in done:
+                _append_cell_lines(cells[3], col3_content[label])
+                done.add(label)
+        # 列4（最終年度に至るまでの育ち）：見出し行を除く最初の内容セルへ growth を追記。
+        if len(cells) > 4 and not growth_done:
+            head4 = cells[4].text.strip()
+            if head4 == "" or head4 == "最終年度に至るまでの育ちに関する事項":
+                if head4 == "":
+                    _append_cell_lines(cells[4], [str(entry.get("growth_until_final") or "")])
+                    growth_done = True
+
+    return doc
+
+
 # kind → filler。新しい書類は filler を足すだけで拡張できる。
 _FILLERS = {
     "child_record": _fill_child_record,
     "monthly": _fill_monthly,
+    "nursery_record": _fill_nursery_record,
 }
 
 
