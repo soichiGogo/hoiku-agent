@@ -14,6 +14,7 @@ const SCOPE_DT = {
   保育日誌: ["diary", "保育日誌"],
   月案: ["monthly", "個別月案"],
   児童票: ["child_record", "児童票"],
+  保育要録: ["nursery_record", "保育要録"],
 };
 
 export function makePolicy({ grid, history, flow, button, stepper: stepperEl, status }) {
@@ -27,6 +28,12 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     procSpin = null;
   let lastProposal = null; // 直近 propose の result（needs_input で既存↔新を並べるため保持）
   let proposedPanel = null; // 前面の提案カード（反映で label を「反映済み」へ）
+  // デッキ（いまの指針カード）の全カード＋対象書類フィルタ。フィルタは doc_type の allowlist
+  // （null＝全表示）。対象書類セレクタ（app.js）から setFilter で切替＝反映先の可視化（Thread A）。
+  let allCards = [];
+  let allHistory = [];
+  let curStore = null;
+  let filterDocTypes = null;
 
   /* ---------- 閲覧デッキ（上） ---------- */
   function cardEl(card, { isNew = false } = {}) {
@@ -48,17 +55,45 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     return item;
   }
   function renderDeck({ cards, history: hist, store }) {
+    allCards = cards || [];
+    allHistory = hist || [];
+    curStore = store;
+    paintDeck();
+  }
+  // 現在のフィルタ（対象書類）でデッキを描く。フィルタは card_view の doc_type（共通＝common）で絞る＝
+  // 「共通＋その書類」の範囲だけ見せて反映先を明示する（render_for_doc の前置注入範囲と一致）。
+  function paintDeck() {
     clear(grid);
     clear(history);
-    (cards || []).forEach((c) => grid.appendChild(cardEl(c)));
-    (hist || []).forEach((h) => history.appendChild(historyEl(h)));
-    if (store && store !== "persistent") {
+    const shown = filterDocTypes
+      ? allCards.filter((c) => filterDocTypes.includes(c.doc_type || "common"))
+      : allCards;
+    if (!shown.length) {
+      grid.appendChild(
+        el(
+          "p",
+          "policy-empty",
+          filterDocTypes
+            ? "この書類に効く指針カードはまだありません。下のメモから追加できます。"
+            : "指針カードはまだありません。下のメモから育てられます。",
+        ),
+      );
+    } else {
+      shown.forEach((c) => grid.appendChild(cardEl(c)));
+    }
+    allHistory.forEach((h) => history.appendChild(historyEl(h)));
+    if (curStore && curStore !== "persistent") {
       const msg =
-        store === "ephemeral"
+        curStore === "ephemeral"
           ? "この環境では反映はこのセッション内の参照用です（再起動で消えます）。永続化はストア接続後に有効になります。"
           : "指針ストアは未接続です（閲覧降格）。";
       banner(grid, "info", msg);
     }
+  }
+  // 対象書類フィルタを切り替える（docTypes＝doc_type の allowlist・null/空で全表示＝従来動作）。
+  function setFilter(docTypes) {
+    filterDocTypes = docTypes && docTypes.length ? docTypes : null;
+    paintDeck();
   }
   async function init() {
     renderDeck(await adk.getPolicy());
@@ -286,7 +321,9 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   }
 
   /* ---------- 実行 ---------- */
-  async function run(memo) {
+  // targetScope＝保育士が選んだ対象書類（PolicyScope 値・null＝すべて＝AI 判断）。改善エージェントの
+  // scope の既定にする（backend は既定として尊重しつつ、内容的に共通と判断したら提案する＝勝手に変えない）。
+  async function run(memo, targetScope = null) {
     clear(flow);
     cur = null;
     toolBadges = {};
@@ -303,7 +340,11 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     phase("既存の指針と重ならないか精査しています", "working");
     button.disabled = true;
     try {
-      await adk.ssePost("/api/improve", { diff: memo, feedback: null, session_id: crypto.randomUUID() }, handleItem);
+      await adk.ssePost(
+        "/api/improve",
+        { diff: memo, feedback: null, target_scope: targetScope, session_id: crypto.randomUUID() },
+        handleItem,
+      );
     } catch (e) {
       if (e instanceof adk.PasscodeError) {
         window.__requireGate && window.__requireGate();
@@ -318,5 +359,5 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     }
   }
 
-  return { init, run };
+  return { init, run, setFilter };
 }

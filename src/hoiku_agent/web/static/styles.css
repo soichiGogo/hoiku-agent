@@ -174,6 +174,20 @@ a{color:var(--primary-d)}
 .container{max-width:var(--maxw);margin:0 auto;padding:var(--sp-4) var(--sp-4) 80px}
 .panel{display:none}
 .panel.is-active{display:block;animation:fade .28s ease}
+
+/* サブタブ（育てる＝指針を育てる／表記ルール の2段）＝上位タブより控えめなセグメント。
+   仕組みは分離のまま、保育士から見た「教える場所」を1タブに集約する presentation（②）。 */
+.subtabs{display:flex;gap:var(--sp-2);margin:0 auto var(--sp-4);border-bottom:1px solid var(--line);padding-bottom:2px;flex-wrap:wrap}
+.subtab{display:inline-flex;align-items:baseline;gap:8px;padding:9px 16px;min-height:44px;background:none;border:none;
+  border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-weight:600;cursor:pointer;border-radius:var(--r-sm) var(--r-sm) 0 0}
+.subtab .ic{width:16px;height:16px;align-self:center}
+.subtab:hover{color:var(--ink-soft)}
+.subtab.is-active{color:var(--primary-d);border-bottom-color:var(--primary);background:color-mix(in srgb,var(--primary-soft) 40%,transparent)}
+.subtab-hint{font-weight:400;font-size:var(--fs-caption);color:var(--muted)}
+.subtab.is-active .subtab-hint{color:var(--primary-d)}
+.subpanel{display:none}
+.subpanel.is-active{display:block;animation:fade .2s ease}
+@media (max-width:560px){.subtab-hint{display:none}}
 @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-sm);
   padding:var(--sp-4) var(--sp-5);margin-bottom:var(--sp-3)}
