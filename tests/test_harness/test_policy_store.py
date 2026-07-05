@@ -137,6 +137,40 @@ def test_render_empty_book():
     assert "- （未登録）" in text and "- （更新なし）" in text
 
 
+# ──────────────────────────── render_for_doc（前置注入用） ────────────────────────────
+
+
+def test_render_for_doc_common_plus_scope_only():
+    """作る書類（scope）向けに共通＋当該書類の節だけを再生する（他書類・履歴は含めない＝§5）。"""
+    book = _seeded()
+    book = ps.add_card(book, _card("card-0003", PolicyScope.保育日誌, "天候を必ず確認する"))
+    text = ps.render_for_doc(book, PolicyScope.保育日誌)
+    assert text.startswith("# 文書作成指針")
+    assert "## 共通ルール（園・書類横断）" in text
+    assert "- 個人名を書かない" in text  # 共通カード
+    assert "### 保育日誌" in text and "- 天候を必ず確認する" in text  # 当該 scope カード
+    # 他書類の節・変更履歴はノイズなので含めない
+    assert "### 月案 / 週案 / 日案" not in text
+    assert "- 5領域と10の姿に紐づける" not in text
+    assert "## 変更履歴" not in text
+
+
+def test_render_for_doc_empty_scope_shows_unregistered():
+    """当該 scope にカードが無ければ共通＋「（未登録）」を返す（空文字にはしない）。"""
+    book = ps.add_card(PolicyBook(), _card("card-0001", PolicyScope.共通, "個人名を書かない"))
+    text = ps.render_for_doc(book, PolicyScope.児童票)
+    assert "### 児童票（期ごとの保育経過記録）" in text
+    assert "- （未登録）" in text
+    assert "- 個人名を書かない" in text
+
+
+def test_render_for_doc_scope_common_no_duplicate_section():
+    """scope=共通 を渡しても共通節を二重に出さない（防御的・共通 doc_type は無いが）。"""
+    text = ps.render_for_doc(_seeded(), PolicyScope.共通)
+    assert text.count("## 共通ルール（園・書類横断）") == 1
+    assert "### 保育日誌" not in text and "### 月案 / 週案 / 日案" not in text
+
+
 def test_child_record_scope_renders_and_views(when=T):
     """児童票 scope が render・active_cards・view マップに相乗りしている（§19・二重実装しない）。"""
     book = ps.add_card(

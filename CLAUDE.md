@@ -61,6 +61,8 @@
 
 1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・指針カードストア・
    **表記正規化（ひらがな表記DX＝`notation_store`）**。LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。
+   （文書作成指針の agent への提示は author/reviewer の InstructionProvider＝`agents/instructions.py` が harness の
+   `render_for_doc` を prompt 冒頭へ注入＝薄い組み立て。決定ロジック実体は harness の policy_store／aggregate に1つ。）
    `tools/validate_fields.py`・`tools/write_draft.py` は これを呼ぶ**薄いラッパ**（二重実装しない）。表記の統一は
    soft な指針カードでなく決定的正規化（確定時に取りこぼしなく適用＝型/表記の保証）＝別の道具（線を混ぜない）。
    Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
@@ -76,8 +78,11 @@
 **メモリ3分類**: 子ども長期記憶＝Agent Engine Memory Bank（repo外）／ 育つ指針＝構造化カード
 （runtime の正は `DATABASE_URL` 設定時 **Cloud SQL の policy_books 1行（book 丸ごと JSONB・version 楽観ロック）**
 ＝書類アーカイブと同じ DB へ統合（Phase 2・GCS は廃止）。未設定はローカル `knowledge/文書作成指針.json`＝
-git はシード（DB 行不在時のフォールバックシードも兼ねる）。agent は読み取り＝`read_policy`、
-improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。
+git はシード（DB 行不在時のフォールバックシードも兼ねる）。**agent への提示＝author/reviewer の InstructionProvider
+（`agents/instructions.py`）が作る書類（doc_type）の scope に合わせ共通＋当該書類の勘所を prompt 冒頭へ前置注入**
+（作成/レビューAI は自発的な read_policy 呼び出しでなく与件として動く。§5＝決定的に用意できる指針は harness の
+`render_for_doc` を注入する。旧 read_policy ツールは撤去）、improver が保育士決定で即反映）／
+静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。
 「全部ファイルベース」にしない。なお **表記ルール辞書（ひらがな表記DX＝`notation_store`・`notation_books` 1行・
 migration 0004・未設定はローカル `knowledge/表記ルール.json` シード）** は "メモリ" ではなく決定的な表記統一の
 辞書（保育士が編集・harness が確定時に適用）＝育つ指針カードとは役割が別（agentic な勘所 vs 決定的な表記）。

@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING
 from google.adk.agents import LlmAgent
 
 from ..models import build_model
-from ..tools import read_policy, recall_child_history, search_guideline
+from ..tools import recall_child_history, search_guideline
+from .instructions import build_review_instruction
 from .prompts import REVIEW_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -33,8 +34,10 @@ def build_review_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     return LlmAgent(
         name="reviewer",
         model=model if model is not None else build_model(),
-        instruction=REVIEW_INSTRUCTION,
+        # 文書作成指針（＋集積）を prompt 冒頭へ前置注入（scope は state["doc_type"] から解決・§5）。
+        # read_policy ツールは廃止＝評価基準の指針も harness が決定的に用意する。
+        instruction=build_review_instruction(REVIEW_INSTRUCTION),
         # recall_child_history は前月連続性の照合に使う（その子の前回までの像と矛盾しないか＝§7）
-        tools=[read_policy, search_guideline, recall_child_history],
+        tools=[search_guideline, recall_child_history],
         output_key="review",  # 指摘結果を state["review"] に格納
     )

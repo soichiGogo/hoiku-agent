@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING
 from google.adk.agents import LlmAgent
 
 from ..models import build_model
-from ..tools import ask_caregiver, read_policy, recall_child_history, search_guideline
+from ..schemas.policy import PolicyScope
+from ..tools import ask_caregiver, recall_child_history, search_guideline
+from .instructions import build_author_instruction
 from .prompts import CHILD_RECORD_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -42,11 +44,16 @@ def build_child_record_author_agent(model: str | BaseLlm | None = None) -> LlmAg
     return LlmAgent(
         name="child_record_author",
         model=model if model is not None else build_model(),
-        instruction=CHILD_RECORD_AUTHOR_INSTRUCTION,
+        # 文書作成指針（共通＋児童票）＋期間集積（state["period_digest"]）を prompt 冒頭へ前置注入（§5）。
+        instruction=build_author_instruction(
+            CHILD_RECORD_AUTHOR_INSTRUCTION,
+            PolicyScope.児童票,
+            digest_key="period_digest",
+            digest_label="期間",
+        ),
         tools=[
             recall_child_history,  # その子の前回までの像（期の連続性＝§9）
             search_guideline,
-            read_policy,
             ask_caregiver,
         ],
         output_key="draft",  # 児童票下書きを state["draft"] に格納（finalize が ChildRecord で復元）

@@ -160,7 +160,6 @@ def test_digest_prep_agent_defaults_keep_monthly_keys():
     agent = DigestPrepAgent(name="monthly_prep")
     assert agent.input_key == "prev_month_entries"
     assert agent.output_key == "prev_month_digest"
-    assert agent.digest_label == "前月"
 
 
 def test_digest_prep_agent_accepts_period_keys():
@@ -169,8 +168,6 @@ def test_digest_prep_agent_accepts_period_keys():
         name="period_prep",
         input_key="period_entries",
         output_key="period_digest",
-        digest_label="期間",
     )
     assert agent.input_key == "period_entries"
     assert agent.output_key == "period_digest"
-    assert agent.digest_label == "期間"

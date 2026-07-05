@@ -26,7 +26,11 @@ from google.adk.agents import SequentialAgent
 
 from ..agents import build_child_record_author_agent
 from .monthly import DigestPrepAgent
-from .pipeline import FinalizeAgent, build_authoring_loop, persist_visit_to_memory
+from .pipeline import (
+    FinalizeAgent,
+    build_authoring_loop,
+    persist_visit_to_memory,
+)
 
 if TYPE_CHECKING:
     from google.adk.models import BaseLlm
@@ -38,11 +42,12 @@ def build_child_record_pipeline(
 ) -> SequentialAgent:
     """児童票の型を保証するパイプラインを構築する（§19）。
 
-    月案の build_monthly_pipeline と対称。先頭に DigestPrepAgent（L3 還流の決定的集計・
+    月案の build_monthly_pipeline と対称。先頭に DigestPrepAgent（L3 還流の決定的集計・state-only・
     入力=period_entries／出力=period_digest）を置き、巡回は build_authoring_loop（日誌・月案と共用。
-    NEEDS_REVISION で child_record_author が再作成）、finalize は kind="child_record"。
-    after_agent_callback も共用（明示承認＋型成立で書き戻し・§9）。author_model/reviewer_model は
-    通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
+    NEEDS_REVISION で child_record_author が再作成）、finalize は kind="child_record"。文書作成指針と
+    期間集積は child_record_author/reviewer の InstructionProvider（`agents/instructions.py`）が prompt
+    冒頭へ注入する（§5）。after_agent_callback も共用（明示承認＋型成立で書き戻し・§9）。
+    author_model/reviewer_model は通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(
         name="child_record_pipeline",
@@ -51,7 +56,6 @@ def build_child_record_pipeline(
                 name="period_prep",
                 input_key="period_entries",
                 output_key="period_digest",
-                digest_label="期間",
             ),
             build_authoring_loop(build_child_record_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="child_record"),
