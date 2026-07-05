@@ -594,30 +594,55 @@ select.de-input{appearance:auto;min-height:38px}
 .nedit-act{display:flex;gap:6px;flex:0 0 auto;margin-left:auto}
 
 /* ============================================================
-   書類を見る（アーカイブ閲覧＝作成済みの確定書類）
+   書類を見る（アーカイブ閲覧＝ファイルシステム風ツリー：種別→子ども→書類）
    ============================================================ */
-.rlist{display:flex;flex-direction:column;gap:var(--sp-2)}
 .rempty{margin:var(--sp-2) 0;font-size:var(--fs-sm);color:var(--muted)}
-/* 一覧の1行（クリックで詳細）＝ボタンだが行として並べる */
-.rrow{display:flex;align-items:center;gap:var(--sp-3);width:100%;text-align:left;padding:var(--sp-3);
-  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:var(--ink);
-  cursor:pointer;transition:.15s;font-family:inherit}
-.rrow:hover{border-color:var(--line-strong);background:var(--surface-2)}
-.rrow.is-active{border-color:var(--primary);background:var(--primary-soft)}
-.rrow-ic{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:var(--r-sm);
-  background:var(--surface-2);color:var(--muted)}
-.rrow.is-active .rrow-ic{background:color-mix(in srgb,var(--primary-soft) 60%,var(--surface));color:var(--primary-d)}
-.rrow-ic .ic{width:18px;height:18px}
-.rrow-main{flex:1 1 auto;min-width:0}
-.rrow-title{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-body);font-weight:700;flex-wrap:wrap}
-.rrow-target{font-weight:400;color:var(--muted);font-size:var(--fs-sm)}
-.rrow-sub{font-size:var(--fs-caption);color:var(--muted);margin-top:2px}
 .rbadge{display:inline-flex;align-items:center;font-size:var(--fs-caption);font-weight:700;padding:3px 10px;
   border-radius:var(--r-pill);flex:0 0 auto}
 .rbadge.ok{background:var(--state-done-soft);color:var(--state-done-ink)}
 .rbadge.muted{background:var(--surface-2);color:var(--muted)}
+
+/* 2ペイン explorer（左＝フォルダツリー／右＝書類の内容） */
+.fs-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-3)}
+.fs-body{display:grid;grid-template-columns:minmax(230px,330px) 1fr;gap:var(--sp-4);align-items:start}
+.fs-tree{min-width:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
+  padding:var(--sp-2);max-height:66vh;overflow:auto}
+.fs-detail{min-width:0}
+
+/* ツリー行（フォルダ／ファイル共通。深さは --depth でインデント） */
+.fsnode-kids[hidden]{display:none}
+.fsrow{--depth:0;display:flex;align-items:center;gap:var(--sp-2);width:100%;text-align:left;
+  padding:8px 10px;padding-left:calc(10px + var(--depth) * 18px);
+  border:none;background:transparent;color:var(--ink);cursor:pointer;border-radius:var(--r-sm);
+  font-family:inherit;font-size:var(--fs-sm);min-height:40px;transition:.12s}
+.fsrow:hover{background:color-mix(in srgb,var(--surface-3) 55%,transparent)}
+.fsrow:focus-visible{outline:2.5px solid var(--state-working);outline-offset:-2px}
+.fsrow-tw{flex:0 0 auto;width:16px;height:16px;display:grid;place-items:center;color:var(--muted)}
+.fs-chev{width:14px;height:14px;transition:transform .15s}
+.fsrow[aria-expanded="true"] .fs-chev{transform:rotate(90deg)}
+.fsrow-ic{flex:0 0 auto;display:grid;place-items:center;color:var(--muted)}
+.fsrow-ic .ic{width:17px;height:17px}
+.fsrow.is-folder .fsrow-ic{color:var(--primary-d)}
+.fsrow-label{flex:1 1 auto;min-width:0;display:flex;align-items:baseline;gap:var(--sp-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fsrow.is-folder>.fsrow-label{font-weight:700}
+.fsrow.is-file>.fsrow-label{font-weight:600;color:var(--ink-soft)}
+.fsrow-meta{font-weight:400;color:var(--muted);font-size:var(--fs-caption);flex:0 0 auto}
+.fsrow-count{flex:0 0 auto;font-size:var(--fs-caption);font-weight:700;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r-pill);
+  padding:1px 8px;min-width:22px;text-align:center}
+.fsrow.is-file.is-active{background:var(--primary-soft)}
+.fsrow.is-file.is-active .fsrow-ic{color:var(--primary-d)}
+.fsrow.is-file.is-active>.fsrow-label{color:var(--primary-d)}
+
+/* 未選択・降格時の右ペイン案内 */
+.fs-placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-3);
+  min-height:220px;color:var(--muted);text-align:center;border:1px dashed var(--line-strong);
+  border-radius:var(--r-md);background:var(--surface-2);padding:var(--sp-5)}
+.fs-placeholder .ic{width:34px;height:34px;color:var(--line-strong)}
+.fs-placeholder p{max-width:34ch;font-size:var(--fs-sm)}
+
 /* 詳細ビュー */
-.rdetail{margin-top:var(--sp-3)}
 .rdetail-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-3)}
 .rmeta{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
 .rmeta-actor{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-caption);color:var(--muted)}
@@ -643,6 +668,9 @@ select.de-input{appearance:auto;min-height:38px}
   .tab .ic{width:20px;height:20px}
   .tab.is-active{background:var(--primary-soft)}
   .container{padding-bottom:84px}
+  /* 書類を見る：狭い画面はツリーの下に内容を積む */
+  .fs-body{grid-template-columns:1fr}
+  .fs-tree{max-height:48vh}
 }
 
 @media (prefers-reduced-motion: reduce){

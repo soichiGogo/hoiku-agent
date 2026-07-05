@@ -847,9 +847,8 @@ async function main() {
 
   // ── 書類を見る（アーカイブ閲覧＝作成済みの確定書類・参照データの点検） ──
   const records = makeRecords({
-    list: $("records-list"),
+    tree: $("records-tree"),
     store: $("records-store"),
-    filter: $("records-filter"),
     detail: $("records-detail"),
   });
   await records.init();

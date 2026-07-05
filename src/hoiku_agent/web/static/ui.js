@@ -59,6 +59,10 @@ const ICONS = {
   memo: '<rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M8 9h8M8 13h6M8 17h4"/>',
   sprout: '<path d="M12 20v-7"/><path d="M12 13c-3.3 0-5.5-2-5.5-5 3.3 0 5.5 2 5.5 5z"/><path d="M12 11c0-2.8 2.2-5 5.5-5 0 2.8-2.2 5-5.5 5z"/>',
   download: '<path d="M12 4v10"/><path d="M8 10.5l4 4 4-4"/><path d="M5 19.5h14"/>',
+  // ファイルツリー（書類を見る）用：フォルダ・展開シェブロン・ファイル。
+  folder: '<path d="M4 7.5a2 2 0 0 1 2-2h3.3a2 2 0 0 1 1.4.6l1.1 1.1a2 2 0 0 0 1.4.6H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
+  chevron: '<path d="M9 6l6 6-6 6"/>',
+  file: '<path d="M6.5 3.5H13l5 5V19a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5A1.5 1.5 0 0 1 6.5 3.5z"/><path d="M13 3.5V9h5"/>',
 };
 export function iconHTML(name, cls = "") {
   const path = ICONS[name] || ICONS.tool;

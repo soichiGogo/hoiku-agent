@@ -229,16 +229,18 @@
     <section id="tab-records" class="panel" role="tabpanel" aria-labelledby="tabbtn-records" tabindex="0">
       <div class="hero">
         <h1>作成済みの書類を見る</h1>
-        <p>アーカイブに保存された日誌・月案・児童票を種別で絞り込み、確定した内容をそのまま確認できます（前月・期間の集計など、参照データが適切かの点検にも使えます）。保存先が未接続のときは表示されません。</p>
+        <p>アーカイブに保存された書類を、種別 → 子ども → 書類 のフォルダで辿れます。開いたフォルダ・選んだ書類の分だけを読み込むので、すばやく表示されます（前月・期間の集計など、参照データの点検にも使えます）。保存先が未接続のときは表示されません。</p>
       </div>
 
-      <div class="card">
-        <div class="card-title"><span data-ic="book"></span>アーカイブ<span id="records-store" class="badge"></span></div>
-        <div id="records-filter" class="chips seg" role="group" aria-label="種別で絞り込み"></div>
-        <div id="records-list" class="rlist"></div>
+      <div class="card fs">
+        <div class="fs-head">
+          <div class="card-title"><span data-ic="book"></span>アーカイブ<span id="records-store" class="badge"></span></div>
+        </div>
+        <div class="fs-body">
+          <div id="records-tree" class="fs-tree" role="tree" aria-label="書類フォルダ"></div>
+          <div id="records-detail" class="fs-detail" role="region" aria-label="書類の内容"></div>
+        </div>
       </div>
-
-      <div id="records-detail" class="card rdetail" hidden></div>
     </section>
 
   </main>
