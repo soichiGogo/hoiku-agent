@@ -466,7 +466,7 @@ def list_documents(
     date_to: date | None = None,
     limit: int = 200,
 ) -> list[dict]:
-    """書類メタの一覧（新しい順）。降格・障害は空（読取は落とさない＝read_policy と同じ）。"""
+    """書類メタの一覧（新しい順）。降格・障害は空（読取は落とさない＝policy_store の read と同じ）。"""
     eng = _engine()
     if eng is None:
         return []

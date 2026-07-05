@@ -80,7 +80,7 @@ export function hydrateIcons(root = document) {
 const TOOL_META = {
   recall_child_history: { icon: "memory", label: "この子のこれまでの姿を確認" },
   search_guideline: { icon: "book", label: "保育所保育指針を参照" },
-  read_policy: { icon: "clipboard", label: "園の文書作成指針を確認" },
+  // 文書作成指針は author/reviewer の InstructionProvider が prompt 冒頭へ前置注入する（read_policy ツールは撤去＝§5）。
   validate_fields: { icon: "shield", label: "必須項目を自己点検" },
   ask_caregiver: { icon: "ask", label: "保育士に確認" },
   // improver（指針を育てる）

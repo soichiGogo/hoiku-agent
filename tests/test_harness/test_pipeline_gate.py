@@ -34,8 +34,9 @@ def test_is_approved_handles_non_string():
 def test_pipeline_structure():
     """段構成（authoring_loop→finalize、loop 内は author→reviewer→approval_gate）。
 
-    NEEDS_REVISION で作成AIが再作成できるよう、author をレビュー巡回に**含める**（旧構成は
-    author をループ外に置き再作成が起きなかった＝本変更の回帰防止）。
+    文書作成指針は author/reviewer の InstructionProvider が prompt 冒頭へ前置注入するので pipeline に
+    prep 段は無い（§5）。NEEDS_REVISION で作成AIが再作成できるよう、author をレビュー巡回に**含める**
+    （旧構成は author をループ外に置き再作成が起きなかった＝本変更の回帰防止）。
     """
     pipeline = build_document_pipeline()
     assert [a.name for a in pipeline.sub_agents] == ["authoring_loop", "finalize"]

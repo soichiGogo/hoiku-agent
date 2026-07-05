@@ -41,17 +41,27 @@
 - `pipeline.py` … 日誌：authoring_loop（作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御
   （旧 `workflow/document_pipeline.py`）。`build_authoring_loop` が author を巡回に包み NEEDS_REVISION で
   再作成、APPROVED 早期終了の**判定**（ApprovalGate）はここ（制御＝決定的）、レビュー内容の**生成**は reviewer。
-  `FinalizeAgent(kind=...)` で日誌/月案/児童票/保育要録の確定を切替（実体は finalize.py）。
+  `FinalizeAgent(kind=...)` で日誌/月案/児童票/保育要録の確定を切替（実体は finalize.py）。**pipeline に prep 段は置かない**
+  ＝文書作成指針は author/reviewer の InstructionProvider（`../agents/instructions.py`）が `policy_store.render_for_doc`
+  を prompt 冒頭へ前置注入する（探索を LLM の read_policy 呼び出しに委ねず決定的に用意＝§5）。**prep を先頭に置いて
+  content イベントを出すと ADK eval の rubric judge が非LLM先頭段を採点不能にする**ため、集積の `DigestPrepAgent`
+  （monthly.py）・`RecordDigestPrepAgent`（youroku.py・L4）も content 無しの state-only イベントにしてある（§12）。
 - `monthly.py` … 月案：`DigestPrepAgent`（旧 MonthlyPrepAgent を入出力キーで一般化。前月日誌を child_id 別集計＝
-  L2 還流の決定的部分・児童票の L3 とも共用）→ 月案 author の authoring_loop（日誌と共用）→ 確定。
+  L2 還流の決定的部分・児童票の L3 とも共用。**content 無しの state-only イベント**で `state["*_digest"]` に載せるだけ
+  ＝集積の prompt 前置は author/reviewer の InstructionProvider が担う。content を持たせないのは eval judge が
+  非LLM先頭段を採点不能にするのを避けるため＝§12）→ 月案 author の authoring_loop（日誌と共用）→ 確定。
   `build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
 - `child_record.py` … 児童票（§19）：`DigestPrepAgent`（period_prep・period_entries→period_digest＝L3 還流）→
   児童票 author の authoring_loop（共用）→ finalize(kind="child_record")。`build_child_record_pipeline`。
-- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／児童票を振り分ける
+- `youroku.py` … 保育要録（§19・L4）：`RecordDigestPrepAgent`（record_prep・**最終年度の児童票**（record_entries）を
+  `aggregate.child_record_digest` で集計→record_digest＝日誌でなく児童票を集める・content 無し state-only）→ 要録 author の
+  authoring_loop（共用）→ finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
+- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／児童票／保育要録を振り分ける
   決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§19）。
 - `policy_store.py` … 育つ指針＝構造化カードストアの決定的 CRUD・完全重複ガード・履歴・テキスト再生
-  （`render_to_text`）・view（`/api/policy` 用）。**指針編集の決定的実体はここに1つ**（improver/tools・
-  read_policy はこれを呼ぶ薄いラッパ）。意味的競合の判定は LLM（improver）の責務でここは持たない
+  （全再生＝`render_to_text`（UI `/api/policy`・eval）／前置注入用＝`render_for_doc`（共通＋当該 scope のみ・
+  履歴なし＝`../agents/instructions.py` の InstructionProvider が呼ぶ））・view（`/api/policy` 用）。**指針編集の決定的実体はここに1つ**
+  （improver/tools はこれを呼ぶ薄いラッパ）。意味的競合の判定は LLM（improver）の責務でここは持たない
   （安全網＝完全重複のみ）。clock を持たず日時は外部注入（§8/§9）。置き場は IO 節に隔離＝
   **明示 path ＞ `DATABASE_URL`（Cloud SQL＝書類アーカイブと同じ DB・`policy_books` 1行に book 丸ごと JSONB・
   `load_book_meta`→`save_book(if_version=…)` の compare-and-swap で楽観ロック・行不在はローカルシードを

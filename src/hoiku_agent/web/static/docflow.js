@@ -15,6 +15,10 @@ const DOC_META = {
   nursery_record: { title: "保育要録", icon: "chart" },
 };
 
+// doc_type（フロントの kind）→ 指針カードの scope（harness の PolicyScope 値）。
+// 「指針を取り込む」ステップで共通＋当該書類のカードだけを絞って見せる（render_for_doc と同じ絞り）。
+const POLICY_SCOPE_OF = { diary: "保育日誌", monthly: "月案", child_record: "児童票" };
+
 // 集計 prep を持つ doc_type の表示メタ（digest の state キー・見出し・稼働中フェーズ文言）。
 const PREP_META = {
   monthly: {
@@ -37,6 +41,7 @@ const PREP_META = {
 export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status, onBusy }) {
   const prepMeta = PREP_META[kind] || null;
   const iPrep = steps.findIndex((s) => s.includes("集計"));
+  const iPolicy = steps.indexOf("指針を取り込む");
   const iColl = steps.indexOf("情報を集める");
   const iDraft = steps.indexOf("下書き");
   const iReview = steps.indexOf("レビュー");
@@ -114,6 +119,35 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     return b;
   }
 
+  // 「指針を取り込む」ステップ：harness は author/reviewer の prompt 冒頭へ文書作成指針を前置注入する。
+  // その"取り込み"をフロントでも先に見せる（指針を取り込む → ツール呼び出し → 考えてる、の流れ）。
+  // 指針の実体は /api/policy（共通＋当該書類の scope に絞る＝render_for_doc と同じ絞り）。取得失敗/未整備は
+  // パネルを出さず step だけ進める（偽の中身を出さない＝降格を正直に）。
+  async function showPolicyStep() {
+    if (iPolicy < 0) return;
+    toStep(iPolicy);
+    phase("園の文書作成指針を取り込んでいます", "working");
+    let cards = [];
+    try {
+      const scope = POLICY_SCOPE_OF[kind];
+      const p = await adk.getPolicy();
+      cards = (p.cards || []).filter((c) => c.scope === "共通" || c.scope === scope);
+    } catch {
+      /* 取得失敗はパネルを出さず step だけ進める */
+    }
+    const label = (DOC_META[kind] || {}).title || "この書類";
+    const body = cards.length
+      ? cards.map((c) => "・" + c.body).join("\n")
+      : "（現在この書類に適用する指針カードはありません。共通ルールに沿って作成します）";
+    procBody.appendChild(
+      renderDocPanel({
+        titleIcon: "clipboard",
+        title: `文書作成指針を取り込みました（${label}向け・${cards.length}件）`,
+        formatted: body,
+      }),
+    );
+  }
+
   async function run(seedState, messageText) {
     clear(area);
     cur = null;
@@ -129,12 +163,13 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     } else {
       stepper.set(0, "done");
       maxStep = 0;
-      toStep(iColl);
-      phase("下書きを準備しています", "working");
     }
     button.disabled = true;
     onBusy && onBusy(true); // 生成中は種別セグメントを固定（統合タブでの切替ロック）
     try {
+      // 生成に入る前に「指針を取り込む」ステップを見せる（前置注入の可視化）。
+      await showPolicyStep();
+      phase("下書きを準備しています", "working");
       const session = await adk.createSession(seedState);
       await drive(session.id, adk.textMessage(messageText), null);
     } catch (e) {

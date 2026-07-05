@@ -29,10 +29,9 @@ from pydantic import ValidationError
 
 from ..agents import build_nursery_record_author_agent
 from ..schemas import ChildRecord
-from .aggregate import child_record_digest, format_record_digest_for_prompt
+from .aggregate import child_record_digest
 from .pipeline import (
     FinalizeAgent,
-    _model_content,
     build_authoring_loop,
     persist_visit_to_memory,
 )
@@ -63,24 +62,26 @@ class RecordDigestPrepAgent(BaseAgent):
 
     月案/児童票の DigestPrepAgent が日誌（DiaryEntry）を集計するのに対し、要録は**児童票（ChildRecord）**を
     集計する（集計対象の型が違うため別 prep）。集計結果（serializable digest）を state["record_digest"] に
-    格納し、人間可読テキストをイベントとして提示する（後段の author が直前メッセージとして読み、要約に使う）。
-    要約・解釈は author の責務（§10/§19）＝ここでは集計のみ。データが無ければ空 digest で素通り（降格）。
-    集計の決定的実体は aggregate.py（child_record_digest / format_record_digest_for_prompt）＝ここは配線のみ。
+    **state-only イベント**（content なし）で格納する。author はこの digest を InstructionProvider
+    （`agents/instructions.py`＝`format_record_digest_for_prompt`）が prompt 冒頭へ整形注入して読む
+    （要約・解釈は author の責務＝§10/§19・ここは集計のみ）。データが無ければ空 digest で素通り（降格）。
+    集計の決定的実体は aggregate.py（child_record_digest）＝ここは配線のみ。
+
+    **content を持たせない理由（§12）**：DigestPrepAgent（monthly.py）と同じ＝prep が content 付きイベントを
+    先頭に置くと ADK eval の rubric judge が非LLM段を引いて採点不能になる。state-only は eval の
+    invocation_events から除外され、先頭 LLM 段＝author が judge の起点になる。
     """
 
     input_key: str = "record_entries"
     output_key: str = "record_digest"
-    digest_label: str = "最終年度"
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         records = _parse_record_entries(ctx.session.state.get(self.input_key))
         digest = child_record_digest(records)
+        # content を付けない（state_delta のみ）＝eval の invocation_events に載らず judge を壊さない。
         yield Event(
             invocation_id=ctx.invocation_id,
             author=self.name,
-            content=_model_content(
-                format_record_digest_for_prompt(digest, label=self.digest_label)
-            ),
             actions=EventActions(state_delta={self.output_key: digest}),
         )
 

@@ -11,7 +11,7 @@ v1 で指針の正(SSOT)を markdown から **構造化カード JSON（`knowled
 - clock を持たない＝`created_at`/`updated_at`/`timestamp` は呼び出し側（improver の tool 境界）が
   注入する（純関数を保つ＝finalize.py / FinalizeAgent の日付解決と同じ流儀）。
 - 純関数（add/supersede/remove/render/検索）と IO（load_book/save_book）を分ける。read 経路は降格
-  （read_policy が握る）、write 経路は fail-loud（ValueError）で SSOT を黙って壊さない。
+  （前置注入する InstructionProvider が握る）、write 経路は fail-loud（ValueError）で SSOT を黙って壊さない。
 - 置き場は IO 節で解決する＝明示 path ＞ `DATABASE_URL`（Cloud SQL＝書類アーカイブと同じ DB へ統合・
   Phase 2・version 楽観ロック） ＞ ローカル `knowledge/文書作成指針.json`（git はシード）。
   純関数は置き場を知らない。
@@ -45,7 +45,7 @@ from ..schemas.policy import (
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _POLICY_PATH = _REPO_ROOT / "knowledge" / "文書作成指針.json"
 
-# render_to_text の節見出し（旧 markdown 指針と同じ構成を再生＝read_policy / eval の連続性を保つ）。
+# render_to_text の節見出し（旧 markdown 指針と同じ構成を再生＝UI 表示 / eval の連続性を保つ）。
 _DOC_TITLE = "# 文書作成指針（育つ skill）"
 _SCOPE_HEADINGS: dict[PolicyScope, str] = {
     PolicyScope.共通: "## 共通ルール（園・書類横断）",
@@ -222,10 +222,11 @@ def _render_bullets(book: PolicyBook, scope: PolicyScope) -> list[str]:
 
 
 def render_to_text(book: PolicyBook, scope: PolicyScope | None = None) -> str:
-    """active カードから指針テキストを決定的に再生する（read_policy / UI / prompt 用）。
+    """active カードから指針テキストを決定的に再生する（UI `/api/policy` / eval / 全体可視化用）。
 
     scope=None：旧 markdown と同じ節構成（共通ルール／書類別の勘所＞保育日誌・月案／変更履歴）を全再生。
     scope 指定：その対象書類の節（見出し＋箇条書き）だけを返す（可視化・部分提示用）。
+    作成/レビューAI への前置注入は共通＋当該書類に絞った `render_for_doc` を使う（履歴を含めない・§5）。
     """
     if scope is not None:
         lines = [_SCOPE_HEADINGS[scope], "", *_render_bullets(book, scope)]
@@ -259,6 +260,23 @@ def render_to_text(book: PolicyBook, scope: PolicyScope | None = None) -> str:
             lines.append(f"- {ch.timestamp.date().isoformat()} {ch.summary}")
     else:
         lines.append("- （更新なし）")
+    return "\n".join(lines)
+
+
+def render_for_doc(book: PolicyBook, scope: PolicyScope) -> str:
+    """特定の書類（scope）を作る作成/レビューAIに前置注入する指針テキストを再生する（決定的）。
+
+    harness が確定済みの doc_type（＝作る書類）に合わせて **共通ルール＋その書類の勘所だけ** に
+    絞って提示する（他書類の節・変更履歴は prompt のノイズになるので含めない）。指針の探索を
+    LLM の自発的ツール呼び出しに委ねず、harness が決定的に用意する前置注入の実体（§5）。
+    履歴つきの全再生（`render_to_text`）は UI（`/api/policy`）・improver 用に温存する。
+
+    scope=共通 の書類は無いが、渡された場合も共通節を二重に出さない（共通のみ返す）。
+    """
+    lines: list[str] = [_DOC_TITLE, ""]
+    lines += [_SCOPE_HEADINGS[PolicyScope.共通], "", *_render_bullets(book, PolicyScope.共通)]
+    if scope is not PolicyScope.共通:
+        lines += ["", _SCOPE_HEADINGS[scope], "", *_render_bullets(book, scope)]
     return "\n".join(lines)
 
 
@@ -304,7 +322,7 @@ def load_book_meta(path: Path | None = None) -> tuple[PolicyBook, int | None]:
       返す＝「git はシード」の意味論。初回の書込みでシード＋変更が DB の1行に乗る）。
     - ローカル … None（precondition なし＝従来動作）。
     壊れ JSON / スキーマ不一致は ValueError（write 経路は fail-loud で SSOT を黙って壊さない）。
-    read 経路（read_policy）は呼び出し側が例外を握って降格する。
+    read 経路（InstructionProvider の前置注入）は呼び出し側が例外を握って降格する。
     """
     if _db_active(path):
         eng = db.engine()
