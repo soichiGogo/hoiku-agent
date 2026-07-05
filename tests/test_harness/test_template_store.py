@@ -55,6 +55,17 @@ def test_load_template_missing_raises():
         ts.load_template("weekly")
 
 
+def test_book_view_shape():
+    """/api/doc-template 契約＝doc_type→[{key,label,kind,item_field}]（編集フォームが順序/ラベルに使う）。"""
+    view = ts.book_view(ts.load_book())
+    assert set(view["templates"]) == {"diary", "monthly", "child_record", "nursery_record"}
+    diary = view["templates"]["diary"]
+    assert diary[0]["key"] == "daily_aim" and "label" in diary[0] and "kind" in diary[0]
+    # tagged_list は item_field を持つ（月案の教育）。
+    edu = next(s for s in view["templates"]["monthly"] if s["kind"] == "tagged_list")
+    assert edu["item_field"] == "aim"
+
+
 # ──────────────────────────── IO / store_status（ローカル経路） ────────────────────────────
 
 

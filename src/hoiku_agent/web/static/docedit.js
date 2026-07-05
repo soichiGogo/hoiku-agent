@@ -206,8 +206,46 @@ function educationItem(formMeta, ageBand) {
   };
 }
 
+/* ---- テンプレ駆動の本文レンダラ ----
+   本文セクションの順序・見出しラベルは様式テンプレート（/api/doc-template）から取る（テキスト整形・帳票PDF と
+   共通の SSOT＝レイアウトの二重管理を解消・§18）。ヘッダ（基本情報）と各欄の widget・collect はコードが持つ
+   （form 固有の hint・任意欄の null 化・タグ多選択は widget の関心事）。テンプレ未取得は各ビルダ既定順にフォールバック。 */
+
+// テキスト欄1つのセクション。collect は key→値の部分オブジェクト（nullable=空文字は null へ寄せる）。
+function textSection(label, value, rows, ph, key, opts = {}) {
+  const c = ta(value, rows, ph);
+  const s = section(label, opts.hint);
+  s._b.appendChild(c);
+  return { node: s, collect: () => ({ [key]: opts.nullable ? c.value.trim() || null : c.value }) };
+}
+
+// テンプレの本文セクション列（無ければ defaultOrder）を歩き、各ビルダで {node, collect} を作って body へ。
+// ビルダは (label) を受け取り（テンプレ由来／null なら自前の既定ラベル）、collect のリストを返す。
+function buildBody(body, templateSections, builders, defaultOrder) {
+  const sections =
+    templateSections && templateSections.length
+      ? templateSections
+      : defaultOrder.map((key) => ({ key, label: null }));
+  const collects = [];
+  for (const sec of sections) {
+    const make = builders[sec.key];
+    if (!make) continue; // テンプレに未知 key があってもフォームは壊さない
+    const { node, collect } = make(sec.label);
+    body.appendChild(node);
+    collects.push(collect);
+  }
+  return collects;
+}
+
+// ヘッダ（基本情報）＋テンプレ駆動の本文をまとめ、最終 collect（ヘッダ＋各節をマージ）を返す共通処理。
+function assembleForm(body, headerNode, headerCollect, templateSections, builders, defaultOrder) {
+  body.appendChild(headerNode);
+  const collects = buildBody(body, templateSections, builders, defaultOrder);
+  return () => Object.assign({}, headerCollect(), ...collects.map((c) => c()));
+}
+
 /* ---- 日誌フォーム ---- */
-function buildDiary(body, entry, formMeta) {
+function buildDiary(body, entry, formMeta, template) {
   const ageBand = entry.age_band || "0-2";
 
   const basic = section("基本情報");
@@ -223,75 +261,82 @@ function buildDiary(body, entry, formMeta) {
     field("組", className),
   );
   basic._b.appendChild(brow);
-  body.appendChild(basic);
-
-  const aim = ta(entry.daily_aim, 2, "本日のねらい（養護・教育）");
-  const aimSec = section("本日のねらい");
-  aimSec._b.appendChild(aim);
-  body.appendChild(aimSec);
-
-  const att = listSection(
-    "出欠",
-    null,
-    entry.attendance,
-    attendanceItem,
-    () => ({ child_id: "", present: true, reason: null }),
-    "対象児を追加",
-  );
-  body.appendChild(att);
-
-  const practice = ta(entry.practice_record, 3, "主な活動・保育者の援助");
-  const pSec = section("主な活動・保育者の援助");
-  pSec._b.appendChild(practice);
-  body.appendChild(pSec);
-
-  const notes = listSection(
-    "個別の記録（子ども一人ひとり）",
-    ageBand === "3-5"
-      ? "姿・タグ（5領域）を記録します。生活記録は任意"
-      : "0–2 の本体。姿・タグ・生活記録（養護）を記録します",
-    entry.individual_notes,
-    noteItem(formMeta, ageBand),
-    () => ({}),
-    "子どもを追加",
-  );
-  body.appendChild(notes);
-
-  const health = ta(entry.health_notes, 2, "体温・視診・午睡など（特記なければ空）");
-  const hSec = section("健康・視診");
-  hSec._b.appendChild(health);
-  body.appendChild(hSec);
-
-  const parent = ta(entry.parent_contact, 2, "保護者への連絡・申し送り（任意）");
-  const fSec = section("家庭への連絡");
-  fSec._b.appendChild(parent);
-  body.appendChild(fSec);
-
-  const ev = entry.evaluation || {};
-  const cf = ta(ev.child_focus, 2, "(a) 子どもに焦点を当てた振り返り");
-  const sr = ta(ev.self_review, 2, "(b) 自分の保育（ねらい・環境構成・関わり）の適否");
-  const eSec = section("評価・反省", "2視点（子ども焦点／自己評価）");
-  eSec._b.append(field("(a) 子どもに焦点", cf), field("(b) 自分の保育の適否", sr));
-  body.appendChild(eSec);
-
-  return () => ({
+  const headerCollect = () => ({
     date: entry.date,
     age_band: ageBand,
     weather: weather.value,
     temperature: temperature.value,
     class_name: className.value,
-    daily_aim: aim.value,
-    attendance: att._collect(),
-    health_notes: health.value.trim() || null,
-    practice_record: practice.value,
-    individual_notes: notes._collect(),
-    evaluation: { child_focus: cf.value, self_review: sr.value },
-    parent_contact: parent.value.trim() || null,
   });
+
+  const builders = {
+    daily_aim: (label) =>
+      textSection(label || "本日のねらい", entry.daily_aim, 2, "本日のねらい（養護・教育）", "daily_aim"),
+    attendance: (label) => {
+      const att = listSection(
+        label || "出欠",
+        null,
+        entry.attendance,
+        attendanceItem,
+        () => ({ child_id: "", present: true, reason: null }),
+        "対象児を追加",
+      );
+      return { node: att, collect: () => ({ attendance: att._collect() }) };
+    },
+    practice_record: (label) =>
+      textSection(
+        label || "主な活動・保育者の援助",
+        entry.practice_record,
+        3,
+        "主な活動・保育者の援助",
+        "practice_record",
+      ),
+    individual_notes: (label) => {
+      const notes = listSection(
+        label || "個別の記録（子ども一人ひとり）",
+        ageBand === "3-5"
+          ? "姿・タグ（5領域）を記録します。生活記録は任意"
+          : "0–2 の本体。姿・タグ・生活記録（養護）を記録します",
+        entry.individual_notes,
+        noteItem(formMeta, ageBand),
+        () => ({}),
+        "子どもを追加",
+      );
+      return { node: notes, collect: () => ({ individual_notes: notes._collect() }) };
+    },
+    health_notes: (label) =>
+      textSection(label || "健康・視診", entry.health_notes, 2, "体温・視診・午睡など（特記なければ空）", "health_notes", {
+        nullable: true,
+      }),
+    parent_contact: (label) =>
+      textSection(label || "家庭への連絡", entry.parent_contact, 2, "保護者への連絡・申し送り（任意）", "parent_contact", {
+        nullable: true,
+      }),
+    evaluation: (label) => {
+      const ev = entry.evaluation || {};
+      const cf = ta(ev.child_focus, 2, "(a) 子どもに焦点を当てた振り返り");
+      const sr = ta(ev.self_review, 2, "(b) 自分の保育（ねらい・環境構成・関わり）の適否");
+      const s = section(label || "評価・反省", "2視点（子ども焦点／自己評価）");
+      s._b.append(field("(a) 子どもに焦点", cf), field("(b) 自分の保育の適否", sr));
+      return {
+        node: s,
+        collect: () => ({ evaluation: { child_focus: cf.value, self_review: sr.value } }),
+      };
+    },
+  };
+  return assembleForm(body, basic, headerCollect, template, builders, [
+    "daily_aim",
+    "attendance",
+    "practice_record",
+    "individual_notes",
+    "health_notes",
+    "parent_contact",
+    "evaluation",
+  ]);
 }
 
 /* ---- 月案フォーム（養護→教育の順） ---- */
-function buildMonthly(body, entry, formMeta) {
+function buildMonthly(body, entry, formMeta, template) {
   const ageBand = entry.age_band || "0-2";
 
   const basic = section("基本情報");
@@ -300,54 +345,54 @@ function buildMonthly(body, entry, formMeta) {
   const brow = el("div", "de-grid");
   brow.append(roField("対象月", entry.month), field("対象児", child), field("月齢", months));
   basic._b.appendChild(brow);
-  body.appendChild(basic);
-
-  const prev = ta(entry.prev_child_state, 3, "前月の子どもの姿（前月集積から）");
-  const goals = ta(entry.monthly_goals, 2, "今月のねらい・内容");
-  const nLife = ta(entry.nurturing_life, 2, "生命の保持（安全・健康・生理的欲求）");
-  const nEmo = ta(entry.nurturing_emotion, 2, "情緒の安定（応答的関わり・愛着）");
-  const env = ta(entry.environment_support, 2, "環境構成・援助（配慮）");
-  const family = ta(entry.events_family_food, 2, "家庭との連携／食育・健康・行事（任意）");
-  const evalr = ta(entry.evaluation_reflection, 2, "評価・反省（翌月へ）");
-
-  const simple = (label, control, hint) => {
-    const s = section(label, hint);
-    s._b.appendChild(control);
-    body.appendChild(s);
-  };
-  simple("前月の子どもの姿", prev);
-  simple("今月のねらい・内容", goals);
-  simple("養護：生命の保持", nLife, "0–2 は養護2本柱を分けます");
-  simple("養護：情緒の安定", nEmo);
-
-  const edu = listSection(
-    "教育（ねらい・内容）",
-    ageBand === "3-5" ? "5領域でタグ付け" : "3つの視点でタグ付け",
-    entry.education,
-    educationItem(formMeta, ageBand),
-    () => ({}),
-    "ねらいを追加",
-  );
-  body.appendChild(edu);
-
-  simple("環境構成・援助（配慮）", env);
-  simple("家庭との連携／食育・健康・行事", family);
-  simple("評価・反省", evalr);
-
-  return () => ({
+  const headerCollect = () => ({
     month: entry.month,
     age_band: ageBand,
     child_id: child.value.trim(),
     age_months: months.value.trim(),
-    prev_child_state: prev.value,
-    nurturing_life: nLife.value,
-    nurturing_emotion: nEmo.value,
-    education: edu._collect(),
-    monthly_goals: goals.value,
-    environment_support: env.value,
-    events_family_food: family.value.trim() || null,
-    evaluation_reflection: evalr.value,
   });
+
+  const builders = {
+    prev_child_state: (label) =>
+      textSection(label || "前月の子どもの姿", entry.prev_child_state, 3, "前月の子どもの姿（前月集積から）", "prev_child_state"),
+    monthly_goals: (label) =>
+      textSection(label || "今月のねらい・内容", entry.monthly_goals, 2, "今月のねらい・内容", "monthly_goals"),
+    nurturing_life: (label) =>
+      textSection(label || "養護：生命の保持", entry.nurturing_life, 2, "生命の保持（安全・健康・生理的欲求）", "nurturing_life", {
+        hint: "0–2 は養護2本柱を分けます",
+      }),
+    nurturing_emotion: (label) =>
+      textSection(label || "養護：情緒の安定", entry.nurturing_emotion, 2, "情緒の安定（応答的関わり・愛着）", "nurturing_emotion"),
+    education: (label) => {
+      const edu = listSection(
+        label || "教育（ねらい・内容）",
+        ageBand === "3-5" ? "5領域でタグ付け" : "3つの視点でタグ付け",
+        entry.education,
+        educationItem(formMeta, ageBand),
+        () => ({}),
+        "ねらいを追加",
+      );
+      return { node: edu, collect: () => ({ education: edu._collect() }) };
+    },
+    environment_support: (label) =>
+      textSection(label || "環境構成・援助（配慮）", entry.environment_support, 2, "環境構成・援助（配慮）", "environment_support"),
+    events_family_food: (label) =>
+      textSection(label || "家庭との連携／食育・健康・行事", entry.events_family_food, 2, "家庭との連携／食育・健康・行事（任意）", "events_family_food", {
+        nullable: true,
+      }),
+    evaluation_reflection: (label) =>
+      textSection(label || "評価・反省", entry.evaluation_reflection, 2, "評価・反省（翌月へ）", "evaluation_reflection"),
+  };
+  return assembleForm(body, basic, headerCollect, template, builders, [
+    "prev_child_state",
+    "monthly_goals",
+    "nurturing_life",
+    "nurturing_emotion",
+    "education",
+    "environment_support",
+    "events_family_food",
+    "evaluation_reflection",
+  ]);
 }
 
 /* ---- 発達の経過 1件（児童票） ---- */
@@ -362,8 +407,21 @@ function developmentItem(formMeta, ageBand) {
   };
 }
 
+// 発達の経過リスト節（児童票・要録で共用。key/追加ラベルだけ切替）。
+function developmentSection(label, addLabel, entry, formMeta, ageBand) {
+  const dev = listSection(
+    label,
+    ageBand === "3-5" ? "5領域でタグ付け" : "3つの視点でタグ付け",
+    entry.development_notes,
+    developmentItem(formMeta, ageBand),
+    () => ({}),
+    addLabel,
+  );
+  return { node: dev, collect: () => ({ development_notes: dev._collect() }) };
+}
+
 /* ---- 児童票フォーム（期ごとの保育経過記録） ---- */
-function buildChildRecord(body, entry, formMeta) {
+function buildChildRecord(body, entry, formMeta, template) {
   const ageBand = entry.age_band || "0-2";
 
   const basic = section("基本情報");
@@ -382,50 +440,40 @@ function buildChildRecord(body, entry, formMeta) {
     field("体重（kg）", weight),
   );
   basic._b.appendChild(brow);
-  body.appendChild(basic);
-
-  const dev = listSection(
-    "発達の経過（領域別の叙述）",
-    ageBand === "3-5" ? "5領域でタグ付け" : "3つの視点でタグ付け",
-    entry.development_notes,
-    developmentItem(formMeta, ageBand),
-    () => ({}),
-    "経過を追加",
-  );
-  body.appendChild(dev);
-
-  const care = ta(entry.care_notes, 2, "個別配慮・医療的ケアの経過など（任意）");
-  const family = ta(entry.family_liaison, 2, "保護者とのやりとり・家庭との共有（任意）");
-  const overall = ta(entry.overall_note, 3, "その期の育ちの総括（開示前提＝肯定的・断定しない表現で）");
-  const next = ta(entry.next_aims, 2, "次期に向けての課題・ねらい（任意）");
-
-  const simple = (label, control, hint) => {
-    const s = section(label, hint);
-    s._b.appendChild(control);
-    body.appendChild(s);
-  };
-  simple("配慮事項・特記", care);
-  simple("家庭との連携", family);
-  simple("総合所見", overall, "保護者に開示され得ます（肯定的・非断定で）");
-  simple("次期に向けて", next);
-
-  return () => ({
+  const headerCollect = () => ({
     period: entry.period,
     age_band: ageBand,
     child_id: child.value.trim(),
     age_months: months.value.trim(),
-    development_notes: dev._collect(),
-    care_notes: care.value,
-    family_liaison: family.value,
-    overall_note: overall.value,
-    next_aims: next.value,
     height_cm: height.value.trim(),
     weight_kg: weight.value.trim(),
   });
+
+  const builders = {
+    development_notes: (label) =>
+      developmentSection(label || "発達の経過（領域別の叙述）", "経過を追加", entry, formMeta, ageBand),
+    care_notes: (label) =>
+      textSection(label || "配慮事項・特記", entry.care_notes, 2, "個別配慮・医療的ケアの経過など（任意）", "care_notes"),
+    family_liaison: (label) =>
+      textSection(label || "家庭との連携", entry.family_liaison, 2, "保護者とのやりとり・家庭との共有（任意）", "family_liaison"),
+    overall_note: (label) =>
+      textSection(label || "総合所見", entry.overall_note, 3, "その期の育ちの総括（開示前提＝肯定的・断定しない表現で）", "overall_note", {
+        hint: "保護者に開示され得ます（肯定的・非断定で）",
+      }),
+    next_aims: (label) =>
+      textSection(label || "次期に向けて", entry.next_aims, 2, "次期に向けての課題・ねらい（任意）", "next_aims"),
+  };
+  return assembleForm(body, basic, headerCollect, template, builders, [
+    "development_notes",
+    "care_notes",
+    "family_liaison",
+    "overall_note",
+    "next_aims",
+  ]);
 }
 
 /* ---- 保育要録フォーム（保育所児童保育要録・年長・L4） ---- */
-function buildNurseryRecord(body, entry, formMeta) {
+function buildNurseryRecord(body, entry, formMeta, template) {
   const ageBand = entry.age_band || "3-5";
 
   const basic = section("基本情報");
@@ -444,51 +492,38 @@ function buildNurseryRecord(body, entry, formMeta) {
     field("保育期間", enroll),
   );
   basic._b.appendChild(brow);
-  body.appendChild(basic);
-
-  const focus = ta(entry.final_year_focus, 2, "年長クラス全体の年間目標・ねらい");
-  const indiv = ta(entry.individual_focus, 2, "1年を振り返り特に重視した点");
-  const simple = (label, control, hint) => {
-    const s = section(label, hint);
-    s._b.appendChild(control);
-    body.appendChild(s);
-  };
-  simple("最終年度の重点", focus, "クラス全体のねらい");
-  simple("個人の重点", indiv);
-
-  // 保育の展開と子どもの育ち（5領域/10の姿タグ）＝児童票の developmentItem を共用。
-  const dev = listSection(
-    "保育の展開と子どもの育ち",
-    "5領域・10の姿でタグ付け",
-    entry.development_notes,
-    developmentItem(formMeta, ageBand),
-    () => ({}),
-    "育ちの姿を追加",
-  );
-  body.appendChild(dev);
-
-  const special = ta(entry.special_notes, 2, "特に配慮すべき事項（就学支援等。無ければ空＝「なし」）");
-  const growth = ta(
-    entry.growth_until_final,
-    3,
-    "入所時〜前年度の育ちの経過（開示前提＝肯定的・断定しない表現で）",
-  );
-  simple("特に配慮すべき事項", special);
-  simple("最終年度に至るまでの育ち", growth, "小学校の先生に伝わるよう具体的に");
-
-  return () => ({
+  const headerCollect = () => ({
     fiscal_year: entry.fiscal_year,
     age_band: ageBand,
     child_id: child.value.trim(),
     age_months: months.value.trim(),
-    final_year_focus: focus.value,
-    individual_focus: indiv.value,
-    development_notes: dev._collect(),
-    special_notes: special.value,
-    growth_until_final: growth.value,
     school_name: school.value.trim(),
     enrollment_period: enroll.value.trim(),
   });
+
+  const builders = {
+    final_year_focus: (label) =>
+      textSection(label || "最終年度の重点", entry.final_year_focus, 2, "年長クラス全体の年間目標・ねらい", "final_year_focus", {
+        hint: "クラス全体のねらい",
+      }),
+    individual_focus: (label) =>
+      textSection(label || "個人の重点", entry.individual_focus, 2, "1年を振り返り特に重視した点", "individual_focus"),
+    development_notes: (label) =>
+      developmentSection(label || "保育の展開と子どもの育ち", "育ちの姿を追加", entry, formMeta, ageBand),
+    special_notes: (label) =>
+      textSection(label || "特に配慮すべき事項", entry.special_notes, 2, "特に配慮すべき事項（就学支援等。無ければ空＝「なし」）", "special_notes"),
+    growth_until_final: (label) =>
+      textSection(label || "最終年度に至るまでの育ち", entry.growth_until_final, 3, "入所時〜前年度の育ちの経過（開示前提＝肯定的・断定しない表現で）", "growth_until_final", {
+        hint: "小学校の先生に伝わるよう具体的に",
+      }),
+  };
+  return assembleForm(body, basic, headerCollect, template, builders, [
+    "final_year_focus",
+    "individual_focus",
+    "development_notes",
+    "special_notes",
+    "growth_until_final",
+  ]);
 }
 
 const META = {
@@ -499,7 +534,8 @@ const META = {
 };
 
 // 編集フォーム panel と collect()（編集後 entry dict）を返す。
-export function renderEditableDoc({ kind, entry, formMeta }) {
+// template＝様式テンプレートの当該 doc_type セクション列（本文の順序/ラベル・§18）。未指定は各ビルダ既定順。
+export function renderEditableDoc({ kind, entry, formMeta, template }) {
   const meta = META[kind] || META.diary;
   const panel = el("div", "docp docedit");
   panel.innerHTML =
@@ -510,6 +546,6 @@ export function renderEditableDoc({ kind, entry, formMeta }) {
   panel.appendChild(body);
   panel._body = body; // docflow が validation/承認バーを追記する
 
-  const collect = meta.build(body, entry || {}, formMeta || {});
+  const collect = meta.build(body, entry || {}, formMeta || {}, template || null);
   return { panel, collect };
 }

@@ -140,6 +140,31 @@ def save_book(
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+# ──────────────────────────── view（API/UI 用の決定的マッピング） ────────────────────────────
+
+
+def book_view(book: TemplateBook) -> dict:
+    """テンプレ全体を `/api/doc-template` 契約へ変換する（フロントの編集フォームが本文順序/ラベルに使う）。
+
+    doc_type → セクション列（key/label/kind/item_field）。フロントは kind/key で widget を選び、
+    順序と label をここから取る（レイアウトの SSOT を1つに＝§18）。
+    """
+    return {
+        "templates": {
+            t.doc_type: [
+                {
+                    "key": s.key,
+                    "label": s.label,
+                    "kind": s.kind.value,
+                    "item_field": s.item_field,
+                }
+                for s in t.sections
+            ]
+            for t in book.templates
+        }
+    }
+
+
 def store_status(path: Path | None = None) -> str:
     """ストアの永続性を正直に表す（notation_store と対称）。"""
     if _db_active(path):

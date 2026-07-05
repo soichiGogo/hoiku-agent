@@ -32,6 +32,16 @@ def test_config_shape() -> None:
     assert "child_record" in body["docx_kinds"]
 
 
+def test_doc_template_shape() -> None:
+    """/api/doc-template＝編集フォームが本文の順序/ラベルに使う（4種別・key/label/kind）。"""
+    body = _client().get("/api/doc-template").json()
+    assert set(body["templates"]) == {"diary", "monthly", "child_record", "nursery_record"}
+    diary = body["templates"]["diary"]
+    assert diary and diary[0]["key"] == "daily_aim"
+    for sec in diary:
+        assert {"key", "label", "kind"} <= set(sec)
+
+
 def test_static_ui_served() -> None:
     c = _client()
     # SPA 本体と各 ES モジュールが配信される。

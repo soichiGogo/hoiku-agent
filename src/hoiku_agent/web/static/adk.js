@@ -81,6 +81,19 @@ export async function getFormMeta() {
   _formMeta = await (await fetch("/api/form-meta")).json();
   return _formMeta;
 }
+
+let _docTemplate = null;
+// 様式テンプレート（本文セクションの順序・ラベル・種別）。編集フォームが本文の並び/見出しに使う。
+// 取得失敗は空 templates（フロントは既定順にフォールバック）。
+export async function getDocTemplate() {
+  if (_docTemplate) return _docTemplate;
+  try {
+    _docTemplate = await (await fetch("/api/doc-template")).json();
+  } catch {
+    _docTemplate = { templates: {} };
+  }
+  return _docTemplate;
+}
 // 保育士の編集後 entry を harness で再検査・再整形する（決定的ロジックは harness 側）。
 export async function finalizeEdit(kind, entry, docDate) {
   const r = await fetch("/api/finalize-edit", {

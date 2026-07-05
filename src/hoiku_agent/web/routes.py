@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..config import settings
-from ..harness import notation_store, policy_store, record_store
+from ..harness import notation_store, policy_store, record_store, template_store
 from ..harness.finalize import finalize_entry
 from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, ThreeViewpoint
 from .chohyo_pdf import render_pdf
@@ -300,6 +300,19 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "five_domains": [e.value for e in FiveDomains],
             "ten_no_sugata": [e.value for e in TenNoSugata],
         }
+
+    @app.get("/api/doc-template")
+    async def web_doc_template() -> dict:
+        """様式テンプレート（本文セクションの順序・ラベル・種別）。編集フォームが本文の並び/見出しに使う。
+
+        レイアウトのデータの SSOT は harness/template_store（テキスト整形・帳票PDF と共通）。JS は kind/key で
+        widget を選び、順序と label をここから取る＝レイアウトの二重管理を解消（§18・§5）。読取なので非ゲート。
+        取得失敗（未整備等）でもフロントは既定順にフォールバックできるよう、壊れても 200＋空で返す。
+        """
+        try:
+            return template_store.book_view(template_store.load_book())
+        except Exception:  # noqa: BLE001  壊れ/未整備はフロントのフォールバックに委ねる（空で 200）
+            return {"templates": {}}
 
     @app.post("/api/finalize-edit")
     async def web_finalize_edit(req: FinalizeEditRequest) -> dict:

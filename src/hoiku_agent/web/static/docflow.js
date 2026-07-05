@@ -311,13 +311,15 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
 
     // 標準様式の見た目の「編集フォーム」で前面に出す（保育士が自由に直せる＝要望の核）。
     let formMeta = {};
+    let docTemplate = { templates: {} };
     try {
-      formMeta = await adk.getFormMeta();
+      [formMeta, docTemplate] = await Promise.all([adk.getFormMeta(), adk.getDocTemplate()]);
     } catch {
-      /* タグ語彙の取得に失敗しても編集自体は可能（既存タグはそのまま保持） */
+      /* タグ語彙・様式テンプレの取得に失敗しても編集自体は可能（既定順・既存タグはそのまま保持） */
     }
     const docKind = st.final_doc_kind || kind;
-    const editor = renderEditableDoc({ kind: docKind, entry, formMeta });
+    const template = (docTemplate.templates || {})[docKind] || null;
+    const editor = renderEditableDoc({ kind: docKind, entry, formMeta, template });
 
     const v = el("div", "validation");
     setValidation(v, st.validation || []);
