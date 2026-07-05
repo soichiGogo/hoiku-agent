@@ -37,6 +37,11 @@
   子ども選択肢は入力式コンボボックス（`app.js` の `childCombo`＝前方一致の候補＋Tab/Enter/クリックで補完・
   30人規模でもスケール。チップ全列挙は廃止）。候補ソースは `/api/children`（児童マスタ）があればそこから
   （誕生日があれば年齢帯 0-2/3-5 を満年齢で自動判定＝`ageBandOf`）・無ければ従来の仮名ロスターへ降格。
+  **未登録名を選ぶと新規児登録フォームをコンボ直下に開く**（`onAddChild`）＝本名（姓/名）＋性別を入力し、
+  呼び名（名）＋敬称（**性別導出＝男くん/女ちゃん固定**・`composeDisplayName` は harness の
+  `compose_display_name` と一致）＝display_name を合成→`POST /api/children`。敬称の「くん/ちゃん問題」は
+  性別セレクタで一意化し入力ゆれ・重複児を構造で防ぐ。**本名（姓名）は氏名欄用で DB のみ・§14**（eval/seed は
+  仮名のまま）。アーカイブ未接続はセッション内だけ選択肢に足す（本名/性別は保存されず氏名欄は呼び名へ降格）。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
   **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
   （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/児童票）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
@@ -83,15 +88,18 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/doc-template`**（様式テンプレート＝本文セクションの順序/ラベル/種別＝`template_store.book_view`・編集フォームが使う・読取非ゲート・壊れは空で 200）・**`/api/finalize-edit`**（編集後 entry を
   harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
   `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート。児童票は同じ子の保存済み児童票を
-  アーカイブから引いて past_entries で渡す＝年間マトリクスの過去期埋め込み・未接続は降格）・**`/api/export-docx`**（確定 entry を
+  アーカイブから引いて past_entries で渡す＝年間マトリクスの過去期埋め込み・未接続は降格。**児童票/要録の氏名欄は
+  児童マスタの本名（姓＋名＝`record_store.get_child` の official_name）を `official_name` で渡して描く**＝就学先引継ぎの
+  公式様式は本名（AI 非生成・未登録は呼び名へ降格））・**`/api/export-docx`**（確定 entry を
   `docx_fill.fill_docx` で園の実 Word 様式に流し込んで返す＝Word 編集版・描画のみ・非ゲート・未対応 kind は 400。対応 kind は
   `/api/config` の `docx_kinds` で UI に伝えボタン出し分け）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
-  リテラル路 diary-entries より後に宣言し優先させる）／`/api/children`**（書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
-  **書込＝POST のみパスコードゲート**・読み取りは素通し）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
+  リテラル路 diary-entries より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
+  性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
+  **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
   辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案/保育要録＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み児童票で自動埋め＝`assign_period_columns`））。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案/保育要録＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み児童票で自動埋め＝`assign_period_columns`））。**児童票/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
   **線形様式（日誌/月案/要録）の本文セクション順序・ラベルは `template_store` から駆動**（テキスト整形と共通の SSOT・種別→flowable は chohyo_pdf が持つ）。児童票マトリクスは対象外。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
 - `docx_fill.py` … 確定 entry → **園の実 Word 様式（`web/templates/*.docx`）へ流し込んだ .docx**（`fill_docx(kind, entry)`＝
