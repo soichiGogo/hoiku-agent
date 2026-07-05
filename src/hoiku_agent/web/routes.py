@@ -49,7 +49,7 @@ _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
 _GATED_PREFIX = ("/api/improve", "/api/parse-upload")
 # 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
 # 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
-_GATED_WRITE_PREFIX = ("/api/records", "/api/notation")
+_GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children")
 
 
 class GateRequest(BaseModel):
@@ -116,6 +116,19 @@ class RecordApproveRequest(BaseModel):
 
     kind: str = "diary"
     entry: dict
+    actor: str = ""
+
+
+class ChildAddRequest(BaseModel):
+    """新規児の登録（「書類を作る」で未登録名を選んだとき）。本名（姓/名）＋性別を受け取り、
+    呼び名（名）＋敬称（性別導出）＝display_name を harness が合成して児童マスタへ upsert する。
+
+    本名（姓名）は氏名欄用で **DB のみ・repo/eval には持ち込まない**（§14）。given_name は必須
+    （呼び名＝表示名の素）、family_name は任意（氏名欄）。gender は male/female。"""
+
+    given_name: str  # 名（＝呼び名・必須）
+    family_name: str = ""  # 姓（氏名欄用・任意）
+    gender: str = ""  # male / female（敬称導出・空は敬称なし）
     actor: str = ""
 
 
@@ -351,12 +364,18 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         （握りつぶさず可視化）。LLM 非課金で非ゲート。
         """
         past_entries: list[dict] = []
-        if req.kind == "child_record":
+        official_name: str | None = None
+        # 保育要録/児童票の氏名欄は本名（姓＋名）で描く＝児童マスタから解決（AI は生成しない・§14）。
+        # 未接続/未登録は None＝従来どおり呼び名（child_id）へ降格。
+        if req.kind in ("child_record", "nursery_record"):
             child = str(req.entry.get("child_id") or "").strip()
             if child:
-                past_entries = record_store.list_child_record_entries(child)
+                master = record_store.get_child(child)
+                official_name = (master or {}).get("official_name") or None
+                if req.kind == "child_record":
+                    past_entries = record_store.list_child_record_entries(child)
         try:
-            pdf = render_pdf(req.kind, req.entry, past_entries)
+            pdf = render_pdf(req.kind, req.entry, past_entries, official_name=official_name)
         except ValueError as e:
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
         filename = _doc_filename(req.kind, req.entry, "pdf")
@@ -528,6 +547,36 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     def web_list_children() -> dict:
         """児童マスタ（アーカイブから auto-create された子）。未設定は空＝フロントは従来チップへ降格。"""
         return {"children": record_store.list_children(), "store": record_store.store_status()}
+
+    @app.post("/api/children")
+    def web_add_child(req: ChildAddRequest):
+        """新規児を児童マスタへ登録する（未登録名を選んだとき・書込ゲート＝辞書荒らしと同枠）。
+
+        呼び名（名）＋敬称（性別導出）＝display_name を harness が合成し upsert する（合成の実体は
+        record_store＝境界に1つ）。given_name 空は 400。降格（DB 未設定）は skipped を正直に返す
+        （フロントはセッション内のみ選択肢へ足す）。gender 不正（male/female 以外）は 400。
+        """
+        given = (req.given_name or "").strip()
+        if not given:
+            return JSONResponse(
+                {"status": "error", "detail": "名（呼び名）は必須です"}, status_code=400
+            )
+        gender = (req.gender or "").strip()
+        if gender and gender not in record_store.GENDERS:
+            return JSONResponse(
+                {"status": "error", "detail": f"性別が不正です: {req.gender!r}"}, status_code=400
+            )
+        display_name = record_store.compose_display_name(given, gender)
+        result = record_store.upsert_child(
+            display_name,
+            family_name=req.family_name,
+            given_name=given,
+            gender=gender or None,
+            now=datetime.now(),
+        )
+        result["display_name"] = display_name
+        result["store"] = record_store.store_status()
+        return result
 
     @app.post("/api/gate")
     async def web_gate(req: GateRequest):

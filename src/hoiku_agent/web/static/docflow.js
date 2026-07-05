@@ -119,6 +119,24 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     return b;
   }
 
+  // HITL の質問と回答を「聞いたタイミング」の経過へチャット風に差し込む（AI の確認＝左／保育士の回答＝右）。
+  // 回答後に呼ぶ：procBody の末尾＝ちょうど ask_caregiver が発火した位置なので、時系列どおりに残る
+  // （以降の再作成・レビューはこの後ろに積まれる）。前面の askCard は回答を受け取る口で、対の記録はここに残す。
+  function addQA(question, answer) {
+    const qa = el("div", "qa");
+    const q = el("div", "qa-msg ai");
+    q.innerHTML =
+      `<div class="qa-who ask">${iconHTML("ask")}AI からの確認</div>` +
+      `<div class="qa-text">${esc(question || "確認したいことがあります")}</div>`;
+    const a = el("div", "qa-msg me");
+    a.innerHTML =
+      `<div class="qa-who caregiver">${iconHTML("caregiver")}保育士（あなた）</div>` +
+      `<div class="qa-text">${esc(answer)}</div>`;
+    qa.append(q, a);
+    procBody.appendChild(qa);
+    cur = null; // 続きの actor turn は新規に開始する（QA は turn 束ねの外）
+  }
+
   // 「指針を取り込む」ステップ：harness は author/reviewer の prompt 冒頭へ文書作成指針を前置注入する。
   // その"取り込み"をフロントでも先に見せる（指針を取り込む → ツール呼び出し → 考えてる、の流れ）。
   // 指針の実体は /api/policy（共通＋当該書類の scope に絞る＝render_for_doc と同じ絞り）。取得失敗/未整備は
@@ -247,13 +265,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const actions = el("div", "ask-actions");
     const answerAndResume = async (answer) => {
       card.remove();
-      cur = null;
-      const turn = el("div", "turn");
-      turn.innerHTML =
-        `<div class="turn-lane caregiver"></div>` +
-        `<div class="turn-body"><div class="turn-who caregiver">${iconHTML("caregiver")}保育士（あなた）</div><div class="turn-text">${esc(answer)}</div></div>`;
-      area.appendChild(turn);
-      cur = null;
+      // 質問と回答の対を経過（procBody）の聞いたタイミングへ差し込む（前面の一番下でなく時系列位置に残す）。
+      addQA(pending.question, answer);
       phase("回答を受けて再開しています", "working");
       await drive(
         sessionId,

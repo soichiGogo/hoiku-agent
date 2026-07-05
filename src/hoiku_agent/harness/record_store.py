@@ -47,15 +47,50 @@ AUDIT_ACTIONS = ("finalize", "edit", "approve", "import")
 # 版の来歴 → 監査アクションの対応（save_document が積む版の action）。
 _AUTHOR_KIND_ACTION = {"ai": "finalize", "caregiver": "edit", "imported": "import"}
 
+# 性別→敬称（男→くん / 女→ちゃん 固定）。敬称は列で持たず gender を単一ソースにする（呼び名に付けて
+# 表示名＝child_id を合成する）。園の実運用でも保育士が性別を選ぶだけで敬称のゆれ・重複児を防ぐ。
+GENDERS = ("male", "female")
+_HONORIFIC = {"male": "くん", "female": "ちゃん"}
+
+
+def honorific_for(gender: str | None) -> str:
+    """性別から敬称を導く（male→くん / female→ちゃん / 不明→空）。表示名合成の単一ソース。"""
+    return _HONORIFIC.get((gender or "").strip(), "")
+
+
+def compose_display_name(given_name: str, gender: str | None) -> str:
+    """呼び名（名）＋敬称＝日常の表示名（child_id が指す同定キー）。例 ("はると","male")→"はるとくん"。"""
+    return f"{given_name.strip()}{honorific_for(gender)}"
+
+
+def official_full_name(family_name: str | None, given_name: str | None) -> str:
+    """姓＋名＝本名（保育要録/児童票の氏名欄）。全角空白区切り・空要素は詰める（両方空なら空文字）。"""
+    parts = [(family_name or "").strip(), (given_name or "").strip()]
+    return "　".join(p for p in parts if p)
+
 
 class Child(Base):
-    """児童マスタ。実名（official_name）は DB のみに置き repo/eval へ持ち込まない（§14）。"""
+    """児童マスタ。本名（姓名）は DB のみに置き repo/eval へ持ち込まない（§14）。
+
+    3 つの名前の要素を分けて持つ（一本の文字列に潰さない）:
+    - `display_name`（呼び名＋敬称・例 "はるとくん"）… 日誌本文の主語・**child_id が指す同定キー**
+      （UNIQUE）。書類 JSON 側は敬称込みのまま（LLM/eval は不変）。
+    - `given_name`（名・呼び名）／`gender`（male/female）… 表示名＝`given_name`＋敬称（性別導出）を
+      合成する素。既存行は migration 0006 が display_name の末尾敬称から back-fill する。
+    - `family_name`（姓）… 保育要録/児童票の**氏名欄**用の本名（姓＋名）。AI は生成せず保育士が入力。
+    `official_name` は旧・単一氏名列で使っていない（family_name/given_name へ移行済み・互換のため残置）。
+    """
 
     __tablename__ = "children"
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
-    display_name: Mapped[str] = mapped_column(sa.String(100), unique=True)
-    official_name: Mapped[str | None] = mapped_column(sa.String(100))
+    display_name: Mapped[str] = mapped_column(sa.String(100), unique=True)  # 呼び名＋敬称＝child_id
+    family_name: Mapped[str | None] = mapped_column(
+        sa.String(50)
+    )  # 姓（本名・氏名欄・§14 DB のみ）
+    given_name: Mapped[str | None] = mapped_column(sa.String(50))  # 名（＝呼び名・表示名合成の素）
+    gender: Mapped[str | None] = mapped_column(sa.String(10))  # male/female（敬称導出）
+    official_name: Mapped[str | None] = mapped_column(sa.String(100))  # 旧・単一氏名（deprecated）
     birthdate: Mapped[date | None] = mapped_column(sa.Date)
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
@@ -395,13 +430,22 @@ def touch_user(email: str, *, now: datetime) -> dict:
         return {"status": "error", "detail": str(e)}
 
 
-def upsert_child(display_name: str, *, birthdate: date | None = None, now: datetime) -> dict:
-    """児童マスタへ表示名で upsert する（無ければ作成・誕生日を補完）。冪等。
+def upsert_child(
+    display_name: str,
+    *,
+    family_name: str | None = None,
+    given_name: str | None = None,
+    gender: str | None = None,
+    birthdate: date | None = None,
+    now: datetime,
+) -> dict:
+    """児童マスタへ表示名で upsert する（無ければ作成・本名/性別/誕生日を補完）。冪等。
 
-    表示名→children.id 解決の唯一の境界（`_resolve_child`）を共有する。園名簿の事前登録
-    （seed）や表示名の後付け整備に使う想定＝**実名は扱わず display_name は仮名**（§14）。
-    誕生日は年齢帯（0-2/3-5）自動判定の材料。既存行の誕生日は上書きしない（保育士が
-    後から DB で整えた値を壊さない）＝未設定のときだけ補完する。降格・空名は skipped。
+    表示名→children.id 解決の唯一の境界（`_resolve_child`）を共有する。「書類を作る」の新規児登録
+    （呼び名＋敬称＝display_name はフロントが `compose_display_name` で組む）や園名簿の事前登録に使う。
+    本名（family_name/given_name）は氏名欄用で **DB のみ・repo/eval には持ち込まない**（§14）。
+    既存行の非空フィールドは上書きしない（保育士が後から整えた値を壊さない）＝未設定のときだけ補完
+    する（birthdate と同じ流儀）。降格・空名は skipped。
     """
     display_name = display_name.strip()
     eng = _engine()
@@ -412,17 +456,38 @@ def upsert_child(display_name: str, *, birthdate: date | None = None, now: datet
             existing = session.scalar(sa.select(Child).where(Child.display_name == display_name))
             created = existing is None
             child = _resolve_child(session, display_name, now)
+            touched = False
             if birthdate is not None and child.birthdate is None:
                 child.birthdate = birthdate
+                touched = True
+            if family_name and family_name.strip() and not (child.family_name or ""):
+                child.family_name = family_name.strip()
+                touched = True
+            if given_name and given_name.strip() and not (child.given_name or ""):
+                child.given_name = given_name.strip()
+                touched = True
+            if gender and gender.strip() and not (child.gender or ""):
+                child.gender = gender.strip()
+                touched = True
+            if touched:
                 child.updated_at = now
-            return {
-                "status": "created" if created else "exists",
-                "id": str(child.id),
-                "display_name": child.display_name,
-                "birthdate": child.birthdate.isoformat() if child.birthdate else None,
-            }
+            return {"status": "created" if created else "exists", **_child_view(child)}
     except SQLAlchemyError as e:
         return {"status": "error", "detail": str(e)}
+
+
+def get_child(display_name: str) -> dict | None:
+    """表示名→児童マスタの本名/性別/誕生日（氏名欄の本名解決に使う＝帳票PDF）。未接続/不在は None。"""
+    name = display_name.strip()
+    eng = _engine()
+    if eng is None or not name:
+        return None
+    try:
+        with Session(eng) as session:
+            child = session.scalar(sa.select(Child).where(Child.display_name == name))
+            return _child_view(child) if child else None
+    except SQLAlchemyError:
+        return None
 
 
 def approve_document(kind: str, entry: dict, *, actor: str, now: datetime) -> dict:
@@ -605,6 +670,19 @@ def list_child_record_entries(child_display_name: str) -> list[dict]:
         return []
 
 
+def _child_view(c: Child) -> dict:
+    """児童マスタ行→UI/描画用の dict（本名の合成＝氏名欄用の official_name を含む）。"""
+    return {
+        "id": str(c.id),
+        "display_name": c.display_name,
+        "family_name": c.family_name or "",
+        "given_name": c.given_name or "",
+        "gender": c.gender or "",
+        "official_name": official_full_name(c.family_name, c.given_name),  # 氏名欄用（姓＋名）
+        "birthdate": c.birthdate.isoformat() if c.birthdate else None,
+    }
+
+
 def list_children() -> list[dict]:
     """児童マスタ（active のみ・表示名順）。UI の子ども選択肢（降格は空＝従来チップへ）。"""
     eng = _engine()
@@ -615,14 +693,7 @@ def list_children() -> list[dict]:
             children = session.scalars(
                 sa.select(Child).where(Child.active.is_(True)).order_by(Child.display_name)
             )
-            return [
-                {
-                    "id": str(c.id),
-                    "display_name": c.display_name,
-                    "birthdate": c.birthdate.isoformat() if c.birthdate else None,
-                }
-                for c in children
-            ]
+            return [_child_view(c) for c in children]
     except SQLAlchemyError:
         return []
 

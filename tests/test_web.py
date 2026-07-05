@@ -434,6 +434,66 @@ def test_records_save_edit_approve_flow(records_db) -> None:
     assert ("approve", "園長") in actions and ("edit", "保育士A") in actions
 
 
+def test_add_child_registers_real_name_and_gender(records_db) -> None:
+    """新規児登録＝本名（姓/名）＋性別。呼び名＋敬称（性別導出）＝display_name をサーバが合成する。"""
+    c = _client()
+    r = c.post(
+        "/api/children",
+        json={"family_name": "佐藤", "given_name": "はると", "gender": "male"},
+    ).json()
+    assert r["status"] == "created"
+    assert r["display_name"] == "はるとくん"  # 名＋敬称（男→くん）
+    assert r["official_name"] == "佐藤　はると"  # 氏名欄用の本名（姓＋名）
+    # /api/children の選択肢に本名つきで出る
+    row = next(
+        x for x in c.get("/api/children").json()["children"] if x["display_name"] == "はるとくん"
+    )
+    assert row["given_name"] == "はると" and row["gender"] == "male"
+    # 女の子は「ちゃん」
+    r2 = c.post("/api/children", json={"given_name": "ゆい", "gender": "female"}).json()
+    assert r2["display_name"] == "ゆいちゃん"
+
+
+def test_add_child_validates_input(records_db) -> None:
+    c = _client()
+    assert c.post("/api/children", json={"given_name": "", "gender": "male"}).status_code == 400
+    assert (
+        c.post("/api/children", json={"given_name": "そら", "gender": "その他"}).status_code == 400
+    )
+
+
+def test_add_child_degrades_when_db_unset(monkeypatch) -> None:
+    """DB 未設定は skipped（永続化なし）だが display_name は合成して返す（フロントはセッション追加）。"""
+    monkeypatch.setattr(settings, "database_url", "")
+    record_store.reset_engine_cache()
+    r = _client().post("/api/children", json={"given_name": "はると", "gender": "male"}).json()
+    assert r["status"] == "skipped" and r["display_name"] == "はるとくん"
+
+
+def test_add_child_is_passcode_gated(records_db, monkeypatch) -> None:
+    """児童マスタへの書込（POST）も辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert (
+        c.post("/api/children", json={"given_name": "はると", "gender": "male"}).status_code == 401
+    )
+    assert c.get("/api/children").status_code == 200
+    ok = c.post(
+        "/api/children",
+        json={"given_name": "はると", "gender": "male"},
+        headers={"X-Demo-Passcode": "secret"},
+    )
+    assert ok.status_code == 200 and ok.json()["display_name"] == "はるとくん"
+
+
+def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:
+    """要録の氏名欄は登録済みの本名で解決できる（get_child 経路が通り PDF を返す）。"""
+    c = _client()
+    c.post("/api/children", json={"family_name": "佐藤", "given_name": "はると", "gender": "male"})
+    entry = {**_edit_nursery_record_entry(), "child_id": "はるとくん"}
+    _assert_is_pdf(c.post("/api/export-pdf", json={"kind": "nursery_record", "entry": entry}))
+
+
 def test_child_record_entries_endpoint_seeds_youroku(records_db) -> None:
     """保育要録 L4 の seed 取得口＝指定児の児童票（最新版・期間順）を返す（読取なので非ゲート）。"""
     c = _client()

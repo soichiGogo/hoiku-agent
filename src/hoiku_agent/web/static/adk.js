@@ -232,6 +232,22 @@ export async function getChildren() {
   }
 }
 
+// 新規児を児童マスタへ登録する（本名＝姓/名＋性別）。呼び名＋敬称＝display_name はサーバが合成する。
+// 成功は {status, display_name, store, ...}／失敗は {status:"error", detail}／未認証は 401（gate 要求）。
+export async function addChild(payload) {
+  try {
+    const r = await fetch("/api/children", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
+    return await r.json();
+  } catch {
+    return { status: "error", detail: "登録に失敗しました" };
+  }
+}
+
 // 確定 entry を園の帳票PDFに描いて受け取る（現場でそのまま綴じる最終形）。{ blob, filename } を返す。
 export async function exportPdf(kind, entry) {
   const r = await fetch("/api/export-pdf", {
