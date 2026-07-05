@@ -51,7 +51,7 @@
   /* spacing（4/8） */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
 
-  --maxw:960px;
+  --maxw:1600px;
 }
 
 /* ダーク（自動）— トークンのみ差し替え。純黒回避＋アクセント脱彩度＋明度up。 */
@@ -671,6 +671,11 @@ select.de-input{appearance:auto;min-height:38px}
   /* 書類を見る：狭い画面はツリーの下に内容を積む */
   .fs-body{grid-template-columns:1fr}
   .fs-tree{max-height:48vh}
+}
+
+/* 広い画面＝左右に余白を足して広々と（幅は --maxw で一貫。中身のグリッド/フローは自然に伸びる） */
+@media (min-width:1024px){
+  .header-row,.tabs,.container{padding-left:var(--sp-6);padding-right:var(--sp-6)}
 }
 
 @media (prefers-reduced-motion: reduce){
