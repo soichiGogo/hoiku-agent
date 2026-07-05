@@ -24,7 +24,6 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   let toolBadges = {};
   let proc = null,
     procBody = null,
-    procLabel = null,
     procSpin = null;
   let lastProposal = null; // 直近 propose の result（needs_input で既存↔新を並べるため保持）
   let proposedPanel = null; // 前面の提案カード（反映で label を「反映済み」へ）
@@ -107,25 +106,22 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   }
   function phase(text, state) {
     status.setPhase(text, state);
-    if (procLabel && procSpin) procLabel.textContent = text;
   }
   function buildProc() {
     proc = el("details", "proc");
     const sum = el("summary", "proc-sum");
     procSpin = el("span", "spinner");
-    procLabel = el("span", "proc-label", "改善エージェントが作業しています…");
-    sum.append(procSpin, procLabel, el("span", "proc-hint", "経過を見る"));
+    sum.append(el("span", "proc-hint", "経過を見る"), procSpin);
     proc.appendChild(sum);
     procBody = el("div", "proc-body");
     proc.appendChild(procBody);
     flow.appendChild(proc);
   }
-  function procStop(text) {
+  function procStop() {
     if (procSpin) {
       procSpin.remove();
       procSpin = null;
     }
-    if (procLabel) procLabel.textContent = text || "AI のやりとり（経過）";
   }
   function actorTurn(author) {
     const who = whoOf(author || "improver");
@@ -263,7 +259,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   }
 
   function onError(detail) {
-    procStop("降格しました");
+    procStop();
     banner(flow, "err", "エラー: " + detail);
     phase("降格しました", "waiting");
     button.disabled = false;
@@ -308,7 +304,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
         break;
       case "done":
         toStep(3, "done");
-        procStop("AI のやりとり（経過）");
+        procStop();
         stepper.allDone();
         phase("反映しました", "done");
         button.disabled = false;
@@ -330,7 +326,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     maxStep = -1;
     lastProposal = null;
     proposedPanel = null;
-    proc = procBody = procLabel = procSpin = null;
+    proc = procBody = procSpin = null;
     buildProc();
     stepperEl.classList.remove("hidden");
     stepper = makeStepper(stepperEl, STEPS);
@@ -349,7 +345,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
       if (e instanceof adk.PasscodeError) {
         window.__requireGate && window.__requireGate();
         banner(flow, "info", "パスコードを入力してから、もう一度お試しください。");
-        procStop("中断しました");
+        procStop();
         phase("パスコード待ち", "waiting");
       } else {
         onError(e.message || String(e));

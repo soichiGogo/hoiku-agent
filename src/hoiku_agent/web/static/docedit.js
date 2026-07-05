@@ -540,8 +540,7 @@ export function renderEditableDoc({ kind, entry, formMeta, template }) {
   const panel = el("div", "docp docedit");
   panel.innerHTML =
     `<div class="docp-head"><span class="docp-title">${iconHTML(meta.icon)}${esc(meta.title)}` +
-    `<span class="label-draft">${iconHTML("edit")}編集できます</span></span>` +
-    `<span class="docp-stamp">あなたが自由に直せます</span></div>`;
+    `<span class="label-draft">${iconHTML("edit")}編集できます</span></span></div>`;
   const body = el("div", "docp-body de-body");
   panel.appendChild(body);
   panel._body = body; // docflow が validation/承認バーを追記する
