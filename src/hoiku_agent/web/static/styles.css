@@ -431,6 +431,7 @@ select.de-input{appearance:auto;min-height:38px}
   border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);box-shadow:var(--sh-sm)}
 .pcard.dt-diary{border-left-color:var(--actor-author)}
 .pcard.dt-monthly{border-left-color:var(--actor-prep)}
+.pcard.dt-child_record{border-left-color:var(--actor-review)}
 .pcard.dt-common{border-left-color:var(--actor-caregiver)}
 .pcard-body{font-size:var(--fs-sm);color:var(--ink);line-height:1.8}
 .pcard-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:var(--sp-2)}

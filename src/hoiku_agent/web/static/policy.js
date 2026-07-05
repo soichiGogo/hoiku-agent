@@ -13,6 +13,7 @@ const SCOPE_DT = {
   共通: ["common", "共通"],
   保育日誌: ["diary", "保育日誌"],
   月案: ["monthly", "個別月案"],
+  児童票: ["child_record", "児童票"],
 };
 
 export function makePolicy({ grid, history, flow, button, stepper: stepperEl, status }) {

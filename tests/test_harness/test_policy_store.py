@@ -137,6 +137,22 @@ def test_render_empty_book():
     assert "- （未登録）" in text and "- （更新なし）" in text
 
 
+def test_child_record_scope_renders_and_views(when=T):
+    """児童票 scope が render・active_cards・view マップに相乗りしている（§19・二重実装しない）。"""
+    book = ps.add_card(
+        PolicyBook(),
+        _card("card-0001", PolicyScope.児童票, "開示前提で肯定的に書く"),
+    )
+    # 全再生に児童票の節と本文が出る
+    text = ps.render_to_text(book)
+    assert "### 児童票（期ごとの保育経過記録）" in text
+    assert "- 開示前提で肯定的に書く" in text
+    # scope 絞り込み・view マップ（doc_type/label）も対応
+    assert [c.id for c in ps.active_cards(book, PolicyScope.児童票)] == ["card-0001"]
+    assert ps.card_view(ps.find_card(book, "card-0001"))["doc_type"] == "child_record"
+    assert ps.card_view(ps.find_card(book, "card-0001"))["doc_label"] == "児童票"
+
+
 # ──────────────────────────── IO / store_status / view ────────────────────────────
 
 
