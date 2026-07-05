@@ -293,6 +293,20 @@ a{color:var(--primary-d)}
 .turn-who.improver{color:var(--accent-d)}
 .turn-text{font-size:var(--fs-sm);white-space:pre-wrap;word-break:break-word;color:var(--ink-soft)}
 
+/* HITL の質問と回答をチャット風に経過へ残す（AI の確認＝左／保育士の回答＝右）。
+   前面の askCard で回答を受け、回答後にこの対を procBody の「聞いたタイミング」へ差し込む（docflow.addQA）。 */
+.qa{display:flex;flex-direction:column;gap:6px}
+.qa-msg{max-width:88%;border:1px solid var(--line);border-radius:var(--r-md);padding:9px 12px;box-shadow:var(--sh-sm)}
+.qa-who{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.04em;margin-bottom:4px}
+.qa-who .ic{width:14px;height:14px}
+.qa-text{font-size:var(--fs-sm);white-space:pre-wrap;word-break:break-word;color:var(--ink-soft)}
+.qa-msg.ai{align-self:flex-start;background:var(--state-waiting-soft);
+  border-color:color-mix(in srgb,var(--state-waiting) 32%,var(--line));border-top-left-radius:4px}
+.qa-msg.ai .qa-who{color:var(--state-waiting-ink)}
+.qa-msg.me{align-self:flex-end;background:color-mix(in srgb,var(--actor-caregiver) 12%,var(--surface));
+  border-color:color-mix(in srgb,var(--actor-caregiver) 35%,var(--line));border-top-right-radius:4px}
+.qa-msg.me .qa-who{color:var(--actor-caregiver)}
+
 /* 過程ログ（畳み）：作成/レビュー/ツール/前月集計は既定で閉じる。前面は不足確認＋最終下書きだけ */
 .proc{border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);overflow:hidden}
 .proc-sum{display:flex;align-items:center;gap:9px;padding:9px 13px;cursor:pointer;list-style:none;user-select:none}
