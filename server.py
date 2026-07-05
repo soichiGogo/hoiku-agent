@@ -32,7 +32,12 @@ from __future__ import annotations
 from google.adk.cli.fast_api import get_fast_api_app
 
 from hoiku_agent.config import settings
+from hoiku_agent.logging_config import configure_logging, install_trace_middleware
 from hoiku_agent.web import register_web_ui
+
+# 構造化ログを最初に据える（Cloud Run が stdout の1行 JSON を Cloud Logging へ昇格＝logging_config）。
+# 以降 import される ADK/uvicorn のログもこの設定に揃う。
+configure_logging()
 
 app = get_fast_api_app(
     agents_dir="src",
@@ -44,3 +49,6 @@ app = get_fast_api_app(
 # 保育士向け配布 UI（B-full）を同居させる：保育士 UI＝/app/、自前 API＝/api/*、dev UI＝/dev-ui/。
 # 日誌/月案の生成は ADK ネイティブ REST をフロントが直接叩く（自前 Runner を組まない＝§9）。
 register_web_ui(app)
+
+# リクエストの X-Cloud-Trace-Context をログに相関させる（同一リクエストのログを Logs Explorer で束ねる）。
+install_trace_middleware(app)
