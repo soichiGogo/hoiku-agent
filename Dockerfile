@@ -23,10 +23,16 @@ RUN uv sync --frozen --no-dev
 
 # アプリ本体（入口＋実行時に読むファイル）。
 # - server.py … uvicorn の入口。
-# - knowledge/文書作成指針.json … read_policy / 改善エージェントが読む育つ指針＝構造化カードストア（§8/§9）。
+# - knowledge/*.json … DB 未接続（DATABASE_URL 未設定）時にローカル降格で読むシード。DB 接続時は
+#   Cloud SQL の *_books 行が正だが、未接続の公開デモでも機能が落ちないよう同梱する。
+#   - 文書作成指針.json … 育つ指針＝構造化カードストア（read_policy / improver・§8/§9）。
+#   - 表記ルール.json  … ひらがな表記DX＝表記正規化（finalize が確定時に適用・§5）。
+#   - 様式テンプレート.json … 本文レイアウトの宣言的データ（draft.py が必須依存＝未同梱だと整形が落ちる・§18）。
 #   保育所保育指針/（RAG ソース）は gitignore 済みで実行時不要（RAG は Vertex 経由）＝含めない。
 COPY server.py ./
 COPY knowledge/文書作成指針.json ./knowledge/文書作成指針.json
+COPY knowledge/表記ルール.json ./knowledge/表記ルール.json
+COPY knowledge/様式テンプレート.json ./knowledge/様式テンプレート.json
 
 # .venv の実行ファイルを優先。
 ENV PATH="/app/.venv/bin:$PATH"

@@ -20,10 +20,20 @@
   3–5＝5領域）。分岐の実体は `_required_tag_type` に1つ（日誌・月案・児童票・要録で共用。要録は年長＝5領域固定）。
   日誌の生活記録必須は **0–2 のみ**（3–5 は任意＝全年齢対応・§19）。
 - `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）/ `write_child_record_draft`（児童票・§19）/
-  `write_nursery_record_draft`（保育要録・§19・L4）：pydantic → **標準様式テキスト**へ整形（ネット調査で裏取りした
-  章立て・順序＝養護2本柱/生活記録/養護→教育、児童票＝発達の経過（領域別叙述）→配慮・特記→家庭連携→総合所見→
-  次期に向けて、要録＝最終年度の重点→個人の重点→保育の展開と子どもの育ち（5領域/10の姿）→特に配慮すべき事項→
-  最終年度に至るまでの育ち）。確定出力は pipeline 末尾で実行。
+  `write_nursery_record_draft`（保育要録・§19・L4）：pydantic → **標準様式テキスト**へ整形。**本文レイアウト
+  （章立て＝セクションの順序・見出しラベル・種別・出し分け）は `template_store` の様式テンプレート（データ）を
+  歩いて描く**（§18＝園差をコード改修でなくテンプレ編集で吸収）。ヘッダ合成と個別記録ブロック・生活記録・
+  出欠サマリ等の**構造描画はコード**に残す（テンプレは式言語を作らない）。順序＝日誌:養護2本柱/生活記録/養護→教育、
+  児童票:発達の経過→配慮特記→家庭連携→総合所見→次期、要録:最終年度の重点→個人の重点→保育の展開→特に配慮すべき事項→
+  最終年度に至るまでの育ち（この順序・ラベルはテンプレが持つ）。確定出力は pipeline 末尾で実行。
+- `template_store.py` … **様式テンプレート＝本文レイアウトの宣言的データ**（`schemas/template.py` の
+  DocTemplate/Section・閉じた種別語彙）のストア。`load_template(doc_type)` を**3レンダラ共通で読む**＝テキスト整形
+  （draft.py）・帳票PDF（web/chohyo_pdf の線形様式）・編集フォーム（web/docedit.js・`/api/doc-template`＝`book_view`）が
+  本文セクションの順序/ラベルをここから取る（レイアウトの三重管理を解消・§18）。レイアウトのデータのみ（validation は
+  持たない＝型の保証は schema_check・§5）。置き場は policy_store/notation_store と同型＝明示 path ＞ `DATABASE_URL`
+  （`template_books` 1行 JSONB・version 楽観ロック・行不在はローカルシード）＞ ローカル `knowledge/様式テンプレート.json`
+  （git はシード・migration 0005）。編集 UI は現状スコープ外（園差の実需で後続）。児童票の帳票PDF は年間マトリクス様式
+  （線形でない）ため対象外。
 - `notation_store.py` … **ひらがな表記DX＝表記ルール辞書＋決定的な正規化器**（「子供→子ども」等の置換・混入
   スペース除去）。CRUD（保育士が育てる編集辞書）＋正規化（`normalize_text`/`normalize_entry_dict`＝**叙述系
   フィールド限定**で仮名/タグ/日付は不変＝誤変換を型で防ぐ）＋IO（`notation_books` 1行 JSONB・version 楽観ロック・

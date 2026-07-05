@@ -34,7 +34,9 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from ..harness.template_store import load_template
 from ..schemas import FiveDomains, ThreeViewpoint
+from ..schemas.template import SectionKind
 
 # 日本語フォント（IPAex ゴシックを埋め込む）。モジュールロード時に1回だけ登録する。
 # 実行は source から（uvicorn server:app）＝モジュール相対で解決。Docker も COPY src で同梱される。
@@ -236,6 +238,67 @@ def _signoff_block() -> KeepTogether:
     return KeepTogether([Spacer(1, 4 * mm), _P("確認", _LABEL), Spacer(1, 1.5 * mm), tbl])
 
 
+# ── テンプレ駆動の線形本文レンダラ（帳票PDF・§18） ──
+# 本文のセクション順序・見出しラベルは `template_store` の様式テンプレート（テキスト整形と共通の SSOT）を
+# 歩いて描く。種別（SectionKind）→ ReportLab flowable の対応はここが持つ（テキストは draft.py が持つ＝
+# 描画は各媒体・順序/ラベルは1つ）。ヘッダ合成・確認印欄・（要録の）グループ見出しは各 story wrapper のコード。
+# 児童票は年間マトリクス様式（線形でない）ため本レンダラは通さない（_child_record_story が担う）。
+
+
+def _pdf_section_flowables(section, entry: dict, age: str) -> list:
+    """テンプレの1セクションを帳票PDF の flowable リストに描く（種別で描画を切替）。"""
+    kind = section.kind
+    label = section.label
+    key = section.key
+    if kind is SectionKind.text_block:
+        # 本文ブロックは空でも空セルで出す（プレースホルダはテキスト版のみ＝現行 PDF 挙動を保つ）。
+        return [_section(label, _P(entry.get(key)))]
+    if kind is SectionKind.text_inline:
+        return [_section(label, _P(entry.get(key) or section.blank))]
+    if kind is SectionKind.attendance:
+        return [_section(label, _P(_attendance_text(entry.get(key))))]
+    if kind is SectionKind.individual_notes:
+        out: list = [Spacer(1, 2 * mm), _P(label, _LABEL), Spacer(1, 1.5 * mm)]
+        notes = entry.get(key) or []
+        life_record_always = age == "0-2"  # 0–2＝養護の中核として常時／3–5＝記入時のみ（§19）
+        if notes:
+            out.extend(_child_block(n, life_record_always) for n in notes)
+        else:
+            out.append(_section("", _P(section.blank)))
+        return out
+    if kind is SectionKind.tagged_list:
+        # 各要素は「ねらい・内容/育ちの姿」＋「対応する姿・領域」の2行（item_field で見出しを切替）。
+        item_label = "ねらい・内容" if section.item_field == "aim" else "育ちの姿"
+        out = [Spacer(1, 2 * mm), _P(label, _LABEL), Spacer(1, 1.5 * mm)]
+        items = entry.get(key) or []
+        if items:
+            for note in items:
+                note = note or {}
+                tags = note.get("tags") or []
+                tag_text = "、".join(str(t) for t in tags) if tags else "（タグ未付与）"
+                out.append(_section(item_label, _P(note.get(section.item_field), _SMALL)))
+                out.append(_section("対応する姿・領域", _P(tag_text, _SMALL)))
+                out.append(Spacer(1, 2 * mm))
+        else:
+            out.append(_section("", _P(section.blank)))
+        return out
+    if kind is SectionKind.evaluation2:
+        ev = entry.get(key) or {}
+        return [
+            _section(f"{label} (a) 子どもに焦点", _P(ev.get("child_focus"))),
+            _section(f"{label} (b) 自分の保育の適否", _P(ev.get("self_review"))),
+        ]
+    return []
+
+
+def _linear_body(doc_type: str, entry: dict, age: str) -> list:
+    """テンプレの本文セクションを順に flowable へ展開する（帳票PDF・線形様式の共通本体）。"""
+    story: list = []
+    for section in load_template(doc_type).sections:
+        story.extend(_pdf_section_flowables(section, entry, age))
+    return story
+
+
 def _diary_story(entry: dict) -> list:
     age = entry.get("age_band") or "0-2"
     # ヘッダのメタ（記録日・天候は常時／気温・組は記入時のみ添える）。_P が全体を1回だけ XML エスケープするため、
@@ -255,29 +318,9 @@ def _diary_story(entry: dict) -> list:
         _P(f"保育日誌（{_AGE_LABEL.get(age, age)}・個別）", _TITLE),
         _P("　　".join(meta_bits), _META),
         Spacer(1, 3 * mm),
-        _section("本日のねらい", _P(entry.get("daily_aim"))),
-        _section("出欠", _P(_attendance_text(entry.get("attendance")))),
-        _section("主な活動・保育者の援助", _P(entry.get("practice_record"))),
-        Spacer(1, 2 * mm),
-        _P("個別の記録（子ども一人ひとりの姿・生活）", _LABEL),
-        Spacer(1, 1.5 * mm),
+        *_linear_body("diary", entry, age),
+        _signoff_block(),
     ]
-    notes = entry.get("individual_notes") or []
-    life_record_always = age == "0-2"  # 0–2＝養護の中核として常時／3–5＝記入時のみ（§19）
-    if notes:
-        story.extend(_child_block(n, life_record_always) for n in notes)
-    else:
-        story.append(_section("", _P("（個別記録なし）")))
-    story.extend(
-        [
-            _section("健康・視診", _P(entry.get("health_notes") or "特記なし")),
-            _section("家庭への連絡", _P(entry.get("parent_contact") or "（なし）")),
-        ]
-    )
-    ev = entry.get("evaluation") or {}
-    story.append(_section("評価・反省 (a) 子どもに焦点", _P(ev.get("child_focus"))))
-    story.append(_section("評価・反省 (b) 自分の保育の適否", _P(ev.get("self_review"))))
-    story.append(_signoff_block())
     return story
 
 
@@ -292,35 +335,9 @@ def _monthly_story(entry: dict) -> list:
         # _P が1回だけエスケープするため生値を渡す（f-string 内 _t は二重エスケープになる）。
         _P(f"対象月: {entry.get('month') or ''}　　対象児: {subject}", _META),
         Spacer(1, 3 * mm),
-        _section("前月の子どもの姿", _P(entry.get("prev_child_state"))),
-        _section("今月のねらい・内容", _P(entry.get("monthly_goals"))),
-        _section("養護：生命の保持", _P(entry.get("nurturing_life"))),
-        _section("養護：情緒の安定", _P(entry.get("nurturing_emotion"))),
-        Spacer(1, 2 * mm),
-        _P("教育（ねらい・内容）", _LABEL),
-        Spacer(1, 1.5 * mm),
+        *_linear_body("monthly", entry, age),
+        _signoff_block(),
     ]
-    edu = entry.get("education") or []
-    if edu:
-        for note in edu:
-            note = note or {}
-            tags = note.get("tags") or []
-            tag_text = "、".join(str(t) for t in tags) if tags else "（タグ未付与）"
-            story.append(_section("ねらい・内容", _P(note.get("aim"), _SMALL)))
-            story.append(_section("対応する姿・領域", _P(tag_text, _SMALL)))
-            story.append(Spacer(1, 2 * mm))
-    else:
-        story.append(_section("", _P("（教育のねらい未記入）")))
-    story.extend(
-        [
-            _section("環境構成・援助（配慮）", _P(entry.get("environment_support"))),
-            _section(
-                "家庭との連携／食育・健康・行事", _P(entry.get("events_family_food") or "（なし）")
-            ),
-            _section("評価・反省", _P(entry.get("evaluation_reflection"))),
-        ]
-    )
-    story.append(_signoff_block())
     return story
 
 
@@ -544,39 +561,17 @@ def _nursery_record_story(entry: dict) -> list:
     period = str(entry.get("enrollment_period") or "").strip()
     if period:
         meta_bits.append(f"保育期間: {period}")
+    # 本文（最終年度の重点→個人の重点→保育の展開→特に配慮→最終年度に至るまで）はテンプレ駆動。
+    # 「保育の過程と子どもの育ちに関する事項」は本文群のグループ見出し＝コード側の chrome として前置する。
     story: list = [
         _P("保育所児童保育要録（保育に関する記録）", _TITLE),
         _P("　　".join(meta_bits), _META),
         Spacer(1, 3 * mm),
         _P("保育の過程と子どもの育ちに関する事項", _LABEL),
         Spacer(1, 1.5 * mm),
-        _section("最終年度の重点", _P(entry.get("final_year_focus"))),
-        _section("個人の重点", _P(entry.get("individual_focus"))),
-        Spacer(1, 2 * mm),
-        _P("保育の展開と子どもの育ち（5領域・10の姿の視点）", _LABEL),
-        Spacer(1, 1.5 * mm),
+        *_linear_body("nursery_record", entry, age),
+        _signoff_block(),
     ]
-    dev = entry.get("development_notes") or []
-    if dev:
-        for note in dev:
-            note = note or {}
-            tags = note.get("tags") or []
-            tag_text = "、".join(str(t) for t in tags) if tags else "（タグ未付与）"
-            story.append(_section("育ちの姿", _P(note.get("description"), _SMALL)))
-            story.append(_section("対応する姿・領域", _P(tag_text, _SMALL)))
-            story.append(Spacer(1, 2 * mm))
-    else:
-        story.append(_section("", _P("（保育の展開と子どもの育ち 未記入）")))
-    story.extend(
-        [
-            _section("特に配慮すべき事項", _P(entry.get("special_notes") or "なし")),
-            Spacer(1, 2 * mm),
-            _P("最終年度に至るまでの育ちに関する事項", _LABEL),
-            Spacer(1, 1.5 * mm),
-            _section("入所時〜前年度の育ち", _P(entry.get("growth_until_final"))),
-        ]
-    )
-    story.append(_signoff_block())
     return story
 
 

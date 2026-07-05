@@ -51,3 +51,21 @@ def notation_db(tmp_path, monkeypatch):
     db.Base.metadata.create_all(db.engine())
     yield url
     db.reset_engine_cache()
+
+
+@pytest.fixture()
+def template_db(tmp_path, monkeypatch):
+    """様式テンプレートブックを sqlite の一時 DB へ向ける（creds 不要・決定的。notation_db と対称）。
+
+    ローカルシード（`_TEMPLATE_PATH`）も一時ファイルへ差し替える＝「DB 行不在→ローカルシード」の
+    フォールバックが repo の実シードに依存しないようにする（既定は空 book）。
+    """
+    from hoiku_agent.harness import db, template_store as ts
+
+    url = f"sqlite:///{tmp_path}/template.db"
+    monkeypatch.setattr(settings, "database_url", url)
+    monkeypatch.setattr(ts, "_TEMPLATE_PATH", tmp_path / "seed.json")
+    db.reset_engine_cache()
+    db.Base.metadata.create_all(db.engine())
+    yield url
+    db.reset_engine_cache()

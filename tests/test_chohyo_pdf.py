@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+from hoiku_agent.harness.template_store import load_template
+from hoiku_agent.web import chohyo_pdf
 from hoiku_agent.web.chohyo_pdf import render_pdf
 
 _DIARY = {
@@ -183,6 +185,65 @@ def test_render_sparse_entry_does_not_raise():
     assert b2[:4] == b"%PDF"
     b3 = render_pdf("child_record", {"age_band": "0-2", "development_notes": []})
     assert b3[:4] == b"%PDF"
+
+
+# ── テンプレ駆動（本文セクションの順序・ラベルがテンプレ由来か・§18） ──
+
+
+def _story_texts(story) -> list[str]:
+    """story（flowable のリスト）から Paragraph の素テキストを順に集める（Table/KeepTogether も辿る）。"""
+    from reportlab.platypus import KeepTogether, Paragraph, Table
+
+    out: list[str] = []
+
+    def walk(fl):
+        if isinstance(fl, Paragraph):
+            out.append(fl.getPlainText())
+        elif isinstance(fl, Table):
+            for row in fl._cellvalues:
+                for cell in row:
+                    for c in cell if isinstance(cell, list) else [cell]:
+                        if c is not None and not isinstance(c, str):
+                            walk(c)
+        elif isinstance(fl, KeepTogether):
+            for c in fl._content:
+                walk(c)
+
+    for fl in story:
+        walk(fl)
+    return out
+
+
+@pytest.mark.parametrize(
+    ("doc_type", "builder", "entry"),
+    [
+        ("diary", chohyo_pdf._diary_story, _DIARY),
+        ("monthly", chohyo_pdf._monthly_story, _MONTHLY),
+        ("nursery_record", chohyo_pdf._nursery_record_story, _NURSERY_RECORD),
+    ],
+)
+def test_pdf_linear_story_follows_template_order(doc_type, builder, entry):
+    """線形帳票の本文セクション見出しがテンプレの順序どおりに現れる（順序・ラベルはテンプレが SSOT）。"""
+    texts = _story_texts(builder(entry))
+    labels = [s.label for s in load_template(doc_type).sections]
+    positions = []
+    for label in labels:
+        idx = next((i for i, t in enumerate(texts) if label in t), None)
+        assert idx is not None, f"{doc_type}: セクション見出し {label!r} が PDF に無い"
+        positions.append(idx)
+    assert positions == sorted(positions), f"{doc_type}: セクション順がテンプレと不一致"
+
+
+def test_pdf_label_is_template_driven(monkeypatch):
+    """テンプレのラベルを変えると帳票の見出しも変わる（PDF がテンプレ駆動である証拠）。"""
+    book = load_template("monthly").model_copy(deep=True)
+    book.sections[0].label = "＊改名テスト見出し＊"
+    monkeypatch.setattr(
+        chohyo_pdf, "load_template", lambda dt: book if dt == "monthly" else load_template(dt)
+    )
+    assert any(
+        "＊改名テスト見出し＊" in t for t in _story_texts(chohyo_pdf._monthly_story(_MONTHLY))
+    )
 
 
 def test_invalid_kind_raises():
