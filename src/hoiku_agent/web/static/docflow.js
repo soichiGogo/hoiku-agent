@@ -28,7 +28,7 @@ const PREP_META = {
   },
 };
 
-export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status }) {
+export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status, onBusy }) {
   const prepMeta = PREP_META[kind] || null;
   const iPrep = steps.findIndex((s) => s.includes("集計"));
   const iColl = steps.indexOf("情報を集める");
@@ -127,6 +127,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       phase("下書きを準備しています", "working");
     }
     button.disabled = true;
+    onBusy && onBusy(true); // 生成中は種別セグメントを固定（統合タブでの切替ロック）
     try {
       const session = await adk.createSession(seedState);
       await drive(session.id, adk.textMessage(messageText), null);
@@ -141,6 +142,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       status.clearPhase();
     } finally {
       button.disabled = false;
+      onBusy && onBusy(false);
     }
   }
 

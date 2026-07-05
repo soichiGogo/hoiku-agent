@@ -12,6 +12,34 @@ const RECORD_CHILDREN = [...CHILDREN, "さくらちゃん"];
 const AGE_BAND_OF = { さくらちゃん: "3-5" }; // 既定は 0-2
 const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
+const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
+
+// 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record（児童票フローの
+// kind は "child_record"＝makeDocFlow 側で指定）。将来「要録」等が増えてもこの配列に足すだけ（§19）。
+const DOC_TYPES = [
+  {
+    key: "diary",
+    label: "保育日誌",
+    icon: "diary",
+    runLabel: "下書きを作成する",
+    desc: "その日の観察メモから、標準様式の保育日誌の下書きを作成します。",
+  },
+  {
+    key: "monthly",
+    label: "個別月案",
+    icon: "calendar",
+    runLabel: "月案の下書きを作成する",
+    desc: "前月の日誌の積み重ねを AI が集計し、翌月の個別の月案（ねらい・配慮）へ再構成します（L2 還流）。",
+  },
+  {
+    key: "record",
+    label: "児童票",
+    icon: "chart",
+    runLabel: "児童票の下書きを作成する",
+    desc: "期間中の日誌の積み重ねを AI が集計し、その期の「発達の経過」「総合所見」へ再構成します（L3 還流）。保護者に開示され得る書類なので、肯定的で断定しない表現に整えます。",
+  },
+];
+const DOC_TYPE_OF = Object.fromEntries(DOC_TYPES.map((d) => [d.key, d]));
 
 // 表示名→誕生日（DB 接続時のみ・/api/children の birthdate を main() で流し込む）。年齢帯の自動判定に使う。
 const BIRTHDATE_OF = {};
@@ -248,21 +276,40 @@ function setupTabs() {
 }
 
 // 選択式チップ群を作り、選択中の値を返すゲッターを提供。
-function chipGroup(container, values, onPick, iconName) {
+// iconName は文字列（全チップ共通）か、値→アイコン名の関数。labelOf は値→表示ラベル（既定は値そのもの）。
+// 返り値 getter() は選択中の値。getter.set(v) はクリック相当（onPick も発火）、getter.select(v) は表示だけ差し替え（onPick 不発火）。
+function chipGroup(container, values, onPick, iconName, labelOf) {
   let selected = values[0];
+  const chips = new Map();
   container.innerHTML = "";
+  const activate = (v) => {
+    container.querySelectorAll(".chip").forEach((c) => c.classList.remove("is-active"));
+    const c = chips.get(v);
+    if (c) c.classList.add("is-active");
+    selected = v;
+  };
   values.forEach((v, i) => {
-    const chip = el("button", "chip" + (i === 0 ? " is-active" : ""), (iconName ? iconHTML(iconName) : "") + esc(v));
+    const ic = typeof iconName === "function" ? iconName(v) : iconName;
+    const label = labelOf ? labelOf(v) : v;
+    const chip = el("button", "chip" + (i === 0 ? " is-active" : ""), (ic ? iconHTML(ic) : "") + esc(label));
     chip.type = "button";
     chip.onclick = () => {
-      container.querySelectorAll(".chip").forEach((c) => c.classList.remove("is-active"));
-      chip.classList.add("is-active");
-      selected = v;
+      activate(v);
       onPick && onPick(v);
     };
+    chips.set(v, chip);
     container.appendChild(chip);
   });
-  return () => selected;
+  const getter = () => selected;
+  getter.set = (v) => {
+    if (!chips.has(v) || v === selected) return;
+    activate(v);
+    onPick && onPick(v);
+  };
+  getter.select = (v) => {
+    if (chips.has(v)) activate(v);
+  };
+  return getter;
 }
 
 // 前方一致の共通部分を <b> で強調した候補ラベル HTML を返す（残りは通常字）。
@@ -472,46 +519,40 @@ async function main() {
     }
   }
 
-  // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名チップに降格。
+  // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名ロスターに降格。
   // マスタの子が増えるとそのまま選択肢に出る（auto-create＝書類に登場した子・§14 実名はDBのみ）。
-  let childNames = CHILDREN;
   let recordChildNames = RECORD_CHILDREN;
   if (cfg.records_connected) {
     const dbChildren = await adk.getChildren();
     const names = dbChildren.map((c) => c.display_name);
     if (names.length) {
-      childNames = names;
       recordChildNames = names;
       // 誕生日を控えておき、年齢帯（0-2/3-5）を満年齢で自動判定できるようにする（ageBandOf）。
       for (const c of dbChildren) if (c.birthdate) BIRTHDATE_OF[c.display_name] = c.birthdate;
     }
   }
 
-  // ── 日誌 ──
-  const diaryChild = childCombo($("diary-children"), childNames, { labelId: "diary-child-label" });
+  // ══ 書類を作る（日誌/月案/児童票を種別セグメントで統合） ══════════════════
+  // フロー本体（HITL・ステッパー・編集フォーム・承認・PDF・アーカイブ）は makeDocFlow 1実装の共用で、
+  // 種別で違うのは入力欄と seed の組み立てだけ（バックエンドの DocTypeRouter＝doc_type 分岐と 1:1）。
+
+  // 対象児コンボは1つに統合（種別を切り替えても選び直し不要）。候補は DB 接続時は児童マスタ、
+  // 未接続は仮名ロスター（3–5 児さくらちゃんを含む＝全年齢デモ）。日誌/月案でも 3–5 児を選べる。
+  const docChild = childCombo($("doc-children"), recordChildNames, {
+    onPick: (name) => onChildChange(name),
+    labelId: "doc-child-label",
+  });
+
+  // 日誌の入力欄（年齢帯チップ＋サンプル）。
   const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
   sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
-  const diaryFlow = makeDocFlow({
-    area: $("diary-flow"),
-    button: $("diary-run"),
-    stepper: $("diary-stepper"),
-    steps: ["観察メモ", "情報を集める", "下書き", "レビュー", "確定"],
-    showDigest: false,
-    kind: "diary",
-    status,
-  });
-  $("diary-run").onclick = () => {
-    const memo = $("diary-memo").value.trim();
-    if (!memo) {
-      $("diary-memo").focus();
-      return;
-    }
-    const child = diaryChild();
-    status.setSubject(child);
-    // 年齢帯（0-2/3-5）を明示して渡す＝作成AIが枠組み（3視点/5領域）を確認質問せずに済む（全年齢対応）。
-    const text = `対象児: ${child}\n年齢帯: ${AGE_BAND_VALUE[diaryAge()]}（${diaryAge()}）\n本日の観察メモ:\n${memo}`;
-    diaryFlow.run(null, text);
-  };
+
+  // 対象児が変わったら：月案/児童票の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
+  function onChildChange(name) {
+    $("monthly-seed-count").textContent = samplePrevEntries(name).length + " 件";
+    $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
+    diaryAge.select(AGE_BAND_LABEL[ageBandOf(name)] || AGE_BANDS[0]);
+  }
 
   // 月の初日/末日（"YYYY-MM"）。seed の範囲クエリ用（アーカイブ＝/api/records/diary-entries）。
   const monthFirst = (ym) => `${ym}-01`;
@@ -533,24 +574,53 @@ async function main() {
     return { entries: fallback, source: "サンプル" };
   }
 
-  // ── 月案 ──
-  const monthlyChild = childCombo($("monthly-children"), childNames, {
-    onPick: () => updateSeedCount(),
-    labelId: "monthly-child-label",
+  // 3種の作成フロー。run ボタン（$("doc-run")）は共有し、onBusy で生成中は種別セグメントを固定する。
+  const diaryFlow = makeDocFlow({
+    area: $("diary-flow"),
+    button: $("doc-run"),
+    stepper: $("diary-stepper"),
+    steps: ["観察メモ", "情報を集める", "下書き", "レビュー", "確定"],
+    showDigest: false,
+    kind: "diary",
+    status,
+    onBusy: setSegBusy,
   });
-  const updateSeedCount = () => ($("monthly-seed-count").textContent = samplePrevEntries(monthlyChild()).length + " 件");
-  updateSeedCount();
   const monthlyFlow = makeDocFlow({
     area: $("monthly-flow"),
-    button: $("monthly-run"),
+    button: $("doc-run"),
     stepper: $("monthly-stepper"),
     steps: ["前月の集計", "情報を集める", "下書き", "レビュー", "確定"],
     showDigest: true,
     kind: "monthly",
     status,
+    onBusy: setSegBusy,
   });
-  $("monthly-run").onclick = async () => {
-    const child = monthlyChild();
+  const recordFlow = makeDocFlow({
+    area: $("record-flow"),
+    button: $("doc-run"),
+    stepper: $("record-stepper"),
+    steps: ["期間の集計", "情報を集める", "下書き", "レビュー", "確定"],
+    showDigest: true,
+    kind: "child_record",
+    status,
+    onBusy: setSegBusy,
+  });
+
+  // 種別ごとの実行（seed 組み立て＋ flow.run）。ロジックは統合前の3ハンドラと同一。
+  function runDiary() {
+    const memo = $("diary-memo").value.trim();
+    if (!memo) {
+      $("diary-memo").focus();
+      return;
+    }
+    const child = docChild();
+    status.setSubject(child);
+    // 年齢帯（0-2/3-5）を明示して渡す＝作成AIが枠組み（3視点/5領域）を確認質問せずに済む（全年齢対応）。
+    const text = `対象児: ${child}\n年齢帯: ${AGE_BAND_VALUE[diaryAge()]}（${diaryAge()}）\n本日の観察メモ:\n${memo}`;
+    diaryFlow.run(null, text);
+  }
+  async function runMonthly() {
+    const child = docChild();
     const month = $("monthly-month").value || "2026-07";
     status.setSubject(child);
     // L2 seed＝前月の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
@@ -559,27 +629,9 @@ async function main() {
     $("monthly-seed-count").textContent = `${entries.length} 件（${source}）`;
     const seed = { doc_type: "月案", prev_month_entries: entries };
     monthlyFlow.run(seed, `${month} の ${child} の個別月案を作成してください。`);
-  };
-
-  // ── 児童票（期ごとの保育経過記録・L3 還流） ──
-  const recordChild = childCombo($("record-children"), recordChildNames, {
-    onPick: () => updateRecordSeed(),
-    labelId: "record-child-label",
-  });
-  const updateRecordSeed = () =>
-    ($("record-seed-count").textContent = samplePeriodEntries(recordChild()).length + " 件");
-  updateRecordSeed();
-  const recordFlow = makeDocFlow({
-    area: $("record-flow"),
-    button: $("record-run"),
-    stepper: $("record-stepper"),
-    steps: ["期間の集計", "情報を集める", "下書き", "レビュー", "確定"],
-    showDigest: true,
-    kind: "child_record",
-    status,
-  });
-  $("record-run").onclick = async () => {
-    const child = recordChild();
+  }
+  async function runRecord() {
+    const child = docChild();
     const start = $("record-start").value || "2026-04";
     const end = $("record-end").value || "2026-06";
     const period = `${start}〜${end}`;
@@ -593,7 +645,40 @@ async function main() {
       seed,
       `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の児童票（保育経過記録）を作成してください。period には「${period}」をそのまま書いてください。`,
     );
-  };
+  }
+  const RUN = { diary: runDiary, monthly: runMonthly, record: runRecord };
+
+  // 種別セグメント：切替で入力欄・結果エリア・説明文・ボタンラベルを追従（結果エリアは種別ごとに保持）。
+  const docKind = chipGroup(
+    $("doc-kind"),
+    DOC_TYPES.map((d) => d.key),
+    (key) => switchDocType(key),
+    (key) => DOC_TYPE_OF[key].icon,
+    (key) => DOC_TYPE_OF[key].label,
+  );
+  function switchDocType(key) {
+    for (const d of DOC_TYPES) {
+      const on = d.key === key;
+      $("doc-fields-" + d.key).hidden = !on;
+      $("doc-area-" + d.key).hidden = !on;
+    }
+    const t = DOC_TYPE_OF[key];
+    $("doc-desc").textContent = t.desc;
+    $("doc-run-label").textContent = t.runLabel;
+    status.clearPhase();
+  }
+  // 生成中は種別セグメントを固定（切替ロック）。対象児コンボ・入力欄はロックしない。
+  function setSegBusy(busy) {
+    $("doc-kind")
+      .querySelectorAll(".chip")
+      .forEach((c) => {
+        c.disabled = busy;
+        c.classList.toggle("is-locked", busy);
+      });
+  }
+  $("doc-run").onclick = () => RUN[docKind()]();
+  switchDocType("diary"); // 初期表示（既定＝保育日誌）
+  onChildChange(docChild()); // 初期の seed 件数・年齢帯を対象児に合わせる
 
   // ── 指針を育てる ──
   sampleChips($("policy-samples"), POLICY_SAMPLES, (s) => ($("policy-memo").value = s));

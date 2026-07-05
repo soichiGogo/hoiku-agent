@@ -211,6 +211,14 @@ a{color:var(--primary-d)}
 .chip.is-active{background:var(--primary-soft);border-color:var(--primary);color:var(--primary-d);font-weight:700}
 .chip .ic{width:15px;height:15px;color:var(--muted)}
 .chip.is-active .ic{color:var(--primary)}
+.chip:disabled,.chip.is-locked{cursor:default;opacity:.55}
+.chip:disabled:hover,.chip.is-locked:hover{border-color:var(--line-strong)}
+
+/* 種別セグメント（書類を作る＝日誌/月案/児童票の切替）＝均等割の少し大きめチップ */
+.seg{gap:var(--sp-2);margin-bottom:var(--sp-2)}
+.seg .chip{flex:1 1 0;justify-content:center;min-height:44px;padding:10px 14px;font-weight:600}
+/* 種別ごとの説明1行（hero の代替＝統合タブ内で選択中の書類を説明） */
+.doc-desc{margin:0 0 var(--sp-2);font-size:var(--fs-sm);color:var(--muted);line-height:1.6;max-width:62ch}
 
 /* 対象児コンボボックス（前方一致＋Tab補完・30人規模でもスケールする入力式） */
 .combo{position:relative;max-width:340px}
