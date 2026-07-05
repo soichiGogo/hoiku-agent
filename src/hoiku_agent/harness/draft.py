@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from ..schemas import (
     ChildRecord,
+    ClassMonthlyPlan,
     DiaryEntry,
     IndividualNote,
     MonthlyPlan,
@@ -224,6 +225,88 @@ def write_child_record_draft(record: ChildRecord, template_ref: str | None = Non
         f"　対象期間: {record.period}　対象児: {subject}",
         *_render_body(load_template("child_record"), record),
     ]
+    return _with_template_ref(lines, template_ref)
+
+
+def _format_class_plan_grid(plan: ClassMonthlyPlan) -> list[str]:
+    """区分×領域グリッド（正準7行）を「区分・領域｜ねらい／環境・構成／子どもの姿／援助・配慮」で描く。"""
+    lines: list[str] = ["【指導計画（区分×領域）】"]
+    last_category = ""
+    for row in plan.grid:
+        if row.category != last_category:
+            lines.append(f"  ▼ {row.category}")
+            last_category = row.category
+        lines.append(f"    ◆ {row.domain}")
+        lines.append(f"      ・ねらい: {row.aim or '（未記入）'}")
+        if row.environment.strip():
+            lines.append(f"      ・環境・構成: {row.environment}")
+        if row.child_state.strip():
+            lines.append(f"      ・子どもの姿: {row.child_state}")
+        if row.support.strip():
+            lines.append(f"      ・援助・配慮: {row.support}")
+    return lines
+
+
+def _format_individual_goals(plan: ClassMonthlyPlan) -> list[str]:
+    """0–2 の個人目標小表（月齢・一人ひとりに応じて）を児ごとに描く。3–5 は様式に無いので出さない。"""
+    if not plan.individual_goals:
+        return []
+    lines = ["【個人目標（月齢・一人ひとりに応じて）】"]
+    for goal in plan.individual_goals:
+        head = f"  ◆ {goal.child_id}"
+        if goal.age_months.strip():
+            head += f"（{goal.age_months}）"
+        lines.append(head)
+        lines.append(f"    ・子どもの姿: {goal.child_state or '（未記入）'}")
+        lines.append(f"    ・ねらい・配慮: {goal.aim_support or '（未記入）'}")
+        if goal.evaluation.strip():
+            lines.append(f"    ・評価・反省: {goal.evaluation}")
+    return lines
+
+
+def write_class_monthly_draft(plan: ClassMonthlyPlan, template_ref: str | None = None) -> str:
+    """クラス月案（園の実様式＝月間指導計画）ドラフトを様式テキストへ整形して返す（§18）。
+
+    園フォーム（monthly_*.docx）と同じ欄順で描く：今月の保育目標→先月の子どもの姿→今月の行事→
+    保護者支援→区分×領域グリッド（養護2本柱＋教育5領域）→食育／健康・安全／家庭との連携／職員間の
+    連携→（0–2 のみ）個人目標→評価系欄。非線形の構造様式なので template_store（線形セクション列）は
+    通さず、GRID_ROWS を歩いて描く（レイアウトのデータは schemas/class_monthly に1つ・§18）。
+    """
+    from ..schemas import AgeBand
+
+    age_label = "0〜2歳児" if plan.age_band is AgeBand.零から二歳 else "3歳以上児"
+    header = f"■ 月間指導計画（月案）　{age_label}　対象月: {plan.month}"
+    if plan.class_name.strip():
+        header += f"　クラス: {plan.class_name}"
+    lines = [header, ""]
+    lines.append(f"【今月の保育目標】 {plan.monthly_goal or '（未記入）'}")
+    lines.append(f"【先月の子どもの姿】 {plan.prev_month_state or '（未記入）'}")
+    if plan.events.strip():
+        lines.append(f"【今月の行事】 {plan.events}")
+    if plan.parent_support.strip():
+        lines.append(f"【保護者支援】 {plan.parent_support}")
+    lines.append("")
+    lines.extend(_format_class_plan_grid(plan))
+    lines.append("")
+    lines.append(f"【食育】 {plan.syokuiku or '（なし）'}")
+    lines.append(f"【健康・安全】 {plan.health_safety or '（なし）'}")
+    lines.append(f"【家庭との連携】 {plan.family_liaison or '（なし）'}")
+    lines.append(f"【職員間の連携】 {plan.staff_liaison or '（なし）'}")
+    individual = _format_individual_goals(plan)
+    if individual:
+        lines.append("")
+        lines.extend(individual)
+    # 評価系欄（月末に保育士が記入する運用欄）は記入があるときだけ添える（AI 非生成）。
+    evals = [
+        ("保育者の評価", plan.teacher_evaluation),
+        ("子どもの評価", plan.children_evaluation),
+        ("気になる子どもへの対応", plan.notable_children),
+    ]
+    if any(v.strip() for _label, v in evals):
+        lines.append("")
+        for label, value in evals:
+            if value.strip():
+                lines.append(f"【{label}】 {value}")
     return _with_template_ref(lines, template_ref)
 
 

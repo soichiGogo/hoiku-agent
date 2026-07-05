@@ -16,10 +16,11 @@ import * as adk from "./adk.js";
 import { renderEditableDoc } from "./docedit.js";
 import { actorName, banner, el, esc, iconHTML } from "./ui.js";
 
-const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", child_record: "保育経過記録", nursery_record: "保育要録" };
-const KIND_ICON = { diary: "diary", monthly: "calendar", child_record: "chart", nursery_record: "chart" };
-// 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→月案→保育経過記録→要録）。
-const TYPE_ORDER = ["diary", "monthly", "child_record", "nursery_record"];
+const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", class_monthly: "クラス月案", child_record: "保育経過記録", nursery_record: "保育要録" };
+const KIND_ICON = { diary: "diary", monthly: "calendar", class_monthly: "calendar", child_record: "chart", nursery_record: "chart" };
+// 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→月案→保育経過記録→要録）。クラス月案は月案の隣。
+// クラス月案の取込（アップロード）は v1 では未対応＝UPLOAD_META に入れない（フォルダは閲覧のみ・取込行は出ない）。
+const TYPE_ORDER = ["diary", "monthly", "class_monthly", "child_record", "nursery_record"];
 const NO_CHILD = ""; // child なしの書類は「クラス全体」フォルダへ。
 
 // アップロード取込の種別別メタ：対象キーの入力（ラベル・input type・placeholder）と、child/年齢帯の要否。

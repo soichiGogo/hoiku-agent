@@ -8,6 +8,18 @@ import { el, esc, iconHTML } from "./ui.js";
 
 const AGE_LABEL = { "0-2": "0〜2歳児", "3-5": "3〜5歳児" };
 
+// クラス月案の区分×領域グリッド（園の実様式＝養護2本柱＋教育5領域）。schemas/class_monthly.py の
+// GRID_ROWS と同順（domain が行の同定キー・category は finalize で harness が正準化するので UI は表示用）。
+const CLASS_GRID_ROWS = [
+  ["養護", "生命の保持"],
+  ["養護", "情緒の安定"],
+  ["教育", "健康"],
+  ["教育", "人間関係"],
+  ["教育", "環境"],
+  ["教育", "言葉"],
+  ["教育", "表現"],
+];
+
 /* ---- 部品 ---- */
 function ta(value, rows = 2, placeholder = "") {
   const t = el("textarea", "de-input");
@@ -526,9 +538,192 @@ function buildNurseryRecord(body, entry, formMeta, template) {
   ]);
 }
 
+/* ---- クラス月案フォーム（園の実様式＝月間指導計画・区分×領域グリッド） ---- */
+
+// 区分×領域グリッド（園フォームの表そのもの）。各セルは textarea＝保育士が欄ごとに編集できる（様式ルック）。
+// 区分（養護/教育）は連続する同一区分を rowspan でまとめ、実様式の見た目にそろえる。collect は7行分。
+function classGridTable(rows) {
+  const byDomain = {};
+  for (const r of rows || []) if (r && r.domain) byDomain[String(r.domain).trim()] = r;
+  const table = el("table", "cm-grid");
+  const thead = el("thead");
+  const htr = el("tr");
+  for (const h of ["区分", "領域", "ねらい", "環境・構成", "子どもの姿", "援助・配慮"]) {
+    htr.appendChild(el("th", null, h));
+  }
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  const tbody = el("tbody");
+  const refs = [];
+  for (let i = 0; i < CLASS_GRID_ROWS.length; i++) {
+    const [cat, domain] = CLASS_GRID_ROWS[i];
+    const src = byDomain[domain] || {};
+    const tr = el("tr");
+    // 区分セルは、連続する同一区分の先頭行でだけ rowspan で出す（養護=2行 / 教育=5行）。
+    if (i === 0 || CLASS_GRID_ROWS[i - 1][0] !== cat) {
+      let span = 1;
+      while (i + span < CLASS_GRID_ROWS.length && CLASS_GRID_ROWS[i + span][0] === cat) span++;
+      const cth = el("th", "cm-cat", cat);
+      cth.rowSpan = span;
+      cth.scope = "row";
+      tr.appendChild(cth);
+    }
+    const dth = el("th", "cm-dom", domain);
+    dth.scope = "row";
+    tr.appendChild(dth);
+    const aim = ta(src.aim, 2, "ねらい");
+    const env = ta(src.environment, 2, "環境・構成");
+    const cs = ta(src.child_state, 2, "子どもの姿");
+    const sup = ta(src.support, 2, "援助・配慮");
+    for (const t of [aim, env, cs, sup]) {
+      const td = el("td");
+      td.appendChild(t);
+      tr.appendChild(td);
+    }
+    refs.push({ category: cat, domain, aim, env, cs, sup });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  table._collect = () =>
+    refs.map((r) => ({
+      category: r.category,
+      domain: r.domain,
+      aim: r.aim.value,
+      environment: r.env.value,
+      child_state: r.cs.value,
+      support: r.sup.value,
+    }));
+  return table;
+}
+
+// 個人目標 1件（0–2 のみ）。氏名（月齢）・子どもの姿・ねらい・配慮＋評価・反省（月末記入）。
+function classGoalItem(g) {
+  g = g || {};
+  const cid = inp(g.child_id, "はるとくん");
+  const months = inp(g.age_months, "1歳3か月（任意）");
+  const cs = ta(g.child_state, 2, "子どもの姿");
+  const aimSupport = ta(g.aim_support, 2, "ねらい・配慮");
+  const evalTa = ta(g.evaluation, 1, "評価・反省（月末に記入）");
+  const node = el("div", "de-note");
+  const head = el("div", "de-grid");
+  head.append(field("対象児", cid), field("月齢", months));
+  node.append(
+    head,
+    field("子どもの姿", cs),
+    field("ねらい・配慮", aimSupport),
+    field("評価・反省", evalTa, "月末に記入します"),
+  );
+  return {
+    node,
+    collect: () => ({
+      child_id: cid.value.trim(),
+      age_months: months.value.trim(),
+      child_state: cs.value,
+      aim_support: aimSupport.value,
+      evaluation: evalTa.value,
+    }),
+  };
+}
+
+function buildClassMonthly(body, entry) {
+  const ageBand = entry.age_band || "0-2";
+
+  // ── 基本情報（対象月・クラス＝read-only／クラス名＝編集可） ──
+  const basic = section("基本情報");
+  const className = inp(entry.class_name, "クラス名（例：ひよこ組）");
+  const brow = el("div", "de-grid");
+  brow.append(
+    roField("対象月", entry.month),
+    roField("クラス", AGE_LABEL[ageBand] || ageBand),
+    field("クラス名", className),
+  );
+  basic._b.appendChild(brow);
+  body.appendChild(basic);
+
+  // ── 上部の単欄（今月の保育目標・先月の子どもの姿・行事・保護者支援） ──
+  const top = section("今月の保育目標・先月の子どもの姿");
+  const monthlyGoal = ta(entry.monthly_goal, 2, "今月の保育目標（クラス全体のねらい）");
+  const prevState = ta(entry.prev_month_state, 3, "先月の子どもの姿（前月集積から）");
+  const events = ta(entry.events, 1, "今月の行事（任意）");
+  const parentSupport = ta(entry.parent_support, 1, "保護者支援（任意）");
+  top._b.append(
+    field("今月の保育目標", monthlyGoal),
+    field("先月の子どもの姿", prevState),
+  );
+  const evRow = el("div", "de-grid");
+  evRow.append(field("今月の行事", events), field("保護者支援", parentSupport));
+  top._b.appendChild(evRow);
+  body.appendChild(top);
+
+  // ── 区分×領域グリッド（園の実様式そのもの＝様式ルックの核） ──
+  const gridSec = section("指導計画（区分×領域）", "養護2本柱＋教育5領域＝園の様式");
+  const grid = classGridTable(entry.grid);
+  gridSec._b.appendChild(grid);
+  body.appendChild(gridSec);
+
+  // ── 連携（食育／健康・安全／家庭との連携／職員間の連携） ──
+  const linkSec = section("連携");
+  const syokuiku = ta(entry.syokuiku, 1, "食育（任意）");
+  const healthSafety = ta(entry.health_safety, 1, "健康・安全（任意）");
+  const familyLiaison = ta(entry.family_liaison, 1, "家庭との連携（任意）");
+  const staffLiaison = ta(entry.staff_liaison, 1, "職員間の連携（任意）");
+  const l1 = el("div", "de-grid");
+  l1.append(field("食育", syokuiku), field("健康・安全", healthSafety));
+  const l2 = el("div", "de-grid");
+  l2.append(field("家庭との連携", familyLiaison), field("職員間の連携", staffLiaison));
+  linkSec._b.append(l1, l2);
+  body.appendChild(linkSec);
+
+  // ── 個人目標小表（0–2 のみ・登場児ぶん。追加/削除可） ──
+  let goals = null;
+  if (ageBand === "0-2") {
+    goals = listSection(
+      "個人目標（月齢・一人ひとりに応じて）",
+      "0–2 は前月日誌の登場児ごとに書きます",
+      entry.individual_goals,
+      classGoalItem,
+      () => ({}),
+      "子どもを追加",
+    );
+    body.appendChild(goals);
+  }
+
+  // ── 評価（月末に記入する運用欄＝AI 非生成。編集はできる） ──
+  const evalSec = section("評価", "月末に記入します（AI は書きません）");
+  const teacherEval = ta(entry.teacher_evaluation, 2, "保育者の評価（月末に記入）");
+  const childrenEval = ta(entry.children_evaluation, 2, "子どもの評価（月末に記入）");
+  const notableChildren = ta(entry.notable_children, 2, "気になる子どもへの対応（月末に記入）");
+  evalSec._b.append(
+    field("保育者の評価", teacherEval),
+    field("子どもの評価", childrenEval),
+    field("気になる子どもへの対応", notableChildren),
+  );
+  body.appendChild(evalSec);
+
+  return () => ({
+    month: entry.month,
+    age_band: ageBand,
+    class_name: className.value,
+    monthly_goal: monthlyGoal.value,
+    prev_month_state: prevState.value,
+    events: events.value,
+    parent_support: parentSupport.value,
+    grid: grid._collect(),
+    syokuiku: syokuiku.value,
+    health_safety: healthSafety.value,
+    family_liaison: familyLiaison.value,
+    staff_liaison: staffLiaison.value,
+    individual_goals: goals ? goals._collect() : [],
+    teacher_evaluation: teacherEval.value,
+    children_evaluation: childrenEval.value,
+    notable_children: notableChildren.value,
+  });
+}
+
 const META = {
   diary: { title: "保育日誌", icon: "diary", build: buildDiary },
   monthly: { title: "個別月案", icon: "calendar", build: buildMonthly },
+  class_monthly: { title: "クラス月案", icon: "calendar", build: buildClassMonthly },
   child_record: { title: "保育経過記録", icon: "chart", build: buildChildRecord },
   nursery_record: { title: "保育要録", icon: "chart", build: buildNurseryRecord },
 };

@@ -1,5 +1,11 @@
 """スキーマ集約。書類の要件・出力型・ドメイン定数を1箇所に集める（規約: schemas/ 集約）。"""
 
+from .class_monthly import (
+    GRID_ROWS,
+    ClassMonthlyPlan,
+    ClassPlanRow,
+    IndividualGoal,
+)
 from .document import (
     ChildAttendance,
     ChildRecord,
@@ -45,6 +51,11 @@ __all__ = [
     "DevelopmentNote",
     "ChildRecord",
     "NurseryRecord",
+    # class_monthly（クラス月案＝園の実様式・§18）
+    "ClassMonthlyPlan",
+    "ClassPlanRow",
+    "IndividualGoal",
+    "GRID_ROWS",
     # enums
     "AgeBand",
     "Lineage",

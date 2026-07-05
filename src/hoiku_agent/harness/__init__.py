@@ -13,6 +13,7 @@ from .aggregate import (
 )
 from .draft import (
     write_child_record_draft,
+    write_class_monthly_draft,
     write_draft,
     write_monthly_draft,
     write_nursery_record_draft,
@@ -20,10 +21,12 @@ from .draft import (
 from .finalize import (
     FinalizedDocument,
     finalize_child_record_document,
+    finalize_class_monthly_document,
     finalize_document,
     finalize_monthly_document,
     finalize_nursery_record_document,
     parse_draft_to_child_record,
+    parse_draft_to_class_plan,
     parse_draft_to_entry,
     parse_draft_to_nursery_record,
     parse_draft_to_plan,
@@ -46,6 +49,7 @@ from .policy_store import (
 )
 from .schema_check import (
     validate_child_record_fields,
+    validate_class_monthly_fields,
     validate_fields,
     validate_monthly_fields,
     validate_nursery_record_fields,
@@ -53,9 +57,11 @@ from .schema_check import (
 
 # pipeline は agents → tools を芋づる式に読み込むため最後に import する
 # （tools 側の薄いラッパは上記の実体を submodule 直参照しており、循環は回避済み）。
-# router は両パイプライン（日誌＝pipeline / 月案＝monthly）を束ねるため pipeline/monthly の後に置く。
+# router は全パイプライン（日誌＝pipeline / 月案＝monthly / クラス月案＝class_monthly / 保育経過記録 / 要録）を
+# 束ねるため各パイプラインの後に置く。
 from .pipeline import CAREGIVER_APPROVAL_KEY, build_document_pipeline, mark_caregiver_approved
 from .monthly import build_monthly_pipeline
+from .class_monthly import build_class_monthly_pipeline
 from .child_record import build_child_record_pipeline
 from .youroku import build_nursery_record_pipeline
 from .router import build_root_agent
@@ -63,6 +69,7 @@ from .router import build_root_agent
 __all__ = [
     "build_document_pipeline",
     "build_monthly_pipeline",
+    "build_class_monthly_pipeline",
     "build_child_record_pipeline",
     "build_nursery_record_pipeline",
     "build_root_agent",
@@ -70,18 +77,22 @@ __all__ = [
     "CAREGIVER_APPROVAL_KEY",
     "validate_fields",
     "validate_monthly_fields",
+    "validate_class_monthly_fields",
     "validate_child_record_fields",
     "validate_nursery_record_fields",
     "write_draft",
     "write_monthly_draft",
+    "write_class_monthly_draft",
     "write_child_record_draft",
     "write_nursery_record_draft",
     "finalize_document",
     "finalize_monthly_document",
+    "finalize_class_monthly_document",
     "finalize_child_record_document",
     "finalize_nursery_record_document",
     "parse_draft_to_entry",
     "parse_draft_to_plan",
+    "parse_draft_to_class_plan",
     "parse_draft_to_child_record",
     "parse_draft_to_nursery_record",
     "FinalizedDocument",

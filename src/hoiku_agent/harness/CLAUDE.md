@@ -15,17 +15,21 @@
 
 ## ファイルの責務
 
-- `schema_check.py` … `validate_fields`（日誌）/ `validate_monthly_fields`（月案）/ `validate_child_record_fields`
-  （保育経過記録・§19）/ `validate_nursery_record_fields`（保育要録・§19・L4）：必須欄＋年齢分岐（0–2＝3つの視点 /
+- `schema_check.py` … `validate_fields`（日誌）/ `validate_monthly_fields`（個別月案）/
+  `validate_class_monthly_fields`（クラス月案・§18）/ `validate_child_record_fields`（保育経過記録・§19）/
+  `validate_nursery_record_fields`（保育要録・§19・L4）：必須欄＋年齢分岐（0–2＝3つの視点 /
   3–5＝5領域）。分岐の実体は `_required_tag_type` に1つ（日誌・月案・保育経過記録・要録で共用。要録は年長＝5領域固定）。
-  日誌の生活記録必須は **0–2 のみ**（3–5 は任意＝全年齢対応・§19）。
-- `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）/ `write_child_record_draft`（保育経過記録・§19）/
-  `write_nursery_record_draft`（保育要録・§19・L4）：pydantic → **標準様式テキスト**へ整形。**本文レイアウト
-  （章立て＝セクションの順序・見出しラベル・種別・出し分け）は `template_store` の様式テンプレート（データ）を
-  歩いて描く**（§18＝園差をコード改修でなくテンプレ編集で吸収）。ヘッダ合成と個別記録ブロック・生活記録・
-  出欠サマリ等の**構造描画はコード**に残す（テンプレは式言語を作らない）。順序＝日誌:養護2本柱/生活記録/養護→教育、
-  保育経過記録:発達の経過→配慮特記→家庭連携→総合所見→次期、要録:最終年度の重点→個人の重点→保育の展開→特に配慮すべき事項→
-  最終年度に至るまでの育ち（この順序・ラベルはテンプレが持つ）。確定出力は pipeline 末尾で実行。
+  日誌の生活記録必須は **0–2 のみ**（3–5 は任意＝全年齢対応・§19）。**クラス月案は例外**＝様式が全年齢で5領域
+  グリッドのため3つの視点分岐を課さず、グリッド各行のねらい＋0–2 の個人目標（≥1）を検査する（§18）。
+- `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（個別月案）/ `write_class_monthly_draft`（クラス月案・§18）/
+  `write_child_record_draft`（保育経過記録・§19）/ `write_nursery_record_draft`（保育要録・§19・L4）：pydantic →
+  **標準様式テキスト**へ整形。**本文レイアウト（章立て＝セクションの順序・見出しラベル・種別・出し分け）は
+  `template_store` の様式テンプレート（データ）を歩いて描く**（§18＝園差をコード改修でなくテンプレ編集で吸収）。
+  ヘッダ合成と個別記録ブロック・生活記録・出欠サマリ等の**構造描画はコード**に残す（テンプレは式言語を作らない）。
+  順序＝日誌:養護2本柱/生活記録/養護→教育、保育経過記録:発達の経過→配慮特記→家庭連携→総合所見→次期、要録:最終年度の
+  重点→個人の重点→保育の展開→特に配慮すべき事項→最終年度に至るまでの育ち（この順序・ラベルはテンプレが持つ）。
+  **クラス月案は非線形の構造様式**（保育経過記録マトリクスと同様 template_store は通さず、レイアウトのデータ＝
+  `schemas/class_monthly.GRID_ROWS` を歩いて描く＝§18）。確定出力は pipeline 末尾で実行。
 - `template_store.py` … **様式テンプレート＝本文レイアウトの宣言的データ**（`schemas/template.py` の
   DocTemplate/Section・閉じた種別語彙）のストア。`load_template(doc_type)` を**3レンダラ共通で読む**＝テキスト整形
   （draft.py）・帳票PDF（web/chohyo_pdf の線形様式）・編集フォーム（web/docedit.js・`/api/doc-template`＝`book_view`）が
@@ -42,8 +46,9 @@
   フィールド限定**で仮名/タグ/日付は不変＝誤変換を型で防ぐ）＋IO（`notation_books` 1行 JSONB・version 楽観ロック・
   ローカル `knowledge/表記ルール.json` シード・降格）。policy_store と同じ哲学（決定的実体はここに1つ・置き場は IO 節で
   解決・clock 外部注入）。**育つ指針カード（agentic な勘所）とは別の道具＝決定的な表記の統一**（線を混ぜない）。
-- `finalize.py` … `finalize_document`（日誌）/ `finalize_monthly_document`（月案）/
-  `finalize_child_record_document`（保育経過記録）/ `finalize_nursery_record_document`（保育要録）：復元→**表記正規化**→検査→整形（正規化は `notation_store` を呼び
+- `finalize.py` … `finalize_document`（日誌）/ `finalize_monthly_document`（個別月案）/
+  `finalize_class_monthly_document`（クラス月案・§18）/ `finalize_child_record_document`（保育経過記録）/
+  `finalize_nursery_record_document`（保育要録）：復元→**表記正規化**→検査→整形（正規化は `notation_store` を呼び
   validate/write の前に決定的に当てる＝以降は整えた本文に走る・降格safe。変更点は `FinalizedDocument.notation_changes`）。
   汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。`finalize_entry(dict)` は
   編集UI用＝編集後 entry を直接 正規化→validate/write 再実行（web から中継・実体はここに1つ）。
@@ -64,13 +69,18 @@
   ＝集積の prompt 前置は author/reviewer の InstructionProvider が担う。content を持たせないのは eval judge が
   非LLM先頭段を採点不能にするのを避けるため＝§12）→ 月案 author の authoring_loop（日誌と共用）→ 確定。
   `build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
+- `class_monthly.py` … クラス月案（園の実様式＝月間指導計画・§18）：`DigestPrepAgent`（class_month_prep・個別月案と
+  同じ prev_month_entries→prev_month_digest＝L2 還流）でクラスの前月日誌を集計→ クラス月案 author の authoring_loop
+  （共用）→ finalize(kind="class_monthly")。`build_class_monthly_pipeline`。個別月案（1児）と別 doc_type＝**クラス全体
+  （年齢帯）単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は 0–2/3–5 共通＝3つの視点分岐を課さない（様式忠実）。
+  grid の正準7行そろえは `schemas/class_monthly.ClassMonthlyPlan` の model_validator（レイアウトのデータは GRID_ROWS に1つ）。
 - `child_record.py` … 保育経過記録（§19）：`DigestPrepAgent`（period_prep・period_entries→period_digest＝L3 還流）→
   保育経過記録 author の authoring_loop（共用）→ finalize(kind="child_record")。`build_child_record_pipeline`。
 - `youroku.py` … 保育要録（§19・L4）：`RecordDigestPrepAgent`（record_prep・**最終年度の保育経過記録**（record_entries）を
   `aggregate.child_record_digest` で集計→record_digest＝日誌でなく保育経過記録を集める・content 無し state-only）→ 要録 author の
   authoring_loop（共用）→ finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
-- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／保育経過記録／保育要録を振り分ける
-  決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§19）。
+- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／クラス月案／保育経過記録／保育要録を
+  振り分ける決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§18/§19）。
 - `policy_store.py` … 育つ指針＝構造化カードストアの決定的 CRUD・完全重複ガード・履歴・テキスト再生
   （全再生＝`render_to_text`（UI `/api/policy`・eval）／前置注入用＝`render_for_doc`（共通＋当該 scope のみ・
   履歴なし＝`../agents/instructions.py` の InstructionProvider が呼ぶ））・view（`/api/policy` 用）。**指針編集の決定的実体はここに1つ**

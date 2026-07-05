@@ -109,14 +109,16 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
   辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
-  **線形様式（日誌/月案/要録）の本文セクション順序・ラベルは `template_store` から駆動**（テキスト整形と共通の SSOT・種別→flowable は chohyo_pdf が持つ）。保育経過記録マトリクスは対象外。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
+  **線形様式（日誌/個別月案/要録）の本文セクション順序・ラベルは `template_store` から駆動**（テキスト整形と共通の SSOT・種別→flowable は chohyo_pdf が持つ）。保育経過記録マトリクス・クラス月案グリッドは非線形のため対象外（各 story wrapper のコード）。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
 - `docx_fill.py` … 確定 entry → **園の実 Word 様式（`web/templates/*.docx`）へ流し込んだ .docx**（`fill_docx(kind, entry)`＝
   python-docx で見出し語からセルを同定して埋める）。帳票PDF が「綴じる確定版」なのに対し**Word 編集版**（保育士が Word で
   微修正・印刷）。純 pip・システムライブラリ不要＝Dockerfile 不変（雛形は `web/templates/` 同梱・実行時に外部取得しない）。
   **docx→PDF のサーバ変換はしない**（重い依存を持ち込まない）。描画のみ（型の保証は harness＝§5）。配線済み＝保育経過記録
-  （5領域×子どもの姿）／月案（園フォーム＝クラス月案・個別出力を「個人目標」小表へ写像・クラス欄は保育士記入で温存・
+  （5領域×子どもの姿）／**クラス月案（`_fill_class_monthly`＝園フォームの全欄を直接埋める＝保育目標・先月の姿・
+  区分×領域グリッド・食育/健康・安全/家庭/職員の連携・0–2 は個人目標小表を登場児ぶん・不足行は add_row。評価系は
+  月末記入で空欄温存＝§18）**／個別月案（旧経路＝個別出力を「個人目標」小表へ写像・クラス欄は保育士記入で温存・
   0-2 フォームのみ小表あり・3-5 はヘッダのみ）／保育要録（公式様式＝こども家庭庁 保育所児童保育要録の「保育に関する記録」の
   括弧ラベル直下＋列4へ追記・ラベルは残す）。`_FILLERS` に kind 追加で拡張。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
@@ -132,9 +134,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `upload_parse.py` … アップロード取込の実体（`parse_uploaded_file`）。extract →（`build_upload_parser_agent` を
   InMemoryRunner で1パス駆動＝improver_stream と同型・SSE 無しの一発）→ 対象キー/child/age_band を保育士入力で
   **権威的に上書き**→ `finalize.extract_json_block`→`finalize_entry` で検査・整形（決定的実体は harness）。creds 無/LLM 失敗は正直に error 降格。
-- `static/` … 保育士 SPA。**上位タブは3つ**：**書類を作る**（日誌/月案/保育経過記録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
+- `static/` … 保育士 SPA。**上位タブは3つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
   種別を切替。フロー本体は共通で入力欄と seed だけ切替・対象児コンボは共有・結果エリアは種別ごとに保持・生成中は種別切替をロック。
-  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1）／**育てる**／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
+  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1。**月案セグメントはクラス月案に一本化**＝flow kind=class_monthly・年齢帯（クラス）で回す＝
+  クラス単位なので対象児コンボは非表示・前月サンプルは複数児。個別月案はバックエンド/アーカイブ閲覧で温存）／**育てる**／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
   「指針を育てる」（agentic な勘所）｜「表記ルール」（決定的な統一）**。仕組みは分離のまま（policy_store と notation_store・§5）で、
   保育士から見た「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。**「指針を育てる」には対象書類セレクタ**（`app.js` の
   `POLICY_TARGETS`＝すべて/共通/日誌/月案/保育経過記録/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（いまの指針カード）を「共通＋その書類」に
@@ -142,7 +145,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   （反映先の可視化・改善AIは既定として尊重しつつ内容的に共通と判断したら ask で提案＝勝手に変えない）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取）／`docflow.js`（日誌・月案・保育経過記録 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
   `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」＋対応 kind のみ「Word様式でダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
   欄ごと入力・タグ多選択・collect()→entry。**本文セクションの順序/ラベルは `/api/doc-template`（様式テンプレート）から駆動**＝ヘッダ・widget・collect はコード・
-  未取得は既定順フォールバック）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋対象書類フィルタ＋即反映フロー）／`notation.js`（表記ルール＝
+  未取得は既定順フォールバック。**クラス月案（buildClassMonthly）は非線形の園の実様式ルック**＝罫線の区分×領域グリッドを実 `<table>`＋
+  セル内テキストエリアで描き〔養護/教育を rowspan・グリッド定義は `CLASS_GRID_ROWS`＝schemas の GRID_ROWS と同順〕、
+  0–2 は個人目標を追加/削除可・評価系は月末記入欄＝保育士が普段の月案の感覚で確認・修正できる〔§18〕）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋対象書類フィルタ＋即反映フロー）／`notation.js`（表記ルール＝
   `/api/notation` の CRUD UI・変換元→変換先の一覧・有効/無効トグル・インライン編集・保存先の永続性を正直表示）／`records.js`（書類を見る＝**ファイルシステム風ツリー explorer**：
   `GET /api/records` のメタ一覧（本文なし・軽い）を1回引き、**種別→子ども→書類**の階層をクライアント側で組む（左＝ツリー／右＝内容の2ペイン・`.fs*`）。
   **表示に必要な分だけ読む最適化**＝フォルダは折りたたみ既定で初期描画は種別フォルダのみ・展開したフォルダの DOM だけを都度組む／書類本文（重い＝整形テキスト＋entry）は

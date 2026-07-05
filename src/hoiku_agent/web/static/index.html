@@ -74,8 +74,10 @@
           </div>
         </div>
 
-        <!-- 月案の入力欄（対象月＋前月日誌 seed） -->
+        <!-- クラス月案の入力欄（年齢帯＝クラス＋対象月＋前月日誌 seed。クラス単位なので対象児は使わない） -->
         <div id="doc-fields-monthly" class="doc-fields" hidden>
+          <label class="field-label">年齢帯（クラス）</label>
+          <div id="class-ageband" class="chips"></div>
           <div class="row">
             <div>
               <label class="field-label" for="monthly-month">対象月</label>
@@ -84,7 +86,7 @@
           </div>
           <div class="seed-note">
             <span data-ic="calendar"></span>
-            <span>前月日誌（仮名サンプルを seed します）</span>
+            <span>前月のクラスの日誌（仮名サンプルを seed します）</span>
             <span id="monthly-seed-count" class="badge">3 件</span>
           </div>
         </div>

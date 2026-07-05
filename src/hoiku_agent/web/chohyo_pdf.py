@@ -341,6 +341,231 @@ def _monthly_story(entry: dict) -> list:
     return story
 
 
+# ── クラス月案＝園の実様式（月間指導計画・A4 横・§18） ──
+# 園の実 Word 様式（monthly_*.docx＝A4 横）と同じ欄構成を帳票PDFで再現する：ヘッダ（年度・月/クラス/
+# 担任・園長・主任の押印欄）→ 保育目標・先月の姿・行事・保護者支援 → 区分×領域グリッド（養護2本柱＋
+# 教育5領域＝GRID_ROWS）→ 食育/健康・安全/家庭/職員の連携 →（0–2 のみ）個人目標小表 → 評価系欄（月末
+# 記入の空欄）。描画のみ（型の保証は harness＝§5）。0–2/3–5 とも5領域グリッドで共通（§18）。
+
+_CM_AGE_TITLE = {"0-2": "0〜2歳児", "3-5": "3歳以上児"}
+
+
+def _cm_grid_table(grid: list) -> Table:
+    """区分×領域グリッド（見出し＋7行）。列＝区分/領域/ねらい/環境・構成/子どもの姿/援助・配慮。"""
+    label_w = 16 * mm
+    domain_w = 24 * mm
+    cell_w = (_L_CONTENT_W - label_w - domain_w) / 4
+    header = [
+        _P("区分", _LABEL),
+        _P("領域", _LABEL),
+        _P("ねらい", _LABEL),
+        _P("環境・構成", _LABEL),
+        _P("子どもの姿", _LABEL),
+        _P("援助・配慮", _LABEL),
+    ]
+    rows: list[list] = [header]
+    # 区分セルは連続する同一区分（養護/教育）で縦結合すると実様式に近い（SPAN で表現）。
+    spans: list[tuple[int, int]] = []
+    start = 1
+    for i, row in enumerate(grid):
+        row = row or {}
+        rows.append(
+            [
+                _P(row.get("category"), _SMALL),
+                _P(row.get("domain"), _SMALL),
+                _P(row.get("aim"), _SMALL),
+                _P(row.get("environment"), _SMALL),
+                _P(row.get("child_state"), _SMALL),
+                _P(row.get("support"), _SMALL),
+            ]
+        )
+        nxt = (grid[i + 1] or {}).get("category") if i + 1 < len(grid) else None
+        if row.get("category") != nxt:
+            if i + 1 > start:  # 2行以上ある区分だけ縦結合
+                spans.append((start, i + 1))
+            start = i + 2
+    tbl = Table(rows, colWidths=[label_w, domain_w, cell_w, cell_w, cell_w, cell_w])
+    tbl.hAlign = "LEFT"
+    style = [
+        ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+        ("BACKGROUND", (0, 0), (-1, 0), _HEADER_BG),
+        ("BACKGROUND", (0, 1), (1, -1), _HEADER_BG),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]
+    for r0, r1 in spans:
+        style.append(("SPAN", (0, r0), (0, r1)))
+    tbl.setStyle(TableStyle(style))
+    return tbl
+
+
+def _cm_kv_2x2(
+    a_label: str, a_val, b_label: str, b_val, c_label: str, c_val, d_label: str, d_val
+) -> Table:
+    """ラベル|値 を 2×2 で並べる小表（食育/健康・安全 ・ 家庭/職員 の連携欄）。"""
+    lw = 26 * mm
+    vw = (_L_CONTENT_W - 2 * lw) / 2
+    tbl = Table(
+        [
+            [_P(a_label, _LABEL), _P(a_val, _SMALL), _P(b_label, _LABEL), _P(b_val, _SMALL)],
+            [_P(c_label, _LABEL), _P(c_val, _SMALL), _P(d_label, _LABEL), _P(d_val, _SMALL)],
+        ],
+        colWidths=[lw, vw, lw, vw],
+    )
+    tbl.hAlign = "LEFT"
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+                ("BACKGROUND", (0, 0), (0, -1), _HEADER_BG),
+                ("BACKGROUND", (2, 0), (2, -1), _HEADER_BG),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    return tbl
+
+
+def _cm_individual_table(goals: list) -> Table:
+    """個人目標小表（0–2）。列＝氏名（月齢）/子どもの姿/ねらい・配慮/評価・反省。評価は月末記入の空欄。"""
+    name_w = 34 * mm
+    eval_w = 46 * mm
+    mid_w = (_L_CONTENT_W - name_w - eval_w) / 2
+    header = [
+        _P("氏名（月齢）", _LABEL),
+        _P("子どもの姿", _LABEL),
+        _P("ねらい・配慮", _LABEL),
+        _P("評価・反省", _LABEL),
+    ]
+    rows: list[list] = [header]
+    for g in goals:
+        g = g or {}
+        name = str(g.get("child_id") or "")
+        months = str(g.get("age_months") or "").strip()
+        if months:
+            name = f"{name}（{months}）"
+        rows.append(
+            [
+                _P(name, _SMALL),
+                _P(g.get("child_state"), _SMALL),
+                _P(g.get("aim_support"), _SMALL),
+                _P(g.get("evaluation"), _SMALL),  # AI 非生成＝空欄（月末に手書き/記入）
+            ]
+        )
+    tbl = Table(rows, colWidths=[name_w, mid_w, mid_w, eval_w])
+    tbl.hAlign = "LEFT"
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+                ("BACKGROUND", (0, 0), (-1, 0), _HEADER_BG),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    return tbl
+
+
+def _class_monthly_story(entry: dict) -> list:
+    age = entry.get("age_band") or "0-2"
+    # ── ヘッダ（年度・月／クラス／担任・園長・主任の押印欄＝実様式どおり手書き相当） ──
+    class_name = str(entry.get("class_name") or "").strip()
+    head = Table(
+        [
+            [
+                _P(f"年度・月　{_t(entry.get('month') or '')}", _BODY),
+                _P(f"クラス　{_t(class_name) or '　　　　'}", _BODY),
+                _P("担任　　　　　印", _LABEL),
+                _P("園長　　　　　印", _LABEL),
+                _P("主任　　　　　印", _LABEL),
+            ]
+        ],
+        colWidths=[
+            _L_CONTENT_W * 0.24,
+            _L_CONTENT_W * 0.22,
+            _L_CONTENT_W * 0.18,
+            _L_CONTENT_W * 0.18,
+            _L_CONTENT_W * 0.18,
+        ],
+    )
+    head.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.6, _LINE),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    story: list = [
+        _P(f"月間指導計画（月案）　{_CM_AGE_TITLE.get(age, age)}", _TITLE),
+        Spacer(1, 2 * mm),
+        head,
+        Spacer(1, 2 * mm),
+        _section("今月の保育目標", _P(entry.get("monthly_goal"), _SMALL), width=_L_CONTENT_W),
+        _section("先月の子どもの姿", _P(entry.get("prev_month_state"), _SMALL), width=_L_CONTENT_W),
+        _section("今月の行事", _P(entry.get("events") or "（なし）", _SMALL), width=_L_CONTENT_W),
+        _section(
+            "保護者支援", _P(entry.get("parent_support") or "（なし）", _SMALL), width=_L_CONTENT_W
+        ),
+        Spacer(1, 3 * mm),
+        _P("指導計画（区分×領域）", _LABEL),
+        Spacer(1, 1.5 * mm),
+        _cm_grid_table(entry.get("grid") or []),
+        Spacer(1, 3 * mm),
+        _cm_kv_2x2(
+            "食育",
+            entry.get("syokuiku"),
+            "健康・安全",
+            entry.get("health_safety"),
+            "家庭との連携",
+            entry.get("family_liaison"),
+            "職員間の連携",
+            entry.get("staff_liaison"),
+        ),
+    ]
+    # 個人目標小表（0–2 のみ・登場児ぶん）。3–5 は様式に無いので出さない。
+    goals = entry.get("individual_goals") or []
+    if goals:
+        story += [
+            Spacer(1, 3 * mm),
+            _P("個人目標（月齢・一人ひとりに応じて）", _LABEL),
+            Spacer(1, 1.5 * mm),
+            _cm_individual_table(goals),
+        ]
+    # 評価系欄（月末に保育士が記入する運用欄＝空欄で描く）。
+    story += [
+        Spacer(1, 3 * mm),
+        _cm_kv_2x2(
+            "保育者の評価",
+            entry.get("teacher_evaluation"),
+            "子どもの評価",
+            entry.get("children_evaluation"),
+            "気になる子どもへの対応",
+            entry.get("notable_children"),
+            "",
+            "",
+        ),
+    ]
+    return story
+
+
 # ── 保育経過記録＝年間マトリクス様式（現場の実様式に準拠・§19） ──
 # 行＝領域（0–2:3つの視点／3–5:5領域＝告示準拠）＋「その他」、列＝4期（4〜6月/7〜9月/10〜12月/1〜3月）。
 # 保育経過記録は年間1枚に期ごと追記していく運用（ヒアリング「3ヶ月に1回書く」）のため、帳票は年間シートとし、
@@ -582,9 +807,13 @@ def _nursery_record_story(entry: dict, official_name: str | None = None) -> list
 _BUILDERS = {
     "diary": _diary_story,
     "monthly": _monthly_story,
+    "class_monthly": _class_monthly_story,
     "child_record": _child_record_story,
     "nursery_record": _nursery_record_story,
 }
+
+# A4 横で描く様式（園フォームの向きに一致）：保育経過記録（年間マトリクス）＋クラス月案（月間指導計画）。
+_LANDSCAPE_KINDS = {"child_record", "class_monthly"}
 
 
 def render_pdf(
@@ -594,25 +823,26 @@ def render_pdf(
     official_name: str | None = None,
 ) -> bytes:
     """確定 entry（dict）を帳票PDF（bytes）へ描画する。
-    kind = "diary" | "monthly" | "child_record" | "nursery_record"。
+    kind = "diary" | "monthly" | "class_monthly" | "child_record" | "nursery_record"。
 
     past_entries は保育経過記録のみ有効＝同じ子の保存済み保育経過記録（アーカイブ由来）。同じ年度のものだけ
     年間マトリクスの他の期の列に埋める（割当は assign_period_columns・今回の entry が常に優先）。
     official_name は保育経過記録/保育要録の**氏名欄**に描く本名（姓＋名・児童マスタ由来・AI 非生成）＝
-    未指定は呼び名（child_id）へ降格。日誌/月案は使わない（呼び名のまま）。
+    未指定は呼び名（child_id）へ降格。日誌/月案/クラス月案は使わない（呼び名のまま）。
     描画のみ（型検査はしない＝空欄は空セルで出す）。entry が dict でない・kind 不正は ValueError。
     """
     if kind not in _BUILDERS:
         raise ValueError(
-            f"未知の kind: {kind!r}（'diary' | 'monthly' | 'child_record' | 'nursery_record'）"
+            f"未知の kind: {kind!r}"
+            "（'diary' | 'monthly' | 'class_monthly' | 'child_record' | 'nursery_record'）"
         )
     if not isinstance(entry, dict):
         raise ValueError("entry は dict である必要があります")
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
-        # 保育経過記録は年間マトリクス（4期の列）を横に並べるため A4 横（実様式に一致）。他は A4 縦。
-        pagesize=landscape(A4) if kind == "child_record" else A4,
+        # 保育経過記録（年間マトリクス）・クラス月案（月間指導計画）は園フォームが A4 横なので横で描く。他は A4 縦。
+        pagesize=landscape(A4) if kind in _LANDSCAPE_KINDS else A4,
         leftMargin=_MARGIN,
         rightMargin=_MARGIN,
         topMargin=_MARGIN,
@@ -620,6 +850,7 @@ def render_pdf(
         title={
             "diary": "保育日誌",
             "monthly": "個別月案",
+            "class_monthly": "月間指導計画（クラス月案）",
             "child_record": "保育経過記録",
             "nursery_record": "保育所児童保育要録",
         }[kind],

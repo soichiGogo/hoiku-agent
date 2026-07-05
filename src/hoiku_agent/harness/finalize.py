@@ -26,16 +26,18 @@ from datetime import date
 
 from pydantic import BaseModel, ValidationError
 
-from ..schemas import ChildRecord, DiaryEntry, MonthlyPlan, NurseryRecord
+from ..schemas import ChildRecord, ClassMonthlyPlan, DiaryEntry, MonthlyPlan, NurseryRecord
 from . import notation_store
 from .draft import (
     write_child_record_draft,
+    write_class_monthly_draft,
     write_draft,
     write_monthly_draft,
     write_nursery_record_draft,
 )
 from .schema_check import (
     validate_child_record_fields,
+    validate_class_monthly_fields,
     validate_fields,
     validate_monthly_fields,
     validate_nursery_record_fields,
@@ -46,7 +48,7 @@ from .schema_check import (
 class FinalizedDocument:
     """確定処理の結果（決定的）。日誌（DiaryEntry）・月案（MonthlyPlan）・保育経過記録（ChildRecord）で共用する。"""
 
-    entry: DiaryEntry | MonthlyPlan | ChildRecord | NurseryRecord | None = (
+    entry: DiaryEntry | MonthlyPlan | ClassMonthlyPlan | ChildRecord | NurseryRecord | None = (
         None  # 復元した書類モデル
     )
     problems: list[str] = field(default_factory=list)  # validate_* 違反（空＝充足）
@@ -66,6 +68,7 @@ class FinalizedDocument:
 _NOTATION_KIND = {
     DiaryEntry: "diary",
     MonthlyPlan: "monthly",
+    ClassMonthlyPlan: "class_monthly",
     ChildRecord: "child_record",
     NurseryRecord: "nursery_record",
 }
@@ -203,6 +206,11 @@ def parse_draft_to_plan(text: str) -> MonthlyPlan:
     return _parse_json_to_model(text, MonthlyPlan, "MonthlyPlan")  # type: ignore[return-value]
 
 
+def parse_draft_to_class_plan(text: str) -> ClassMonthlyPlan:
+    """クラス月案 author のドラフト文字列から ClassMonthlyPlan を復元する。失敗時は ValueError（§18）。"""
+    return _parse_json_to_model(text, ClassMonthlyPlan, "ClassMonthlyPlan")  # type: ignore[return-value]
+
+
 def parse_draft_to_child_record(text: str) -> ChildRecord:
     """保育経過記録 author のドラフト文字列から ChildRecord を復元する。失敗時は ValueError（§19）。"""
     return _parse_json_to_model(text, ChildRecord, "ChildRecord")  # type: ignore[return-value]
@@ -274,6 +282,27 @@ def finalize_monthly_document(text: str, template_ref: str | None = None) -> Fin
     )
 
 
+def finalize_class_monthly_document(
+    text: str, template_ref: str | None = None
+) -> FinalizedDocument:
+    """クラス月案ドラフトを確定処理（復元→検査→整形）する（§18）。日誌/月案の finalize_* と対称。
+
+    Args:
+        text: クラス月案 author が生成したドラフト（ClassMonthlyPlan の JSON を含む）。
+        template_ref: 様式参照（あれば write_class_monthly_draft に渡す）。
+
+    Returns:
+        FinalizedDocument（entry=ClassMonthlyPlan / problems / formatted / parse_error）。
+    """
+    return _finalize(
+        text,
+        parse=parse_draft_to_class_plan,
+        validate=validate_class_monthly_fields,
+        write=write_class_monthly_draft,
+        template_ref=template_ref,
+    )
+
+
 def finalize_child_record_document(text: str, template_ref: str | None = None) -> FinalizedDocument:
     """保育経過記録ドラフトを確定処理（復元→検査→整形）する（§19）。日誌・月案の finalize_* と対称。
 
@@ -331,9 +360,10 @@ def finalize_entry(
     （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案/保育経過記録の型・検査・整形を切替。
 
     Args:
-        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan / ChildRecord / NurseryRecord の JSON 相当の dict）。
-        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）/
-            "nursery_record"（NurseryRecord）。
+        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan / ClassMonthlyPlan / ChildRecord /
+            NurseryRecord の JSON 相当の dict）。
+        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "class_monthly"（ClassMonthlyPlan）/
+            "child_record"（ChildRecord）/ "nursery_record"（NurseryRecord）。
         doc_date: 記録日（日誌のみ・与えられれば上書き）。
         template_ref: 様式参照（あれば write_* に渡す）。
 
@@ -345,6 +375,13 @@ def finalize_entry(
     if kind == "monthly":
         model_cls: type[BaseModel] = MonthlyPlan
         validate, write, label = validate_monthly_fields, write_monthly_draft, "MonthlyPlan"
+    elif kind == "class_monthly":
+        model_cls = ClassMonthlyPlan
+        validate, write, label = (
+            validate_class_monthly_fields,
+            write_class_monthly_draft,
+            "ClassMonthlyPlan",
+        )
     elif kind == "child_record":
         model_cls = ChildRecord
         validate, write, label = (
