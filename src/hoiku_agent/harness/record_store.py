@@ -80,7 +80,9 @@ class Child(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     display_name: Mapped[str] = mapped_column(sa.String(100), unique=True)  # 呼び名＋敬称＝child_id
-    family_name: Mapped[str | None] = mapped_column(sa.String(50))  # 姓（本名・氏名欄・§14 DB のみ）
+    family_name: Mapped[str | None] = mapped_column(
+        sa.String(50)
+    )  # 姓（本名・氏名欄・§14 DB のみ）
     given_name: Mapped[str | None] = mapped_column(sa.String(50))  # 名（＝呼び名・表示名合成の素）
     gender: Mapped[str | None] = mapped_column(sa.String(10))  # male/female（敬称導出）
     official_name: Mapped[str | None] = mapped_column(sa.String(100))  # 旧・単一氏名（deprecated）
