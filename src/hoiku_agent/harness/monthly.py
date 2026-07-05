@@ -60,7 +60,7 @@ class DigestPrepAgent(BaseAgent):
     集計結果（serializable digest）を state[output_key] に**state-only イベント**（content なし）で
     格納する。author はこの digest を InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ
     整形注入して読む（要約・解釈は author の責務＝§10・ここは集計のみ）。データが無ければ空 digest で
-    素通り（降格）。月案（L2 還流＝前月日誌・既定キー）と児童票（L3 還流＝期間日誌）で共用する
+    素通り（降格）。月案（L2 還流＝前月日誌・既定キー）と保育経過記録（L3 還流＝期間日誌）で共用する
     （集計の決定的実体は aggregate.py に1つ・ここは配線のみ）。旧名 MonthlyPrepAgent を一般化した。
 
     **content を持たせない理由（§12）**：ADK eval の rubric judge は invocation の先頭イベント著者の

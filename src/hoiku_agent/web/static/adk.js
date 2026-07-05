@@ -145,7 +145,7 @@ export async function approveRecord(kind, entry, actor) {
   }
 }
 
-// 期間内の日誌 entry（アーカイブの最新版）＝月案 L2／児童票 L3 の seed。空＝呼び出し側がサンプルへ降格。
+// 期間内の日誌 entry（アーカイブの最新版）＝月案 L2／保育経過記録 L3 の seed。空＝呼び出し側がサンプルへ降格。
 export async function getDiaryEntries(dateFrom, dateTo) {
   try {
     const r = await fetch(`/api/records/diary-entries?date_from=${dateFrom}&date_to=${dateTo}`);
@@ -156,7 +156,7 @@ export async function getDiaryEntries(dateFrom, dateTo) {
   }
 }
 
-// 指定児の児童票（最新版）＝保育要録（L4）の seed 取得口。未接続/障害/該当なしは空＝
+// 指定児の保育経過記録（最新版）＝保育要録（L4）の seed 取得口。未接続/障害/該当なしは空＝
 // 呼び出し側がサンプルへ降格する（黙って誤解釈しない）。
 export async function getChildRecordEntries(child) {
   try {

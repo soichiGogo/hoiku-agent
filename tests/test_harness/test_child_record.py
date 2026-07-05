@@ -1,7 +1,7 @@
-"""児童票 harness（validate_child_record_fields / write_child_record_draft / finalize / prep）の単体テスト。
+"""保育経過記録 harness（validate_child_record_fields / write_child_record_draft / finalize / prep）の単体テスト。
 
-設計コンテキスト §19（児童票＝期ごとの保育経過記録・L3 還流）/ §16（決定的ロジックは pytest 必須）。
-LLM 非依存・高速。月案（test_monthly.py）と対称の検査を児童票でも担保する。
+設計コンテキスト §19（保育経過記録（期ごと）・L3 還流）/ §16（決定的ロジックは pytest 必須）。
+LLM 非依存・高速。月案（test_monthly.py）と対称の検査を保育経過記録でも担保する。
 DigestPrepAgent の入出力キー一般化（月案既定キーの後方互換）もここで検証する。
 """
 
@@ -100,7 +100,7 @@ def test_child_record_missing_required_fields_are_violations():
 def test_write_child_record_draft_renders_sections_and_tags():
     text = write_child_record_draft(_record())
     for section in [
-        "児童票・保育経過記録",
+        "保育経過記録",
         "発達の経過",
         "配慮事項・特記",
         "家庭との連携",
@@ -117,8 +117,8 @@ def test_write_child_record_draft_renders_sections_and_tags():
 
 
 def test_finalize_child_record_success_path():
-    """JSON フェンス入りの児童票ドラフト→復元・検査通過・整形出力。"""
-    draft = "児童票の下書きです。\n```json\n" + _record().model_dump_json() + "\n```"
+    """JSON フェンス入りの保育経過記録ドラフト→復元・検査通過・整形出力。"""
+    draft = "保育経過記録の下書きです。\n```json\n" + _record().model_dump_json() + "\n```"
     result = finalize_child_record_document(draft)
     assert result.parse_error is None
     assert result.problems == []
@@ -163,7 +163,7 @@ def test_digest_prep_agent_defaults_keep_monthly_keys():
 
 
 def test_digest_prep_agent_accepts_period_keys():
-    """児童票（L3 還流）は period_entries → period_digest を配線できる。"""
+    """保育経過記録（L3 還流）は period_entries → period_digest を配線できる。"""
     agent = DigestPrepAgent(
         name="period_prep",
         input_key="period_entries",

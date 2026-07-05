@@ -32,7 +32,7 @@ _CASES_DIR = Path(__file__).resolve().parents[1] / "eval" / "cases"
 _EVALSETS = sorted(_CASES_DIR.glob("*.evalset.json"))
 
 
-# evalset ファイル名 → 書類種別（参照ドラフトの型）。児童票/要録は diary と検査を分岐する。
+# evalset ファイル名 → 書類種別（参照ドラフトの型）。保育経過記録/要録は diary と検査を分岐する。
 def _kind_of(path: Path) -> str:
     if path.name.startswith("child_record"):
         return "child_record"
@@ -109,7 +109,7 @@ def _child_ids_of(case: dict) -> list[str]:
     text = case["conversation"][0]["final_response"]["parts"][0]["text"]
     if case["_kind"] == "child_record":
         ids = [parse_draft_to_child_record(text).child_id]
-        # 児童票は期間日誌を seed するため、seed 側の仮名も検査対象にする（§14）。
+        # 保育経過記録は期間日誌を seed するため、seed 側の仮名も検査対象にする（§14）。
         state = (case.get("session_input") or {}).get("state") or {}
         for e in state.get("period_entries") or []:
             ids.extend(n.get("child_id", "") for n in e.get("individual_notes") or [])
@@ -117,7 +117,7 @@ def _child_ids_of(case: dict) -> list[str]:
         return ids
     if case["_kind"] == "nursery_record":
         ids = [parse_draft_to_nursery_record(text).child_id]
-        # 要録は最終年度の児童票を seed するため、seed 側の仮名も検査対象にする（§14）。
+        # 要録は最終年度の保育経過記録を seed するため、seed 側の仮名も検査対象にする（§14）。
         state = (case.get("session_input") or {}).get("state") or {}
         ids.extend(r.get("child_id", "") for r in state.get("record_entries") or [])
         return ids

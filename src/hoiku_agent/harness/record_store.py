@@ -1,7 +1,7 @@
 """書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL PostgreSQL）。
 
-設計コンテキスト §5（決定ロジックの実体は harness に1つ）／§19（集積階層 日誌→月案→児童票の下流再構成）。
-本番運用ブラッシュアップ Phase 1（2026-07）：確定した日誌/月案/児童票を session state 止まりにしない
+設計コンテキスト §5（決定ロジックの実体は harness に1つ）／§19（集積階層 日誌→月案→保育経過記録の下流再構成）。
+本番運用ブラッシュアップ Phase 1（2026-07）：確定した日誌/月案/保育経過記録を session state 止まりにしない
 永続アーカイブ。L2/L3 seed（前月・期間日誌）の取得元・児童マスタ・承認証跡（audit_events）を担う。
 
 守る線（§5・既存の流儀）:
@@ -64,7 +64,7 @@ def compose_display_name(given_name: str, gender: str | None) -> str:
 
 
 def official_full_name(family_name: str | None, given_name: str | None) -> str:
-    """姓＋名＝本名（保育要録/児童票の氏名欄）。全角空白区切り・空要素は詰める（両方空なら空文字）。"""
+    """姓＋名＝本名（保育要録/保育経過記録の氏名欄）。全角空白区切り・空要素は詰める（両方空なら空文字）。"""
     parts = [(family_name or "").strip(), (given_name or "").strip()]
     return "　".join(p for p in parts if p)
 
@@ -77,7 +77,7 @@ class Child(Base):
       （UNIQUE）。書類 JSON 側は敬称込みのまま（LLM/eval は不変）。
     - `given_name`（名・呼び名）／`gender`（male/female）… 表示名＝`given_name`＋敬称（性別導出）を
       合成する素。既存行は migration 0006 が display_name の末尾敬称から back-fill する。
-    - `family_name`（姓）… 保育要録/児童票の**氏名欄**用の本名（姓＋名）。AI は生成せず保育士が入力。
+    - `family_name`（姓）… 保育要録/保育経過記録の**氏名欄**用の本名（姓＋名）。AI は生成せず保育士が入力。
     `official_name` は旧・単一氏名列で使っていない（family_name/given_name へ移行済み・互換のため残置）。
     """
 
@@ -112,7 +112,9 @@ class DocumentRecord(Base):
     child_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("children.id"), index=True)
     target_date: Mapped[date | None] = mapped_column(sa.Date, index=True)  # 日誌
     target_month: Mapped[str | None] = mapped_column(sa.String(7))  # 月案（YYYY-MM）
-    target_period: Mapped[str | None] = mapped_column(sa.String(50))  # 児童票（期間・自由記述）
+    target_period: Mapped[str | None] = mapped_column(
+        sa.String(50)
+    )  # 保育経過記録（期間・自由記述）
     status: Mapped[str] = mapped_column(sa.String(20), default="finalized")  # finalized/approved
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
@@ -217,7 +219,7 @@ def prev_month_of(month: str) -> str:
 
 
 def period_date_range(period: str) -> tuple[date, date] | None:
-    """児童票の期間（例 "2026-04〜2026-06"。〜/~/− 区切り）→（開始月初日, 終了月末日）。
+    """保育経過記録の期間（例 "2026-04〜2026-06"。〜/~/− 区切り）→（開始月初日, 終了月末日）。
 
     期制は園差＝自由記述（§19）なので、月〜月の形だけ決定的に解釈し、それ以外は None を返す
     （呼び出し側がサンプル/手渡し seed へ降格する＝黙って誤解釈しない）。
@@ -253,7 +255,7 @@ def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, st
     if kind == "child_record":
         period = str(entry.get("period") or "").strip()
         if not period:
-            raise ValueError("児童票 entry に period（対象期間）がありません")
+            raise ValueError("保育経過記録 entry に period（対象期間）がありません")
         return None, None, period
     if kind == "nursery_record":
         # 要録は年度が対象期間（例 "2026"）。target_period 列に格納して同一性キーに使う（§19・L4）。
@@ -608,7 +610,7 @@ def list_diary_entries(
     *,
     approved_only: bool = False,
 ) -> list[dict]:
-    """期間内の日誌の最新版 entry（JSON）を日付順に返す＝月案 L2／児童票 L3 の seed 取得元。
+    """期間内の日誌の最新版 entry（JSON）を日付順に返す＝月案 L2／保育経過記録 L3 の seed 取得元。
 
     集計そのもの（child_id 別の decomposition）は従来どおり harness/aggregate（DigestPrepAgent）が
     担う＝ここは「期間の日誌本文を引く」だけ（責務を重ねない）。
@@ -642,10 +644,10 @@ def list_diary_entries(
 
 
 def list_child_record_entries(child_display_name: str) -> list[dict]:
-    """指定児の児童票の最新版 entry（JSON）を期間順に返す＝年間マトリクス帳票の過去期埋め込み用。
+    """指定児の保育経過記録の最新版 entry（JSON）を期間順に返す＝年間マトリクス帳票の過去期埋め込み用。
 
     どの期をどの列に置くか（年度の同定・期→列の割当）は帳票描画側（web/chohyo_pdf）の責務で、
-    ここは「その子の児童票を全部引く」だけ（責務を重ねない）。降格・障害・該当なしは空。
+    ここは「その子の保育経過記録を全部引く」だけ（責務を重ねない）。降格・障害・該当なしは空。
     """
     name = child_display_name.strip()
     eng = _engine()

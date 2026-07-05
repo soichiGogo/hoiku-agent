@@ -30,9 +30,9 @@ allowed-tools: Bash, Read, Edit
      ③ 検証不足（`validation` 非空でも確定下書きは生成される）
    - **HITL 関門**：`ask_caregiver` を発火させずに通る／確定段で `awaiting_caregiver_approval=True`
    - **ルータ分岐と集積還流**：doc_type 未設定＝日誌（既定）／"月案"＝L2 還流（`test_monthly_e2e.py`）／
-     "児童票"＝L3 還流（`test_child_record_e2e.py`）。prep の集計→digest→確定と、seed 無しの降格も見る。
+     "保育経過記録"＝L3 還流（`test_child_record_e2e.py`）。prep の集計→digest→確定と、seed 無しの降格も見る。
    - 不足経路があれば、それを **`FakeLlm` でスクリプト**した新規ケースを `tests/test_e2e/` に提案・追加する。
-3. **月案・児童票パスは配線済み＝本E2Eの対象**（§3/§19）。新しい doc_type を足したら対応 E2E も同時に足す
+3. **月案・保育経過記録パスは配線済み＝本E2Eの対象**（§3/§19）。新しい doc_type を足したら対応 E2E も同時に足す
    （`docs/architecture.md` の実装状況と同期）。
 
 注：このスキルは決定論層（無料・LLM非依存）専用。品質回帰は `/adk-eval`、ローカル実起動は `/run-pipeline`。

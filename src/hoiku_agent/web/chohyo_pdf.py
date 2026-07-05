@@ -3,7 +3,7 @@
 設計コンテキスト §11（配信UI）／ §18（“園の様式で出す”最終形）。ここは **描画だけ** で、必須欄・年齢分岐等の
 決定的ロジック（型の保証）は harness が持つ（§5）。日誌/月案の欄順は harness の `write_draft`/
 `write_monthly_draft`（ネット調査で裏取りした標準様式）と同じにそろえる（テキスト版と帳票版で様式順を一致させる。
-validation/判断は持たない＝二重定義ではない）。**児童票は年間マトリクス様式（実様式準拠・§19）**＝A4 横・
+validation/判断は持たない＝二重定義ではない）。**保育経過記録は年間マトリクス様式（実様式準拠・§19）**＝A4 横・
 行＝領域×列＝4期の年間1枚（テキスト版は期の縦型＝コピー用で役割分担）。
 
 PDF は ReportLab で生成する：純 pip・**システムライブラリ不要**（apt/Cairo/Pango 不要＝Dockerfile 不変）。
@@ -79,7 +79,7 @@ def _P(value: object, style: ParagraphStyle = _BODY) -> Paragraph:
 def _section(label: str, content, width: float = _CONTENT_W) -> Table:
     """ラベル列＋内容列の1セクション行（帳票の基本ブロック）。content は Paragraph か flowable のリスト。
 
-    width は本文幅（既定＝A4 縦。児童票の年間マトリクスは A4 横なので横幅を渡す）。
+    width は本文幅（既定＝A4 縦。保育経過記録の年間マトリクスは A4 横なので横幅を渡す）。
     """
     tbl = Table(
         [[_P(label, _LABEL), content]],
@@ -242,7 +242,7 @@ def _signoff_block() -> KeepTogether:
 # 本文のセクション順序・見出しラベルは `template_store` の様式テンプレート（テキスト整形と共通の SSOT）を
 # 歩いて描く。種別（SectionKind）→ ReportLab flowable の対応はここが持つ（テキストは draft.py が持つ＝
 # 描画は各媒体・順序/ラベルは1つ）。ヘッダ合成・確認印欄・（要録の）グループ見出しは各 story wrapper のコード。
-# 児童票は年間マトリクス様式（線形でない）ため本レンダラは通さない（_child_record_story が担う）。
+# 保育経過記録は年間マトリクス様式（線形でない）ため本レンダラは通さない（_child_record_story が担う）。
 
 
 def _pdf_section_flowables(section, entry: dict, age: str) -> list:
@@ -566,9 +566,9 @@ def _class_monthly_story(entry: dict) -> list:
     return story
 
 
-# ── 児童票＝年間マトリクス様式（現場の実様式に準拠・§19） ──
+# ── 保育経過記録＝年間マトリクス様式（現場の実様式に準拠・§19） ──
 # 行＝領域（0–2:3つの視点／3–5:5領域＝告示準拠）＋「その他」、列＝4期（4〜6月/7〜9月/10〜12月/1〜3月）。
-# 児童票は年間1枚に期ごと追記していく運用（ヒアリング「3ヶ月に1回書く」）のため、帳票は年間シートとし、
+# 保育経過記録は年間1枚に期ごと追記していく運用（ヒアリング「3ヶ月に1回書く」）のため、帳票は年間シートとし、
 # 今回の期の列に加え**同じ子・同じ年度の過去期の列を書類アーカイブ（record_store）から自動で埋める**
 # （routes.py が引いて past_entries で渡す＝ここは割当と描画のみ）。アーカイブ未接続・該当なしは
 # 従来どおり今回の期だけ＋他は空欄の罫線（手書き追記できる＝現場品質）。A4 横で描く。
@@ -650,10 +650,10 @@ def _entry_cells(entry: dict, row_labels: list[str]) -> dict[str, list[str]]:
 def _child_record_story(
     entry: dict, past_entries: list[dict] | None = None, official_name: str | None = None
 ) -> list:
-    """児童票＝年間マトリクス（行＝領域×列＝4期）。各列に該当期の development_notes をタグで振り分けて描く。
+    """保育経過記録＝年間マトリクス（行＝領域×列＝4期）。各列に該当期の development_notes をタグで振り分けて描く。
 
     行ラベルは告示準拠（0–2＝3つの視点／3–5＝5領域）＋「その他」（枠組みタグの無い叙述と配慮・特記を集約）。
-    今回の期に加え、past_entries（アーカイブの同じ子・同じ年度の児童票）で他の期の列も埋める＝年間1枚が
+    今回の期に加え、past_entries（アーカイブの同じ子・同じ年度の保育経過記録）で他の期の列も埋める＝年間1枚が
     期を追うごとに育つ。行ラベルは**今回の entry の年齢帯**で固定（年度途中の帯替わりは §18 の実様式微調整）。
     身長・体重は原簿系の任意欄（AI は生成しない＝保育士が編集フォームで記入 or 手書き）。総合所見・家庭連携・
     次期に向けては**今回の期の記載**として表の下に全幅で添える。
@@ -744,7 +744,7 @@ def _child_record_story(
 
     filled_note = "（該当する期の列に記載）"
     if len(columns) > 1:
-        filled_note = "（過去の期は保存済みの児童票から記載）"
+        filled_note = "（過去の期は保存済みの保育経過記録から記載）"
     story: list = [
         head,
         Spacer(1, 2 * mm),
@@ -812,7 +812,7 @@ _BUILDERS = {
     "nursery_record": _nursery_record_story,
 }
 
-# A4 横で描く様式（園フォームの向きに一致）：児童票（年間マトリクス）＋クラス月案（月間指導計画）。
+# A4 横で描く様式（園フォームの向きに一致）：保育経過記録（年間マトリクス）＋クラス月案（月間指導計画）。
 _LANDSCAPE_KINDS = {"child_record", "class_monthly"}
 
 
@@ -825,9 +825,9 @@ def render_pdf(
     """確定 entry（dict）を帳票PDF（bytes）へ描画する。
     kind = "diary" | "monthly" | "class_monthly" | "child_record" | "nursery_record"。
 
-    past_entries は児童票のみ有効＝同じ子の保存済み児童票（アーカイブ由来）。同じ年度のものだけ
+    past_entries は保育経過記録のみ有効＝同じ子の保存済み保育経過記録（アーカイブ由来）。同じ年度のものだけ
     年間マトリクスの他の期の列に埋める（割当は assign_period_columns・今回の entry が常に優先）。
-    official_name は児童票/保育要録の**氏名欄**に描く本名（姓＋名・児童マスタ由来・AI 非生成）＝
+    official_name は保育経過記録/保育要録の**氏名欄**に描く本名（姓＋名・児童マスタ由来・AI 非生成）＝
     未指定は呼び名（child_id）へ降格。日誌/月案/クラス月案は使わない（呼び名のまま）。
     描画のみ（型検査はしない＝空欄は空セルで出す）。entry が dict でない・kind 不正は ValueError。
     """
@@ -841,7 +841,7 @@ def render_pdf(
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
-        # 児童票（年間マトリクス）・クラス月案（月間指導計画）は園フォームが A4 横なので横で描く。他は A4 縦。
+        # 保育経過記録（年間マトリクス）・クラス月案（月間指導計画）は園フォームが A4 横なので横で描く。他は A4 縦。
         pagesize=landscape(A4) if kind in _LANDSCAPE_KINDS else A4,
         leftMargin=_MARGIN,
         rightMargin=_MARGIN,
@@ -851,7 +851,7 @@ def render_pdf(
             "diary": "保育日誌",
             "monthly": "個別月案",
             "class_monthly": "月間指導計画（クラス月案）",
-            "child_record": "児童票",
+            "child_record": "保育経過記録",
             "nursery_record": "保育所児童保育要録",
         }[kind],
     )

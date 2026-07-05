@@ -24,7 +24,7 @@ from ..harness import policy_store
 from ..schemas.policy import PolicyCard, PolicyScope
 from ..tools import ask_caregiver as ask_caregiver  # noqa: PLC0414  人に訊く口は一階と共用
 
-_SCOPES = {s.value: s for s in PolicyScope}  # "共通"/"保育日誌"/"月案"/"児童票" → PolicyScope
+_SCOPES = {s.value: s for s in PolicyScope}  # "共通"/"保育日誌"/"月案"/"保育経過記録" → PolicyScope
 
 
 def _parse_scope(scope: str) -> PolicyScope | None:
@@ -35,7 +35,7 @@ def read_policy_cards(scope: str = "") -> dict:
     """既存の active 指針カードを返す（意味的競合を精査する材料）。
 
     Args:
-        scope: "共通"/"保育日誌"/"月案"/"児童票" で絞る（空/不正は全件＝降格・落とさない）。
+        scope: "共通"/"保育日誌"/"月案"/"保育経過記録" で絞る（空/不正は全件＝降格・落とさない）。
 
     Returns:
         {"cards": [{id, scope, body, rationale, source}], "count": n}
@@ -80,7 +80,7 @@ def propose_policy_card(
     if sc is None:
         return {
             "status": "error",
-            "detail": f"scope は 共通/保育日誌/月案/児童票 のいずれか: {scope!r}",
+            "detail": f"scope は 共通/保育日誌/月案/保育経過記録 のいずれか: {scope!r}",
         }
     if not body.strip():
         return {"status": "error", "detail": "body（カード本文）が空です"}
@@ -156,7 +156,7 @@ def commit_policy_card(
     if sc is None:
         return {
             "status": "error",
-            "detail": f"scope は 共通/保育日誌/月案/児童票 のいずれか: {scope!r}",
+            "detail": f"scope は 共通/保育日誌/月案/保育経過記録 のいずれか: {scope!r}",
         }
     if not body.strip():
         return {"status": "error", "detail": "body（カード本文）が空です"}

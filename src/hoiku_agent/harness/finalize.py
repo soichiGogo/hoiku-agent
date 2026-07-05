@@ -46,7 +46,7 @@ from .schema_check import (
 
 @dataclass
 class FinalizedDocument:
-    """確定処理の結果（決定的）。日誌（DiaryEntry）・月案（MonthlyPlan）・児童票（ChildRecord）で共用する。"""
+    """確定処理の結果（決定的）。日誌（DiaryEntry）・月案（MonthlyPlan）・保育経過記録（ChildRecord）で共用する。"""
 
     entry: DiaryEntry | MonthlyPlan | ClassMonthlyPlan | ChildRecord | NurseryRecord | None = (
         None  # 復元した書類モデル
@@ -212,7 +212,7 @@ def parse_draft_to_class_plan(text: str) -> ClassMonthlyPlan:
 
 
 def parse_draft_to_child_record(text: str) -> ChildRecord:
-    """児童票 author のドラフト文字列から ChildRecord を復元する。失敗時は ValueError（§19）。"""
+    """保育経過記録 author のドラフト文字列から ChildRecord を復元する。失敗時は ValueError（§19）。"""
     return _parse_json_to_model(text, ChildRecord, "ChildRecord")  # type: ignore[return-value]
 
 
@@ -304,10 +304,10 @@ def finalize_class_monthly_document(
 
 
 def finalize_child_record_document(text: str, template_ref: str | None = None) -> FinalizedDocument:
-    """児童票ドラフトを確定処理（復元→検査→整形）する（§19）。日誌・月案の finalize_* と対称。
+    """保育経過記録ドラフトを確定処理（復元→検査→整形）する（§19）。日誌・月案の finalize_* と対称。
 
     Args:
-        text: 児童票 author が生成したドラフト（ChildRecord の JSON を含む）。
+        text: 保育経過記録 author が生成したドラフト（ChildRecord の JSON を含む）。
         template_ref: 様式参照（あれば write_child_record_draft に渡す）。
 
     Returns:
@@ -325,7 +325,7 @@ def finalize_child_record_document(text: str, template_ref: str | None = None) -
 def finalize_nursery_record_document(
     text: str, template_ref: str | None = None
 ) -> FinalizedDocument:
-    """保育要録ドラフトを確定処理（復元→検査→整形）する（§19・L4）。日誌/月案/児童票の finalize_* と対称。
+    """保育要録ドラフトを確定処理（復元→検査→整形）する（§19・L4）。日誌/月案/保育経過記録の finalize_* と対称。
 
     Args:
         text: 保育要録 author が生成したドラフト（NurseryRecord の JSON を含む）。
@@ -357,7 +357,7 @@ def finalize_entry(
     実体は harness に1つ（§5）＝web の編集UIからはこれを中継するだけで、検査・整形を再実装しない。
 
     日誌の記録日（date）は harness 所有の機械メタ（§5）。doc_date が与えられればここで上書きしてから検証する
-    （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案/児童票の型・検査・整形を切替。
+    （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案/保育経過記録の型・検査・整形を切替。
 
     Args:
         data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan / ClassMonthlyPlan / ChildRecord /

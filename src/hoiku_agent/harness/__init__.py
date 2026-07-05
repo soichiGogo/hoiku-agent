@@ -57,7 +57,7 @@ from .schema_check import (
 
 # pipeline は agents → tools を芋づる式に読み込むため最後に import する
 # （tools 側の薄いラッパは上記の実体を submodule 直参照しており、循環は回避済み）。
-# router は全パイプライン（日誌＝pipeline / 月案＝monthly / クラス月案＝class_monthly / 児童票 / 要録）を
+# router は全パイプライン（日誌＝pipeline / 月案＝monthly / クラス月案＝class_monthly / 保育経過記録 / 要録）を
 # 束ねるため各パイプラインの後に置く。
 from .pipeline import CAREGIVER_APPROVAL_KEY, build_document_pipeline, mark_caregiver_approved
 from .monthly import build_monthly_pipeline

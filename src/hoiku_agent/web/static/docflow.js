@@ -1,4 +1,4 @@
-// 日誌/月案/児童票で共通の作成フロー（集計→収集→下書き→HITL→レビュー→確定→承認）。
+// 日誌/月案/保育経過記録で共通の作成フロー（集計→収集→下書き→HITL→レビュー→確定→承認）。
 // 生成は ADK /run_sse を直接駆動（自前 Runner は組まない＝§9）。harness/agents は不変。
 // 「働いている実質」は計画ステッパー＋ステータスラインで示し、作成AI/レビューAI/ツールの細かな
 // やりとりは既定で畳む（<details class="proc">）。保育士が前面で確認するのは「不足の確認（HITL）」と
@@ -12,14 +12,14 @@ const DOC_META = {
   diary: { title: "保育日誌", icon: "diary" },
   monthly: { title: "個別月案", icon: "calendar" },
   class_monthly: { title: "クラス月案", icon: "calendar" },
-  child_record: { title: "児童票", icon: "chart" },
+  child_record: { title: "保育経過記録", icon: "chart" },
   nursery_record: { title: "保育要録", icon: "chart" },
 };
 
 // doc_type（フロントの kind）→ 指針カードの scope（harness の PolicyScope 値）。
 // 「指針を取り込む」ステップで共通＋当該書類のカードだけを絞って見せる（render_for_doc と同じ絞り）。
 // クラス月案は個別月案と同じ scope（月案）を流用する（勘所を共有＝§18）。
-const POLICY_SCOPE_OF = { diary: "保育日誌", monthly: "月案", class_monthly: "月案", child_record: "児童票" };
+const POLICY_SCOPE_OF = { diary: "保育日誌", monthly: "月案", class_monthly: "月案", child_record: "保育経過記録" };
 
 // 集計 prep を持つ doc_type の表示メタ（digest の state キー・見出し・稼働中フェーズ文言）。
 const PREP_META = {
@@ -40,8 +40,8 @@ const PREP_META = {
   },
   nursery_record: {
     digestKey: "record_digest",
-    digestTitle: "最終年度の児童票の積み重ね（自動集計・L4 還流）",
-    phaseText: "最終年度の児童票を集計しています",
+    digestTitle: "最終年度の保育経過記録の積み重ね（自動集計・L4 還流）",
+    phaseText: "最終年度の保育経過記録を集計しています",
   },
 };
 

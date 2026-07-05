@@ -10,7 +10,7 @@ Word で開いて微修正・印刷・PDF 化できる（＝Word が母艦の現
 同梱し実行時に外部取得しない（ローカル完結）。docx→PDF の**サーバ変換はしない**（LibreOffice 等の
 重い依存を持ち込まない＝確定・綴じ用の PDF は `chohyo_pdf.py` が担い、Word 編集用は本モジュールが担う）。
 
-配線済みスライス：**児童票（保育経過記録）**＝5領域×子どもの姿（3–5）。**クラス月案（class_monthly）**＝
+配線済みスライス：**保育経過記録**＝5領域×子どもの姿（3–5）。**クラス月案（class_monthly）**＝
 園フォーム（月間指導計画）の**全欄を直接埋める**（保育目標・先月の姿・区分×領域グリッド〔養護2本柱＋
 教育5領域〕・食育/健康・安全/家庭/職員の連携・0–2 は個人目標小表を登場児ぶん）＝§18。評価系欄は月末記入＝
 AI 非生成で空欄温存。**個別月案（monthly）**＝旧経路として温存＝個別月案の中身を「個人目標」小表へ写像し
@@ -29,12 +29,9 @@ from pathlib import Path
 from docx import Document
 from docx.table import Table
 
-from ..schemas import FiveDomains
+from ..schemas import FiveDomains, ThreeViewpoint
 
 _TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
-
-# 園フォームの5領域行の見出し（テンプレの table 見出しと一致・順序はテンプレ側に従う）。
-_FIVE_DOMAINS = {e.value for e in FiveDomains}
 
 
 def _set_cell(cell, text: str) -> None:
@@ -78,7 +75,7 @@ def _find_table_by_any_cell(doc: Document, *tokens: str) -> Table | None:
 def _label_row_value_cell(tbl: Table, label: str):
     """表内で1列目が label のちょうどそのセル（＝流し込み先の2列目）を返す。無ければ None。
 
-    児童票の「領域×子どもの姿」表のように 1列目＝ラベル / 最終列＝記入 の様式を素直に扱う。
+    保育経過記録の「領域×子どもの姿」表のように 1列目＝ラベル / 最終列＝記入 の様式を素直に扱う。
     """
     for row in tbl.rows:
         cells = row.cells
@@ -102,14 +99,74 @@ def _fiscal_year_label(period: str) -> str:
 _AGE_LABEL = {"0-2": "0〜2", "3-5": "3〜5"}
 
 
+def _write_label_value_rows(tbl: Table, rows: list[tuple[str, str]]) -> None:
+    """表のデータ行（見出し行を除く）を rows（ラベル, 内容）へ書き替える。行数は増減させる。
+
+    テンプレのデータ行を先頭から再利用し、足りなければ `add_row` で増やし、余ったテンプレ行は削除する
+    （枠組みが5領域より少ない 0-2＝3つの視点 等で空行が残らないようにする）。1列目＝ラベル / 最終列＝内容。
+    """
+    for i, (label, value) in enumerate(rows):
+        if 1 + i < len(tbl.rows):
+            cells = tbl.rows[1 + i].cells
+        else:
+            cells = tbl.add_row().cells
+        _set_cell(cells[0], label)
+        _set_cell(cells[-1], value)
+    # 余ったテンプレ行を削除（先に list 化してから remove）。
+    for extra in list(tbl.rows[1 + len(rows) :]):
+        tbl._tbl.remove(extra._tr)
+
+
+def _fill_domain_matrix(matrix: Table, entry: dict) -> None:
+    """領域×子どもの姿の表を年齢別の枠組み＋「その他」で埋める（内容を落とさない）。
+
+    テンプレの表は5領域行の固定様式。3-5 は枠組みが5領域で一致するので**テンプレの行順・書式を
+    そのまま尊重**して該当ラベルへ流し込む（園様式の並びを崩さない）。0-2 は「3つの視点」タグで
+    5領域行のどれにも載らない（旧実装では全部捨てられ空欄になっていた）ので、chohyo_pdf の年間
+    マトリクスと同じく枠組み（3つの視点）へ**行を組み直す**。枠組みタグの無い叙述（10の姿のみ 等）は
+    「その他」行へ受ける。
+    """
+    age_band = entry.get("age_band") or "3-5"
+    framework = FiveDomains if age_band == "3-5" else ThreeViewpoint
+    row_labels = [e.value for e in framework]
+    by_label: dict[str, list[str]] = {label: [] for label in row_labels}
+    other: list[str] = []
+    for note in entry.get("development_notes") or []:
+        note = note or {}
+        desc = str(note.get("description") or "").strip()
+        if not desc:
+            continue
+        tags = [str(t) for t in (note.get("tags") or [])]
+        target = next((label for label in row_labels if label in tags), None)
+        (by_label[target] if target else other).append(desc)
+
+    template_labels = {matrix.rows[i].cells[0].text.strip() for i in range(1, len(matrix.rows))}
+    if set(row_labels) <= template_labels:
+        # 3-5：テンプレの行順・書式を保ち、ラベル一致セルへ流し込む（在庫の園様式を尊重）。
+        for row in matrix.rows[1:]:
+            label = row.cells[0].text.strip()
+            if by_label.get(label):
+                _set_cell(row.cells[-1], "\n".join(by_label[label]))
+        if other:
+            cells = matrix.add_row().cells
+            _set_cell(cells[0], "その他")
+            _set_cell(cells[-1], "\n".join(other))
+    else:
+        # 0-2：テンプレの5領域行は枠組みが違う。枠組み（3つの視点）＋その他へ行を組み直す。
+        out_rows = [(label, "\n".join(by_label[label])) for label in row_labels]
+        if other:
+            out_rows.append(("その他", "\n".join(other)))
+        _write_label_value_rows(matrix, out_rows)
+
+
 def _fill_child_record(entry: dict) -> Document:
-    """児童票（保育経過記録）フォームへ確定 entry を流し込む。
+    """保育経過記録フォームへ確定 entry を流し込む。
 
     - ヘッダ表：児童名・年度（対象期間から推定）・歳児（年齢帯）。生年月日・担任印は手書き欄のまま。
     - 対象期間表：period をそのまま。
-    - 領域×子どもの姿表：development_notes を 5領域タグで各行に振り分け（複数は改行連結）。
-      5領域タグを持たない叙述（3つの視点・10の姿のみ等）はこの様式に置き場が無いので流し込まない
-      （PDF/テキスト版には出る）＝様式に無いものを勝手に作らない。
+    - 領域×子どもの姿表：development_notes を年齢別の枠組み（0-2＝3つの視点／3-5＝5領域）で各行に
+      振り分ける（複数は改行連結）。枠組みタグを持たない叙述（10の姿のみ 等）は「その他」行へ受けて
+      内容を落とさない（chohyo_pdf の年間マトリクスと同じ扱い）。
     """
     doc = Document(str(_TEMPLATE_DIR / "child_record.docx"))
 
@@ -132,22 +189,10 @@ def _fill_child_record(entry: dict) -> Document:
         if cell is not None:
             _set_cell(cell, str(entry.get("period") or ""))
 
-    # ── 領域×子どもの姿（AI 内容の本体） ──
+    # ── 領域×子どもの姿（AI 内容の本体・年齢別枠組み＋その他で内容を落とさない） ──
     matrix = _find_table(doc, header_contains=("領域", "子どもの姿"))
     if matrix is not None:
-        by_domain: dict[str, list[str]] = {d: [] for d in _FIVE_DOMAINS}
-        for note in entry.get("development_notes") or []:
-            note = note or {}
-            desc = str(note.get("description") or "").strip()
-            if not desc:
-                continue
-            for tag in note.get("tags") or []:
-                if str(tag) in by_domain:
-                    by_domain[str(tag)].append(desc)
-        for row in matrix.rows[1:]:  # 見出し行を除く
-            label = row.cells[0].text.strip()
-            if label in by_domain and by_domain[label]:
-                _set_cell(row.cells[-1], "\n".join(by_domain[label]))
+        _fill_domain_matrix(matrix, entry)
 
     return doc
 

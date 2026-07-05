@@ -149,7 +149,7 @@ def monthly() -> MonthlyPlan:
 
 
 def child_record() -> ChildRecord:
-    """児童票（3–5・発達の経過2件・身体測定あり）。"""
+    """保育経過記録（3–5・発達の経過2件・身体測定あり）。"""
     return ChildRecord(
         period="2026-04〜2026-06",
         age_band=AgeBand.三から五歳,

@@ -186,7 +186,7 @@ def validate_class_monthly_fields(plan: ClassMonthlyPlan) -> list[str]:
 
 
 def validate_child_record_fields(record: ChildRecord) -> list[str]:
-    """児童票（期ごとの保育経過記録）ドラフトの必須欄・年齢分岐を検査する（空＝充足・§19）。
+    """保育経過記録（期ごと）ドラフトの必須欄・年齢分岐を検査する（空＝充足・§19）。
 
     日誌・月案と同じく「型としての成立」だけを決定的に検査する（表現の適否＝開示前提の
     肯定的・非断定的表現はレビューAI／指針整合＝eval の責務）。年齢分岐は日誌・月案と共通の
@@ -194,18 +194,18 @@ def validate_child_record_fields(record: ChildRecord) -> list[str]:
     0–2＝3つの視点 / 3–5＝5領域 のタグを課す（実務主流＝0歳:3つの視点/全年齢:5領域と一致・§19）。
 
     Args:
-        record: 検査対象の児童票ドラフト（ChildRecord）。
+        record: 検査対象の保育経過記録ドラフト（ChildRecord）。
 
     Returns:
         違反メッセージのリスト。空リストなら "型" として成立。
     """
     problems: list[str] = []
 
-    # ── 必須欄の充足（空文字も "未記入" 扱い） ── §19 児童票：共通構造
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ── §19 保育経過記録：共通構造
     if not record.period.strip():
         problems.append("対象期間（period）が未記入")
     if not record.child_id.strip():
-        problems.append("対象児（child_id）が未記入（児童票は児童別＝§19）")
+        problems.append("対象児（child_id）が未記入（保育経過記録は児童別＝§19）")
     if not record.overall_note.strip():
         problems.append("総合所見（overall_note）が未記入（期の育ちの総括＝§19）")
     if not record.development_notes:
@@ -227,7 +227,7 @@ def validate_child_record_fields(record: ChildRecord) -> list[str]:
 def validate_nursery_record_fields(record: NurseryRecord) -> list[str]:
     """保育要録（保育に関する記録）ドラフトの必須欄・年齢分岐を検査する（空＝充足・§19・L4）。
 
-    日誌・月案・児童票と同じく「型としての成立」だけを決定的に検査する（開示前提の肯定的・
+    日誌・月案・保育経過記録と同じく「型としての成立」だけを決定的に検査する（開示前提の肯定的・
     非断定的表現はレビューAI／指針整合＝eval の責務）。要録は年長（5歳児）専用のため年齢分岐は
     実質 5領域に畳まれるが、共通の _required_tag_type（三から五歳＝FiveDomains）を流用し
     「保育の展開と子どもの育ち（development_notes）」の各叙述にタグを課す（実装の二重化を避ける・§19）。

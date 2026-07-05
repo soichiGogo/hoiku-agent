@@ -407,7 +407,7 @@ function buildMonthly(body, entry, formMeta, template) {
   ]);
 }
 
-/* ---- 発達の経過 1件（児童票） ---- */
+/* ---- 発達の経過 1件（保育経過記録） ---- */
 function developmentItem(formMeta, ageBand) {
   return (n) => {
     n = n || {};
@@ -419,7 +419,7 @@ function developmentItem(formMeta, ageBand) {
   };
 }
 
-// 発達の経過リスト節（児童票・要録で共用。key/追加ラベルだけ切替）。
+// 発達の経過リスト節（保育経過記録・要録で共用。key/追加ラベルだけ切替）。
 function developmentSection(label, addLabel, entry, formMeta, ageBand) {
   const dev = listSection(
     label,
@@ -432,7 +432,7 @@ function developmentSection(label, addLabel, entry, formMeta, ageBand) {
   return { node: dev, collect: () => ({ development_notes: dev._collect() }) };
 }
 
-/* ---- 児童票フォーム（期ごとの保育経過記録） ---- */
+/* ---- 保育経過記録フォーム（期ごと） ---- */
 function buildChildRecord(body, entry, formMeta, template) {
   const ageBand = entry.age_band || "0-2";
 
@@ -724,7 +724,7 @@ const META = {
   diary: { title: "保育日誌", icon: "diary", build: buildDiary },
   monthly: { title: "個別月案", icon: "calendar", build: buildMonthly },
   class_monthly: { title: "クラス月案", icon: "calendar", build: buildClassMonthly },
-  child_record: { title: "児童票", icon: "chart", build: buildChildRecord },
+  child_record: { title: "保育経過記録", icon: "chart", build: buildChildRecord },
   nursery_record: { title: "保育要録", icon: "chart", build: buildNurseryRecord },
 };
 
