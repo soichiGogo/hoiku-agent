@@ -24,8 +24,9 @@ const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
 
-// 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record（児童票フローの
-// kind は "child_record"＝makeDocFlow 側で指定）。将来「要録」等が増えてもこの配列に足すだけ（§19）。
+// 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record/youroku。
+// monthly セグメントは**クラス月案**（園の実様式・§18）＝flow kind は "class_monthly"（DocTypeRouter の
+// doc_type "クラス月案" に対応）。needsChild＝上部の対象児コンボを使うか（クラス月案はクラス単位なので不要）。
 const DOC_TYPES = [
   {
     key: "diary",
@@ -33,13 +34,15 @@ const DOC_TYPES = [
     icon: "diary",
     runLabel: "下書きを作成する",
     desc: "",
+    needsChild: true,
   },
   {
     key: "monthly",
-    label: "個別月案",
+    label: "クラス月案",
     icon: "calendar",
-    runLabel: "月案の下書きを作成する",
+    runLabel: "クラス月案の下書きを作成する",
     desc: "",
+    needsChild: false,
   },
   {
     key: "record",
@@ -47,6 +50,7 @@ const DOC_TYPES = [
     icon: "chart",
     runLabel: "児童票の下書きを作成する",
     desc: "",
+    needsChild: true,
   },
   {
     key: "youroku",
@@ -54,6 +58,7 @@ const DOC_TYPES = [
     icon: "chart",
     runLabel: "保育要録の下書きを作成する",
     desc: "",
+    needsChild: true,
   },
 ];
 const DOC_TYPE_OF = Object.fromEntries(DOC_TYPES.map((d) => [d.key, d]));
@@ -175,6 +180,48 @@ function samplePrevEntries(childId) {
     ],
     evaluation: { child_focus: d.child_focus, self_review: d.self_review },
   }));
+}
+
+// 前月のクラスの日誌の仮名サンプル（クラス月案＝L2 還流のデモ seed）。個別月案（1児）と違い、
+// クラス全体なので**複数の仮名児**を登場させる（digest がクラス全登場児ぶんになり、0–2 は個人目標が
+// 児ごとに生成される）。年齢帯で内容を切替（0–2＝3視点・生活記録あり／3–5＝5領域・生活記録なし）。
+function sampleClassPrevEntries(ageBand) {
+  const roster =
+    ageBand === "3-5"
+      ? [
+          { child: "さくらちゃん", months: "4歳2か月", state: "鬼ごっこでルールを友だちに説明し、つかまった子に優しく声をかけていた", tags: ["人間関係"] },
+          { child: "れんくん", months: "4歳5か月", state: "積み木で友だちと大きな街を作り、役割を分担して遊びを続けた", tags: ["言葉", "人間関係"] },
+          { child: "みおちゃん", months: "4歳0か月", state: "散歩で見つけた葉の色や形の違いに気づき、図鑑で調べようとした", tags: ["環境"] },
+        ]
+      : [
+          { child: "はるとくん", months: "1歳3か月", state: "歩行が安定し、好きな玩具を自分で選んで保育者に手渡した", tags: ["健やかに伸び伸びと育つ"], life: { meal: "完了期を全量摂取", sleep: "12:15〜14:10 午睡", toilet: "排尿4回・排便1回", mood_health: "体温36.5℃・機嫌よし" } },
+          { child: "ゆいちゃん", months: "1歳1か月", state: "砂場でスコップに砂をすくっては空け、こぼれる様子をじっと見つめた", tags: ["身近なものと関わり感性が育つ"], life: { meal: "後期食を8割", sleep: "12:20〜14:20 午睡", toilet: "排尿5回・排便1回", mood_health: "体温36.6℃・変化なし" } },
+          { child: "そうたくん", months: "0歳11か月", state: "絵本の動物を指さして声を出し、保育者に見せようとした", tags: ["身近な人と気持ちが通じ合う"], life: { meal: "後期食を9割", sleep: "12:10〜14:00 午睡", toilet: "排尿4回・排便1回", mood_health: "体温36.5℃・機嫌よし" } },
+        ];
+  const dates = ["2026-06-12", "2026-06-26"];
+  const entries = [];
+  for (const d of dates) {
+    for (const r of roster) {
+      entries.push({
+        date: d,
+        age_band: ageBand,
+        weather: "晴れ",
+        attendance: [{ child_id: r.child, present: true, reason: null }],
+        practice_record: "クラスの子どもの興味に応じた遊びを用意した。",
+        individual_notes: [
+          {
+            child_id: r.child,
+            age_months: r.months,
+            observed_state: r.state,
+            tags: r.tags,
+            life_record: r.life || {},
+          },
+        ],
+        evaluation: { child_focus: "興味の対象に自分から関わっていた", self_review: "発達に合わせた環境を用意できた" },
+      });
+    }
+  }
+  return entries;
 }
 
 // 期間中の日誌の仮名サンプル（児童票＝L3 還流のデモ seed）。3ヶ月にわたる発達の推移（月ごとに姿が
@@ -764,9 +811,16 @@ async function main() {
   const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
   sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
 
-  // 対象児が変わったら：月案/児童票の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
+  // クラス月案の年齢帯チップ（クラス＝0-2/3-5）。切替で前月サンプルの件数表示を追従する。
+  const classAge = chipGroup($("class-ageband"), AGE_BANDS, (label) => onClassAgeChange(label), null);
+  function onClassAgeChange(label) {
+    const band = AGE_BAND_VALUE[label] || "0-2";
+    $("monthly-seed-count").textContent = sampleClassPrevEntries(band).length + " 件";
+  }
+
+  // 対象児が変わったら：児童票/要録の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
+  // クラス月案はクラス単位なので対象児に依存しない（件数は年齢帯チップの onClassAgeChange が更新する）。
   function onChildChange(name) {
-    $("monthly-seed-count").textContent = samplePrevEntries(name).length + " 件";
     $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
     $("youroku-seed-count").textContent = sampleRecordEntries(name).length + " 件";
     diaryAge.select(AGE_BAND_LABEL[ageBandOf(name)] || AGE_BANDS[0]);
@@ -803,13 +857,15 @@ async function main() {
     status,
     onBusy: setSegBusy,
   });
+  // 月案セグメント＝クラス月案（園の実様式・§18）。flow kind は "class_monthly"（DocTypeRouter の
+  // doc_type "クラス月案" に対応）。前月集計（L2）・確定・編集フォーム・PDF/Word は共通フローで動く。
   const monthlyFlow = makeDocFlow({
     area: $("monthly-flow"),
     button: $("doc-run"),
     stepper: $("monthly-stepper"),
     steps: ["前月の集計", "指針を取り込む", "情報を集める", "下書き", "レビュー", "確定"],
     showDigest: true,
-    kind: "monthly",
+    kind: "class_monthly",
     status,
     onBusy: setSegBusy,
   });
@@ -848,15 +904,28 @@ async function main() {
     diaryFlow.run(null, text);
   }
   async function runMonthly() {
-    const child = docChild();
+    // クラス月案はクラス単位（対象児を取らない）。年齢帯＝クラスと対象月で回す。
     const month = $("monthly-month").value || "2026-07";
-    status.setSubject(child);
-    // L2 seed＝前月の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
+    const ageBandLabel = classAge();
+    const ageBand = AGE_BAND_VALUE[ageBandLabel] || "0-2";
+    status.setSubject(ageBandLabel);
+    // L2 seed＝前月のクラスの日誌。アーカイブに保存済み（当月年齢帯分）があれば使い、無ければサンプルへ降格。
     const pm = prevMonth(month);
-    const { entries, source } = await seedEntries(pm, pm, samplePrevEntries(child));
+    const fallback = sampleClassPrevEntries(ageBand);
+    let { entries, source } = await seedEntries(pm, pm, fallback);
+    // アーカイブ由来は当該年齢帯の日誌だけに絞る（クラス＝年齢帯の月案なので他クラスの姿を混ぜない）。
+    if (source === "アーカイブ") {
+      const filtered = entries.filter((e) => (e.age_band || "0-2") === ageBand);
+      if (filtered.length) entries = filtered;
+      else ({ entries, source } = { entries: fallback, source: "サンプル" });
+    }
     $("monthly-seed-count").textContent = `${entries.length} 件（${source}）`;
-    const seed = { doc_type: "月案", prev_month_entries: entries };
-    monthlyFlow.run(seed, `${month} の ${child} の個別月案を作成してください。`);
+    const seed = { doc_type: "クラス月案", prev_month_entries: entries };
+    monthlyFlow.run(
+      seed,
+      `${month} の ${ageBandLabel}（年齢帯 ${ageBand}）のクラス月案（月間指導計画）を作成してください。` +
+        `month には「${month}」、age_band には「${ageBand}」をそのまま書いてください。`,
+    );
   }
   async function runRecord() {
     const child = docChild();
@@ -913,6 +982,10 @@ async function main() {
       $("doc-area-" + d.key).hidden = !on;
     }
     const t = DOC_TYPE_OF[key];
+    // クラス月案はクラス単位なので上部の対象児コンボを隠す（他書類は対象児を使う）。
+    const needsChild = t.needsChild !== false;
+    $("doc-child-label").hidden = !needsChild;
+    $("doc-children").hidden = !needsChild;
     $("doc-desc").textContent = t.desc;
     $("doc-run-label").textContent = t.runLabel;
     status.clearPhase();
@@ -929,6 +1002,7 @@ async function main() {
   $("doc-run").onclick = () => RUN[docKind()]();
   switchDocType("diary"); // 初期表示（既定＝保育日誌）
   onChildChange(docChild()); // 初期の seed 件数・年齢帯を対象児に合わせる
+  onClassAgeChange(classAge()); // クラス月案の前月サンプル件数を初期表示（クラス＝年齢帯）
 
   // ── 指針を育てる ──
   sampleChips($("policy-samples"), POLICY_SAMPLES, (s) => ($("policy-memo").value = s));

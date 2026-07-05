@@ -11,19 +11,26 @@ import { renderEditableDoc } from "./docedit.js";
 const DOC_META = {
   diary: { title: "保育日誌", icon: "diary" },
   monthly: { title: "個別月案", icon: "calendar" },
+  class_monthly: { title: "クラス月案", icon: "calendar" },
   child_record: { title: "児童票", icon: "chart" },
   nursery_record: { title: "保育要録", icon: "chart" },
 };
 
 // doc_type（フロントの kind）→ 指針カードの scope（harness の PolicyScope 値）。
 // 「指針を取り込む」ステップで共通＋当該書類のカードだけを絞って見せる（render_for_doc と同じ絞り）。
-const POLICY_SCOPE_OF = { diary: "保育日誌", monthly: "月案", child_record: "児童票" };
+// クラス月案は個別月案と同じ scope（月案）を流用する（勘所を共有＝§18）。
+const POLICY_SCOPE_OF = { diary: "保育日誌", monthly: "月案", class_monthly: "月案", child_record: "児童票" };
 
 // 集計 prep を持つ doc_type の表示メタ（digest の state キー・見出し・稼働中フェーズ文言）。
 const PREP_META = {
   monthly: {
     digestKey: "prev_month_digest",
     digestTitle: "前月の積み重ね（自動集計・L2 還流）",
+    phaseText: "前月の積み重ねを集計しています",
+  },
+  class_monthly: {
+    digestKey: "prev_month_digest",
+    digestTitle: "前月の積み重ね（クラス全体・自動集計・L2 還流）",
     phaseText: "前月の積み重ねを集計しています",
   },
   child_record: {
