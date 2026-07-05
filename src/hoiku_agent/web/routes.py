@@ -383,9 +383,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         disposition = f"attachment; filename=\"document.docx\"; filename*=UTF-8''{quote(filename)}"
         return Response(
             content=data,
-            media_type=(
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            ),
+            media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
             headers={"Content-Disposition": disposition},
         )
 
