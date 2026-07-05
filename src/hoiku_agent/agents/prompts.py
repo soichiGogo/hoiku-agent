@@ -208,6 +208,145 @@ NURSERY_RECORD_AUTHOR_INSTRUCTION = f"""\
 - 実名は書かない（架空児の仮名のみ＝§14）。
 """
 
+# ──────────────────────────── アップロード取込（ファイル → 既存スキーマ抽出） ────────────────────────────
+# 「書類を見る」タブのアップロード取込（web/upload_parse・§11）。作成AI（作文）と違い、**既にある
+# 保育書類（スキャンPDF/Word/Excel）を忠実に構造化データへ書き起こす**（新規に作文しない）。
+# 種別は保育士がアップロード時に選ぶ＝1スキーマに固定。対象キー・child・年齢帯は与件（保育士入力）で、
+# システムが最終的に上書きするので、モデルは迷ったら与件をそのまま写す。
+
+_UPLOAD_PREAMBLE = """\
+あなたは、保育士が既に作成した保育書類（紙をスキャンした PDF・Word(.docx)・Excel(.xlsx)）を読み取り、
+その内容を**忠実に**構造化データ（JSON）へ書き起こすアシスタントです。**新しく作文するのではなく、
+アップロードされたファイルに書かれている内容を正確に抽出**してください。
+
+厳守事項:
+- ファイルに書かれていない内容を創作・推測で埋めない。該当が無い欄は空文字 "" / 空配列 [] にする。
+- 原本の表現・語調をできるだけ保つ（不要な言い換え・要約・脚色をしない）。読み取れない箇所は空にする。
+- **原簿系の値（身長 height_cm / 体重 weight_kg / 就学先 school_name / 保育期間 enrollment_period）は、
+  ファイルに明記されている場合だけ書き写す。無ければ空にする（絶対に創作しない）**。
+- child_id にはファイルに書かれている子どもの呼び名をそのまま使う（この取込では改変しない）。
+- 表（セルを "|" で区切ったテキスト）や見出しから、どの値がどの欄かを丁寧に対応づける。
+"""
+
+# 与件（保育士がアップロード時に指定）を示す共通ブロック。JSON にそのまま写させる。
+_UPLOAD_GIVENS = """\
+【与件（保育士がアップロード時に指定済み。JSON の該当欄にそのまま書き写す）】
+- 種別: {kind_label}
+- {target_label}: {target}
+- 年齢帯(age_band): {age_band}{child_line}
+"""
+
+# 種別別の JSON スキーマ（作成AI と同じ形。抽出なので「創作しない」点だけ強調）。
+_UPLOAD_SCHEMA = {
+    "diary": """\
+スキーマ（DiaryEntry・保育日誌）。応答の末尾に ```json フェンスで1つだけ出力する:
+{
+  "date": "対象日（与件をそのまま。例: 2026-05-15）",
+  "age_band": "0-2 または 3-5（与件）",
+  "weather": "天候（原本にあれば。無ければ空文字）",
+  "temperature": "気温（原本にあれば・任意）",
+  "class_name": "組名（原本にあれば・任意）",
+  "daily_aim": "本日のねらい（原本にあれば・任意）",
+  "attendance": [{"child_id": "子どもの呼び名", "present": true, "reason": null}],
+  "health_notes": null,
+  "practice_record": "主な活動・保育の実践記録（原本の記述を書き写す）",
+  "individual_notes": [{"child_id": "呼び名", "age_months": "月齢（原本にあれば・任意）", "observed_state": "当日の子どもの姿（原本の記述）", "tags": ["..."], "life_record": {"meal": "食事", "sleep": "午睡", "toilet": "排泄", "mood_health": "機嫌・体調"}, "individual_aim": "個人のねらい（任意）"}],
+  "evaluation": {"child_focus": "(a)子どもに焦点（原本にあれば）", "self_review": "(b)保育の振り返り（原本にあれば）"},
+  "parent_contact": null
+}""",
+    "monthly": """\
+スキーマ（MonthlyPlan・個別月案）。応答の末尾に ```json フェンスで1つだけ出力する:
+{
+  "month": "対象月 YYYY-MM（与件）",
+  "age_band": "0-2 または 3-5（与件）",
+  "child_id": "子どもの呼び名（与件）",
+  "age_months": "月齢（原本にあれば・任意）",
+  "prev_child_state": "前月の子どもの姿（原本の記述。無ければ空文字）",
+  "nurturing_life": "養護：生命の保持（原本の記述）",
+  "nurturing_emotion": "養護：情緒の安定（原本の記述）",
+  "education": [{"aim": "教育のねらい・内容（原本の記述）", "tags": ["..."]}],
+  "monthly_goals": "今月のねらい・内容（原本の記述）",
+  "environment_support": "環境構成・援助（原本の記述）",
+  "events_family_food": null,
+  "evaluation_reflection": "評価・反省（原本にあれば。無ければ空文字）"
+}""",
+    "child_record": """\
+スキーマ（ChildRecord・児童票＝期ごとの保育経過記録）。応答の末尾に ```json フェンスで1つだけ出力する:
+{
+  "period": "対象期間（与件をそのまま。例: 2026-04〜2026-06）",
+  "age_band": "0-2 または 3-5（与件）",
+  "child_id": "子どもの呼び名（与件）",
+  "age_months": "月齢（原本にあれば・任意）",
+  "development_notes": [{"description": "その期の発達・生活の経過（原本の記述）", "tags": ["..."]}],
+  "care_notes": "配慮事項・特記（原本にあれば。無ければ空文字）",
+  "family_liaison": "家庭との連携（原本にあれば。無ければ空文字）",
+  "overall_note": "総合所見（原本の記述）",
+  "next_aims": "次期に向けて（原本にあれば・任意）",
+  "height_cm": "身長（原本に測定値があれば・無ければ空文字）",
+  "weight_kg": "体重（原本に測定値があれば・無ければ空文字）"
+}""",
+    "nursery_record": """\
+スキーマ（NurseryRecord・保育要録の「保育に関する記録」）。応答の末尾に ```json フェンスで1つだけ出力する:
+{
+  "fiscal_year": "対象年度（与件をそのまま。例: 2026）",
+  "age_band": "3-5（与件・年長固定）",
+  "child_id": "子どもの呼び名（与件）",
+  "age_months": "年齢（原本にあれば・任意）",
+  "final_year_focus": "最終年度の重点（原本の記述）",
+  "individual_focus": "個人の重点（原本の記述）",
+  "development_notes": [{"description": "保育の展開と子どもの育ち（原本の記述）", "tags": ["..."]}],
+  "special_notes": "特に配慮すべき事項（原本にあれば。無ければ空文字＝「なし」）",
+  "growth_until_final": "最終年度に至るまでの育ち（原本の記述）",
+  "school_name": "就学先（原本に明記があれば・無ければ空文字）",
+  "enrollment_period": "保育期間（原本に明記があれば・無ければ空文字）"
+}""",
+}
+
+_UPLOAD_KIND_LABEL = {
+    "diary": "保育日誌",
+    "monthly": "個別月案",
+    "child_record": "児童票（保育経過記録）",
+    "nursery_record": "保育要録",
+}
+_UPLOAD_TARGET_LABEL = {
+    "diary": "対象日(date)",
+    "monthly": "対象月(month)",
+    "child_record": "対象期間(period)",
+    "nursery_record": "対象年度(fiscal_year)",
+}
+
+
+def build_upload_extract_instruction(
+    kind: str, *, age_band: str, target: str, child: str = ""
+) -> str:
+    """アップロード取込の抽出 instruction を組み立てる（種別別・与件を前置）。
+
+    種別は保育士が選択済み＝1スキーマに固定。対象キー・age_band・child は与件（保育士入力）で、
+    JSON にそのまま写させる（システムが最終的に上書きする）。tags は原本の記述から年齢帯の語彙で推定させる。
+    """
+    schema = _UPLOAD_SCHEMA.get(kind)
+    if schema is None:
+        raise ValueError(f"未対応の取込種別: {kind!r}")
+    child_line = f"\n- 対象児(child_id): {child}" if child and kind != "diary" else ""
+    givens = _UPLOAD_GIVENS.format(
+        kind_label=_UPLOAD_KIND_LABEL.get(kind, kind),
+        target_label=_UPLOAD_TARGET_LABEL.get(kind, "対象"),
+        target=target or "（未指定）",
+        age_band=age_band or "（未指定）",
+        child_line=child_line,
+    )
+    return f"""\
+{_UPLOAD_PREAMBLE}
+{givens}
+{schema}
+
+- tags は原本の記述内容から、次の語彙で **完全一致** で選ぶ（年齢帯 {age_band} の枠組みの必須を満たす。
+  0–2＝3つの視点／3–5＝5領域が最低1つ。原本にタグの明記が無くても、記述内容から適切なものを推定してよい）:
+{_TAG_VOCAB}
+- ファイルの内容だけから書く（創作しない）。読み取れない欄は空文字/空配列にして、保育士の確認・修正に委ねる。
+"""
+
+
 REVIEW_INSTRUCTION = """\
 あなたは作成された保育書類の下書き（state["draft"]）を、作成者とは別の視点で点検する
 レビュアーです（Evaluator）。レビューは最終段階で一括して行う。下書き末尾の JSON も内容点検の対象。

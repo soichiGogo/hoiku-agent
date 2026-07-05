@@ -182,6 +182,34 @@ export async function listRecords(docType) {
   }
 }
 
+// アップロードしたファイル（pdf/docx/xlsx）を解析し、確認・編集用の entry を受け取る（「書類を見る」取込）。
+// 種別・対象・年齢帯・対象児は保育士が場所/フォームで指定した与件（サーバが権威的に上書きしてから解析）。
+// 401（パスコード必要）・400（未対応形式）は {error} に畳んで返す（呼び出し側が正直に表示）。
+export async function parseUpload(kind, { target, child, ageBand }, file) {
+  const fd = new FormData();
+  fd.append("kind", kind);
+  fd.append("target", target || "");
+  fd.append("child", child || "");
+  fd.append("age_band", ageBand || "");
+  fd.append("file", file);
+  try {
+    const r = await fetch("/api/parse-upload", { method: "POST", body: fd });
+    if (r.status === 401) return { error: "パスコードが必要です（配布リンクの保護）", code: "passcode_required" };
+    if (!r.ok) {
+      let detail = "解析に失敗しました (" + r.status + ")";
+      try {
+        detail = (await r.json()).error || detail;
+      } catch {
+        /* 本文が JSON でなければ既定メッセージ */
+      }
+      return { error: detail };
+    }
+    return await r.json(); // { kind, entry, formatted, problems, parse_error, ok }
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 // 単一書類の全文（現行版の整形テキスト＋本文 entry）。不在/未接続/障害は null（呼び出し側が正直に表示）。
 export async function getRecord(id) {
   try {

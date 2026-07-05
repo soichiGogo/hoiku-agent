@@ -18,7 +18,7 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -31,6 +31,7 @@ from .chohyo_pdf import render_pdf
 from .docx_fill import fill_docx
 from .docx_fill import supported_kinds as docx_supported_kinds
 from .iap import verified_iap_email
+from .upload_parse import parse_uploaded_file
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
@@ -44,7 +45,8 @@ _COOKIE_NAME = "hoiku_demo"
 
 # LLM を回す（＝課金が発生する）口だけをパスコードで守る。読み取り・セッション作成は素通し。
 _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
-_GATED_PREFIX = ("/api/improve",)
+# /api/improve（改善エージェント）／/api/parse-upload（アップロード取込＝ファイル解析に LLM を回す）。
+_GATED_PREFIX = ("/api/improve", "/api/parse-upload")
 # 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
 # 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
 _GATED_WRITE_PREFIX = ("/api/records", "/api/notation")
@@ -386,6 +388,38 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             media_type=("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
             headers={"Content-Disposition": disposition},
         )
+
+    # ── アップロード取込（ファイル → LLM 解析 → 既存スキーマ・「書類を見る」タブ・§11）──────────
+    # 種別（kind）は保育士がフォルダで選択済み＝1スキーマに固定。対象キー・child・age_band は与件
+    # （フォームで指定）で、upload_parse が権威的に上書きしてから harness.finalize_entry で検査・整形する。
+    # LLM を回す口なのでパスコードゲート（_GATED_PREFIX に /api/parse-upload を追加済み）。保存は後段の
+    # /api/records（record_store・author_kind="imported"）で行い、ここは解析結果を返すだけ（中継・§5）。
+    @app.post("/api/parse-upload")
+    async def web_parse_upload(
+        file: UploadFile = File(...),
+        kind: str = Form("diary"),
+        target: str = Form(""),
+        child: str = Form(""),
+        age_band: str = Form(""),
+    ):
+        """アップロードされたファイルを解析し、確認・編集用の entry（＋整形/検査結果）を返す。
+
+        未対応形式・未対応種別は 400（握りつぶさない）。creds 未設定/LLM 失敗は 200＋parse_error で
+        正直に降格し、フォームは与件入りの最小 entry で描ける（偽の緑を出さない）。
+        """
+        data = await file.read()
+        try:
+            return await parse_uploaded_file(
+                kind,
+                file.filename or "",
+                file.content_type,
+                data,
+                target=target.strip(),
+                child=child.strip(),
+                age_band=age_band.strip(),
+            )
+        except ValueError as e:
+            return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
 
     # ── 書類アーカイブ（harness/record_store の中継・Phase 1）───────────────────────────
     # sync def＝FastAPI が threadpool で回す（同期 DB I/O でイベントループを塞がない）。
