@@ -422,6 +422,16 @@ def store_status(path: Path | None = None) -> str:
 
 # ──────────────────────────── view（API/UI 用の決定的マッピング） ────────────────────────────
 
+# 機械シードの由来タグ（"seed:初版" 等）。保育士の「気づき」ではなく雛形の出所なので、カード/履歴の
+# "だれ" 欄には出さない（`history_view` の by と揃える＝シードだけ機械タグが浮くのを避ける）。
+_SEED_SOURCE_PREFIX = "seed:"
+
+
+def _display_source(source: str) -> str:
+    """カードの由来（source）を表示用に整える。機械シード由来（"seed:…"）は空にして前面に出さない。"""
+    return "" if source.startswith(_SEED_SOURCE_PREFIX) else source
+
+
 # scope → フロントの対象書類タグ（左ライン色分け・ラベル）。presentation 契約の唯一の出所。
 _SCOPE_DOC_TYPE: dict[PolicyScope, str] = {
     PolicyScope.共通: "common",
@@ -447,7 +457,7 @@ def card_view(card: PolicyCard) -> dict:
         "scope": card.scope.value,
         "doc_type": _SCOPE_DOC_TYPE[card.scope],
         "doc_label": _SCOPE_DOC_LABEL[card.scope],
-        "source": card.source,
+        "source": _display_source(card.source),
         "date": card.created_at.date().isoformat(),
     }
 
