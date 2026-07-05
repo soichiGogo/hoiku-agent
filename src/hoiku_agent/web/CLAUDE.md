@@ -24,9 +24,16 @@
   （harness の `finalize_entry` を中継）で再 validate/整形し、結果を `PATCH …/sessions` で `final_entry`/`final_document`/
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
-- **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`）と
+- **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`・
+  **`/api/parse-upload`**＝アップロード取込のファイル解析）と
   **書類アーカイブの書込（POST `/api/records*`＝DB へのゴミデータ・偽承認証跡の防止）**を
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
+- **アップロード取込（「書類を見る」タブ）は中継のみ**：既存ファイル（PDF/Word/Excel）を既存スキーマへ
+  取り込む。フォルダ（種別）から kind、（personal 種別なら）子どもフォルダから child が場所で決まる（別建ての
+  種別セレクタを持たない＝ファイルシステム的操作）。フロントは `/api/parse-upload`（multipart）で解析結果 entry を
+  受け、**既存の編集フォーム（`docedit.js`）で確認・修正**→ `/api/finalize-edit` で再検査→ `/api/records`
+  （`author_kind="imported"`）で保存。**解析・検査・整形・保存の決定的実体は harness/agents に1つ**（web は
+  extract〔format 変換〕と中継だけ・§5）。生ファイルは保存しない（抽出→entry のみ永続化＝PII blob を残さない）。
 - **書類アーカイブ（Phase 1）は中継のみ**：確定/編集保存/承認のタイミングでフロントが `/api/records`・
   `/api/records/approve` を呼び、実体は `harness/record_store`（web は now 注入だけ＝runtime 境界）。
   actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝認証までのつなぎ。
@@ -92,7 +99,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   児童マスタの本名（姓＋名＝`record_store.get_child` の official_name）を `official_name` で渡して描く**＝就学先引継ぎの
   公式様式は本名（AI 非生成・未登録は呼び名へ降格））・**`/api/export-docx`**（確定 entry を
   `docx_fill.fill_docx` で園の実 Word 様式に流し込んで返す＝Word 編集版・描画のみ・非ゲート・未対応 kind は 400。対応 kind は
-  `/api/config` の `docx_kinds` で UI に伝えボタン出し分け）・**`/api/records`／`/api/records/approve`／
+  `/api/config` の `docx_kinds` で UI に伝えボタン出し分け）・**`/api/parse-upload`**（アップロード取込＝multipart で
+  受けたファイルを `upload_parse.parse_uploaded_file` で解析し確認・編集用 entry〔＋整形/検査結果〕を返す中継。**LLM を回す口＝
+  `_GATED_PREFIX` でパスコードゲート**・未対応形式/種別は 400・creds 無/LLM 失敗は 200＋parse_error で正直に降格。保存は後段の
+  `/api/records`＝`author_kind="imported"`）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
   リテラル路 diary-entries より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
@@ -116,6 +126,12 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   fail-closed）。「誰か」を確定するだけ＝users への記録は harness/record_store、actor の採用は routes。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
+- `upload_extract.py` … アップロードされたファイル（bytes）→ LLM 入力コンテンツへの**決定的**変換
+  （`extract_upload`＝docx: python-docx／xlsx: openpyxl でテキスト抽出・pdf: `inline_data` で Gemini マルチモーダルへ生 bytes・
+  `to_parts` で genai Part 化）。`chohyo_pdf`/`docx_fill` と同じ「web の純粋なフォーマット変換」＝中身の解釈は持たない。未対応形式/空/過大は ValueError。
+- `upload_parse.py` … アップロード取込の実体（`parse_uploaded_file`）。extract →（`build_upload_parser_agent` を
+  InMemoryRunner で1パス駆動＝improver_stream と同型・SSE 無しの一発）→ 対象キー/child/age_band を保育士入力で
+  **権威的に上書き**→ `finalize.extract_json_block`→`finalize_entry` で検査・整形（決定的実体は harness）。creds 無/LLM 失敗は正直に error 降格。
 - `static/` … 保育士 SPA。**上位タブは3つ**：**書類を作る**（日誌/月案/児童票を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
   種別を切替。フロー本体は共通で入力欄と seed だけ切替・対象児コンボは共有・結果エリアは種別ごとに保持・生成中は種別切替をロック。
   バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1）／**育てる**／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
@@ -131,7 +147,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `GET /api/records` のメタ一覧（本文なし・軽い）を1回引き、**種別→子ども→書類**の階層をクライアント側で組む（左＝ツリー／右＝内容の2ペイン・`.fs*`）。
   **表示に必要な分だけ読む最適化**＝フォルダは折りたたみ既定で初期描画は種別フォルダのみ・展開したフォルダの DOM だけを都度組む／書類本文（重い＝整形テキスト＋entry）は
   **ファイルを開いたときだけ** `GET /api/records/{id}` を引き**セッション内はキャッシュ**（再クリックは再取得しない）／展開状態は再読込を跨いで保持・本文キャッシュはタブ再オープンで捨て最新を正とする。
-  選ぶと現行版の整形テキスト＋帳票PDF ボタンを右ペインに描く読取専用ビュー・未接続/空/障害は正直に降格）／`ui.js`・`app.js`・`styles.css`・`index.html`。
+  選ぶと現行版の整形テキスト＋帳票PDF ボタンを右ペインに描く読取専用ビュー・未接続/空/障害は正直に降格。
+  **アップロード取込**＝4種別フォルダを常時表示（空でも取込先）し、各フォルダ（＋personal 種別の子フォルダ）を開くと先頭に「取り込む」行を出す
+  ＝場所から kind〔＋child〕が決まる。押すと右ペインに取込フォーム（対象キー/年齢帯/対象児/ファイル・D&D 可）→`adk.parseUpload`（`/api/parse-upload`）→
+  **既存 `docedit.js` の編集フォームで確認・修正**→`finalizeEdit`→`saveRecord(author_kind="imported")`→`loadTree`。取込先が未接続（store≠ok）のときは取り込めない〔正直に降格〕）／`ui.js`・`app.js`・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
 - `templates/` … `docx_fill` が流し込む**園の実 Word 様式（空欄フォーム・PII なし）**：`child_record.docx`（保育経過記録）・
   `monthly_0_2.docx`／`monthly_3_5.docx`（月間指導計画）。`COPY src ./src` で同梱＝実行時に外部取得しない（ローカル完結）。

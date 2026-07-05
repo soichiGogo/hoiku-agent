@@ -254,6 +254,27 @@ def test_invalid_kind_and_author_kind(db):
     )
 
 
+def test_imported_author_kind_records_import_audit(db):
+    """アップロード取込（author_kind="imported"）は保存され、監査アクションが "import" になる。
+
+    AI 確定（finalize）・保育士編集（edit）と混ざらない第三の来歴＝「修正差分の一次データ」を汚さない。
+    """
+    entry = _diary_entry("2026-07-01")
+    r = rs.save_document(
+        "diary", entry, "整形テキスト", author_kind="imported", actor="保育士A", now=_NOW
+    )
+    assert r["status"] == "saved"
+    # 版の来歴は imported として残る（get_document は現行版の author_kind を返す）。
+    got = rs.get_document(r["document_id"])
+    assert got["author_kind"] == "imported"
+    # 監査アクションは import（finalize/edit ではない）。
+    actions = [
+        (e["action"], e["actor"]) for e in rs.list_audit_events(document_id=r["document_id"])
+    ]
+    assert ("import", "保育士A") in actions
+    assert not any(a in ("finalize", "edit") for a, _ in actions)
+
+
 # ──────────────────────────── users（IAP identity の auto-provision・Phase 3） ────────────────────────────
 
 

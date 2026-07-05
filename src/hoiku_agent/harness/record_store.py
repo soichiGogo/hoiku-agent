@@ -38,9 +38,14 @@ Base = db.Base
 _JSON = db.JSON_VARIANT
 
 DOC_KINDS = ("diary", "monthly", "child_record", "nursery_record")
-AUTHOR_KINDS = ("ai", "caregiver")
-# 監査アクション：finalize（AI 確定の保存）/ edit（保育士編集の保存）/ approve（承認）
-AUDIT_ACTIONS = ("finalize", "edit", "approve")
+# 版の来歴：ai（AI が生成・確定）/ caregiver（保育士が編集して保存）/ imported（外部ファイルを
+# 取り込んで保存＝「書類を見る」タブのアップロード取込。AI 生成でも保育士の AI 下書き編集でもない
+# 第三の来歴なので混ぜない＝「修正差分の一次データ」を汚さない・§12/§19）。
+AUTHOR_KINDS = ("ai", "caregiver", "imported")
+# 監査アクション：finalize（AI 確定の保存）/ edit（保育士編集の保存）/ approve（承認）/ import（取込保存）
+AUDIT_ACTIONS = ("finalize", "edit", "approve", "import")
+# 版の来歴 → 監査アクションの対応（save_document が積む版の action）。
+_AUTHOR_KIND_ACTION = {"ai": "finalize", "caregiver": "edit", "imported": "import"}
 
 # 性別→敬称（男→くん / 女→ちゃん 固定）。敬称は列で持たず gender を単一ソースにする（呼び名に付けて
 # 表示名＝child_id を合成する）。園の実運用でも保育士が性別を選ぶだけで敬称のゆれ・重複児を防ぐ。
@@ -321,7 +326,8 @@ def save_document(
 
     - 同一性は dedupe_key（doc_type × 子ども表示名 × 対象期間）。既存なら新しい版（seq+1）を追加し
       current_version を進める。承認済み（approved）の書類も編集保存で版は積める（証跡が残る）。
-    - author_kind="ai"（AI 確定）→ audit action=finalize / "caregiver"（編集保存）→ action=edit。
+    - author_kind="ai"（AI 確定）→ audit action=finalize / "caregiver"（編集保存）→ action=edit /
+      "imported"（外部ファイルの取込保存＝アップロード）→ action=import。
     - entry に登場する子どもは児童マスタへ auto-create（表示名→UUID 解決はここに1つ）。
 
     Returns:
@@ -381,7 +387,7 @@ def save_document(
                 AuditEvent(
                     document_id=doc.id,
                     actor=actor,
-                    action="finalize" if author_kind == "ai" else "edit",
+                    action=_AUTHOR_KIND_ACTION[author_kind],
                     detail={"version_seq": version.seq},
                     at=now,
                 )

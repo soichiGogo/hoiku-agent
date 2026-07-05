@@ -790,3 +790,135 @@ def test_notation_writes_are_passcode_gated(monkeypatch) -> None:
     assert c.post("/api/notation", json={"pattern": "x", "replacement": "y"}).status_code == 401
     assert c.patch("/api/notation/rule-0001", json={"enabled": False}).status_code == 401
     assert c.delete("/api/notation/rule-0001").status_code == 401
+
+
+# ──────────────────── アップロード取込（upload_extract / /api/parse-upload） ────────────────────
+# 実 LLM は回さない（creds 不要・決定論）：抽出（決定的）は実物で、書き起こし（agentic）は _run_parser を
+# monkeypatch で差し替える。権威的上書き（対象キー/child/age_band）と harness.finalize 中継・降格を担保する。
+
+
+def _docx_bytes(*lines: str) -> bytes:
+    """テスト用の docx を1段落ずつ作ってバイト列で返す。"""
+    import io
+
+    from docx import Document
+
+    d = Document()
+    for line in lines:
+        d.add_paragraph(line)
+    b = io.BytesIO()
+    d.save(b)
+    return b.getvalue()
+
+
+def _xlsx_bytes(rows: list[list[str]]) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    for row in rows:
+        ws.append(row)
+    b = io.BytesIO()
+    wb.save(b)
+    return b.getvalue()
+
+
+def test_upload_extract_docx_xlsx_pdf() -> None:
+    """decision論：docx/xlsx はテキスト抽出、pdf は inline_data、未対応/空は ValueError。"""
+    from hoiku_agent.web import upload_extract as ux
+
+    ex = ux.extract_upload("n.docx", None, _docx_bytes("保育日誌 5月15日", "はるとくん 完食"))
+    assert ex.fmt == "docx" and "はるとくん" in ex.text and ux.to_parts(ex)[0].text
+
+    ex2 = ux.extract_upload("m.xlsx", None, _xlsx_bytes([["対象月", "2026-06"], ["児童", "めい"]]))
+    assert ex2.fmt == "xlsx" and "2026-06" in ex2.text
+
+    ex3 = ux.extract_upload("s.pdf", "application/pdf", b"%PDF-1.4 x")
+    assert ex3.fmt == "pdf" and ex3.text == "" and ux.to_parts(ex3)[0].inline_data is not None
+
+    with pytest.raises(ValueError):
+        ux.extract_upload("old.doc", None, b"bin")  # 旧バイナリ様式は非対応
+    with pytest.raises(ValueError):
+        ux.extract_upload("empty.pdf", None, b"")  # 空
+
+
+def test_parse_upload_overrides_keys_and_relays_finalize(monkeypatch) -> None:
+    """取込エンドポイント：LLM が種別/対象を取り違えても保育士入力（与件）で権威的に上書きし、
+    harness.finalize で整形・検査した結果を返す（保存は後段 /api/records・ここは解析のみ）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "")  # ゲート無効で素通しにする
+    from hoiku_agent.web import upload_parse
+
+    fence = (
+        "読み取りました。\n```json\n"
+        '{"period":"WRONG","age_band":"0-2","child_id":"別の子",'
+        '"development_notes":[{"description":"友だちと関わって遊ぶ姿が増えた","tags":["人間関係"]}],'
+        '"overall_note":"関わりが広がった。"}\n```'
+    )
+
+    async def _fake(agent, parts):
+        return fence
+
+    monkeypatch.setattr(upload_parse, "_run_parser", _fake)
+    c = _client()
+    r = c.post(
+        "/api/parse-upload",
+        data={
+            "kind": "child_record",
+            "target": "2026-04〜2026-06",
+            "child": "はるとくん",
+            "age_band": "3-5",
+        },
+        files={"file": ("j.docx", _docx_bytes("児童票 はると 1期"), "application/octet-stream")},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # 与件で権威的に上書きされている（LLM の取り違えを封じる）。
+    assert body["entry"]["period"] == "2026-04〜2026-06"
+    assert body["entry"]["child_id"] == "はるとくん"
+    assert body["entry"]["age_band"] == "3-5"
+    # harness の整形・検査結果が中継されている。
+    assert body["ok"] is True and body["parse_error"] is None
+    assert "発達の経過" in body["formatted"]
+
+
+def test_parse_upload_degrades_on_llm_failure(monkeypatch) -> None:
+    """LLM 失敗（creds 未設定等）は 200＋parse_error で正直に降格し、与件入りの最小 entry を返す。"""
+    monkeypatch.setattr(settings, "demo_passcode", "")
+    from hoiku_agent.web import upload_parse
+
+    async def _boom(agent, parts):
+        raise RuntimeError("no creds")
+
+    monkeypatch.setattr(upload_parse, "_run_parser", _boom)
+    r = _client().post(
+        "/api/parse-upload",
+        data={"kind": "diary", "target": "2026-05-15", "age_band": "0-2"},
+        files={"file": ("n.docx", _docx_bytes("保育日誌"), "application/octet-stream")},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False and body["parse_error"]  # 正直に降格
+    assert body["entry"]["date"] == "2026-05-15"  # 与件は入っている＝手入力で補える
+
+
+def test_parse_upload_unsupported_format_400(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "demo_passcode", "")
+    r = _client().post(
+        "/api/parse-upload",
+        data={"kind": "diary", "target": "2026-05-15", "age_band": "0-2"},
+        files={"file": ("old.doc", b"legacy-binary", "application/msword")},
+    )
+    assert r.status_code == 400 and r.json()["code"] == "invalid_request"
+
+
+def test_parse_upload_is_passcode_gated(monkeypatch) -> None:
+    """アップロード取込は LLM を回す口なのでパスコードゲート（/api/improve と同枠）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    r = _client().post(
+        "/api/parse-upload",
+        data={"kind": "diary", "target": "2026-05-15", "age_band": "0-2"},
+        files={"file": ("n.docx", _docx_bytes("x"), "application/octet-stream")},
+    )
+    assert r.status_code == 401

@@ -6,14 +6,31 @@
 //  - 折りたたみが既定で、展開したフォルダの DOM だけを都度組む（初期描画は種別フォルダのみ＝最速）。
 //  - 書類の本文（重い・整形テキスト＋entry）は「ファイルを開いたとき」だけ /api/records/{id} を引き、
 //    セッション内はキャッシュして再取得しない（更新反映は再読込＝タブ再オープン時にキャッシュを捨てる）。
+//
+// アップロード取込（§11）：ファイルシステムの階層＝種別で「取り込む」。各種別フォルダ（＋その下の子ども
+// フォルダ）を開くと先頭に「取り込む」アクションが出て、そこから kind（と personal 種別なら child）が
+// 場所から決まる。解析（LLM＝/api/parse-upload）→ 既存の標準様式編集フォーム（docedit.js）で確認・修正 →
+// finalize-edit で再検査 → /api/records（author_kind=imported）で保存。検査・整形・保存の決定的実体は
+// harness に1つ（ここは中継・描画のみ＝§5）。保存先が未接続のときは取り込めない（正直に降格）。
 import * as adk from "./adk.js";
-import { el, esc, iconHTML } from "./ui.js";
+import { renderEditableDoc } from "./docedit.js";
+import { actorName, banner, el, esc, iconHTML } from "./ui.js";
 
 const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", child_record: "児童票", nursery_record: "保育要録" };
 const KIND_ICON = { diary: "diary", monthly: "calendar", child_record: "chart", nursery_record: "chart" };
 // 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→月案→児童票→要録）。
 const TYPE_ORDER = ["diary", "monthly", "child_record", "nursery_record"];
 const NO_CHILD = ""; // child なしの書類は「クラス全体」フォルダへ。
+
+// アップロード取込の種別別メタ：対象キーの入力（ラベル・input type・placeholder）と、child/年齢帯の要否。
+// diary はクラス単位（child を取らない）・nursery_record は年長固定（年齢帯を取らない・常に 3-5）。
+const UPLOAD_META = {
+  diary: { targetLabel: "対象日", inputType: "date", placeholder: "", wantsChild: false, wantsAge: true },
+  monthly: { targetLabel: "対象月", inputType: "month", placeholder: "", wantsChild: true, wantsAge: true },
+  child_record: { targetLabel: "対象期間", inputType: "text", placeholder: "例: 2026-04〜2026-06", wantsChild: true, wantsAge: true },
+  nursery_record: { targetLabel: "対象年度", inputType: "text", placeholder: "例: 2026", wantsChild: true, wantsAge: false },
+};
+const ACCEPT = ".pdf,.docx,.xlsx";
 
 // record_store.store_status は disabled/ok/unavailable を返す（policy/notation の persistent 系とは別語彙）。
 const STORE_LABEL = {
@@ -29,6 +46,8 @@ export function makeRecords(ui) {
   const expanded = new Set(); // 展開中フォルダの key（再読込を跨いで保持＝辿り位置を失わない）。
   let selectedId = null;
   let docs = []; // メタ一覧（本文なし）。
+  let formMeta = null; // 編集フォームのタグ語彙（/api/form-meta・遅延取得）。
+  let docTemplates = null; // 様式テンプレート（/api/doc-template・遅延取得）。
 
   function setStore(s) {
     ui.store.textContent = STORE_LABEL[s] || "";
@@ -64,6 +83,13 @@ export function makeRecords(ui) {
     return byType;
   }
 
+  // すでにアーカイブに登場した子ども名（取込フォームの候補＝datalist に使う。新規の子は手入力）。
+  function knownChildren() {
+    const names = new Set();
+    for (const d of docs) if (d.child) names.add(d.child);
+    return [...names].sort((a, b) => a.localeCompare(b, "ja"));
+  }
+
   function renderTree(store) {
     ui.tree.innerHTML = "";
     if (store === "disabled" || store === "unavailable") {
@@ -72,32 +98,36 @@ export function makeRecords(ui) {
           "p",
           "rempty",
           store === "disabled"
-            ? "書類アーカイブが未接続です（DATABASE_URL を設定すると、確定した書類がここに並びます）。"
+            ? "書類アーカイブが未接続です（DATABASE_URL を設定すると、確定した書類がここに並び、ファイルの取り込みもできます）。"
             : "アーカイブに接続できませんでした。",
         ),
       );
       renderPlaceholder();
       return;
     }
-    if (!docs.length) {
-      ui.tree.appendChild(
-        el("p", "rempty", "保存された書類がありません。「書類を作る」で確定すると、ここに並びます。"),
-      );
-      renderPlaceholder();
-      return;
-    }
     const byType = groupDocs(docs);
+    if (!docs.length) {
+      // 空でも 4 種別フォルダを取込先として常時表示する（各フォルダを開くと「取り込む」が出る）。
+      ui.tree.appendChild(
+        el(
+          "p",
+          "rempty",
+          "まだ書類がありません。フォルダを開いて「取り込む」からファイルを取り込むか、「書類を作る」で確定すると、ここに並びます。",
+        ),
+      );
+    }
+    // 4 種別フォルダは常に出す（空でも取込先＝ファイルシステム的に場所から種別を選ぶ）。
     for (const type of TYPE_ORDER) {
-      if (byType.has(type)) ui.tree.appendChild(typeFolder(type, byType.get(type)));
+      ui.tree.appendChild(typeFolder(type, byType.get(type) || new Map()));
     }
     // 未知の doc_type も末尾に出す（種別が増えても取りこぼさない）。
     for (const [type, byChild] of byType) {
       if (!TYPE_ORDER.includes(type)) ui.tree.appendChild(typeFolder(type, byChild));
     }
-    // 選択中の書類がまだ存在すれば詳細を保つ（キャッシュ）。消えていれば案内に戻す。
+    // 選択中の書類がまだ存在すれば詳細を保つ（キャッシュ）。取込フォーム表示中は保持し、消えていれば案内へ。
     if (selectedId && docs.some((d) => d.id === selectedId) && bodyCache.has(selectedId)) {
       renderDetail(bodyCache.get(selectedId));
-    } else {
+    } else if (!ui.detail.querySelector(".rup")) {
       selectedId = null;
       renderPlaceholder();
     }
@@ -141,6 +171,18 @@ export function makeRecords(ui) {
     return wrap;
   }
 
+  // 「取り込む」アクション行（フォルダの先頭に置く＝場所から kind/child が決まる）。
+  function importRow(kind, child, depth, label) {
+    const row = el("button", "fsrow is-import");
+    row.type = "button";
+    row.style.setProperty("--depth", depth);
+    row.innerHTML =
+      `<span class="fsrow-tw">${iconHTML("download", "fs-imp")}</span>` +
+      `<span class="fsrow-label">${esc(label)}</span>`;
+    row.onclick = () => openUploadForm(kind, child);
+    return row;
+  }
+
   function typeFolder(type, byChild) {
     let total = 0;
     for (const list of byChild.values()) total += list.length;
@@ -151,6 +193,10 @@ export function makeRecords(ui) {
       label: KIND_LABEL[type] || type,
       count: total,
       childrenBuilder: (kids) => {
+        // 先頭に「この種別に取り込む」（既知種別のみ・未知 doc_type は取込対象外）。
+        if (UPLOAD_META[type]) {
+          kids.appendChild(importRow(type, "", 1, `${KIND_LABEL[type]}を取り込む`));
+        }
         // 仮名の子を五十音、クラス全体（child なし）は末尾に。
         const keys = [...byChild.keys()].sort((a, b) =>
           a === NO_CHILD ? 1 : b === NO_CHILD ? -1 : a.localeCompare(b, "ja"),
@@ -172,6 +218,10 @@ export function makeRecords(ui) {
       label: childKey || "クラス全体",
       count: list.length,
       childrenBuilder: (kids) => {
+        // 個人単位の種別（月案/児童票/要録）は「この子に取り込む」を先頭に（child を場所から確定）。
+        if (childKey && UPLOAD_META[type] && UPLOAD_META[type].wantsChild) {
+          kids.appendChild(importRow(type, childKey, 2, `${childKey}に取り込む`));
+        }
         for (const d of sorted) kids.appendChild(fileRow(d, 2));
       },
     });
@@ -212,7 +262,7 @@ export function makeRecords(ui) {
   function renderPlaceholder() {
     ui.detail.innerHTML =
       `<div class="fs-placeholder">${iconHTML("folder")}` +
-      `<p>左のフォルダから書類を選ぶと、ここに内容と帳票PDFを表示します。</p></div>`;
+      `<p>左のフォルダから書類を選ぶと、ここに内容と帳票PDFを表示します。フォルダを開いて「取り込む」を押すと、既存のファイル（PDF / Word / Excel）を取り込めます。</p></div>`;
   }
 
   function renderDetail(doc) {
@@ -222,7 +272,12 @@ export function makeRecords(ui) {
       return;
     }
     const kindLabel = KIND_LABEL[doc.doc_type] || doc.doc_type;
-    const author = doc.author_kind === "caregiver" ? "保育士が編集" : "AI が作成";
+    const author =
+      doc.author_kind === "caregiver"
+        ? "保育士が編集"
+        : doc.author_kind === "imported"
+          ? "取り込み"
+          : "AI が作成";
 
     const head = el("div", "rdetail-head");
     head.innerHTML =
@@ -258,14 +313,7 @@ export function makeRecords(ui) {
       msg.classList.add("hidden");
       try {
         const { blob, filename } = await adk.exportPdf(doc.doc_type, doc.entry || {});
-        const url = URL.createObjectURL(blob);
-        const a = el("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        downloadBlob(blob, filename);
       } catch (e) {
         msg.textContent = "帳票PDFの作成に失敗しました: " + e.message;
         msg.classList.remove("hidden");
@@ -276,6 +324,276 @@ export function makeRecords(ui) {
     };
     act.append(btn, msg);
     ui.detail.appendChild(act);
+  }
+
+  // ── アップロード取込（右ペインにフォームを描く） ──
+  // 種別（kind）は場所（フォルダ）から確定済み。対象キー・年齢帯・（個人種別なら）対象児と、ファイルを受ける。
+  function openUploadForm(kind, child) {
+    selectedId = null;
+    ui.tree.querySelectorAll(".fsrow.is-file.is-active").forEach((n) => n.classList.remove("is-active"));
+    const meta = UPLOAD_META[kind];
+    if (!meta) return;
+    ui.detail.innerHTML = "";
+    const wrap = el("div", "rup");
+    wrap.innerHTML =
+      `<div class="rup-head"><span class="card-title">${iconHTML("download")}${esc(KIND_LABEL[kind])}を取り込む</span>` +
+      `<p class="rup-sub">PDF / Word(.docx) / Excel(.xlsx) を選ぶと、AI が内容を読み取って下書きにします。` +
+      `内容を確認・修正してから保存すると、ほかの書類と同じように次の書類作成で参照されます。</p></div>`;
+
+    // 対象キー入力（種別で label / input type / placeholder を切替）。
+    const targetWrap = el("label", "rup-field");
+    targetWrap.innerHTML = `<span class="rup-label">${esc(meta.targetLabel)}</span>`;
+    const targetInput = el("input", "rup-input");
+    targetInput.type = meta.inputType;
+    if (meta.placeholder) targetInput.placeholder = meta.placeholder;
+    targetWrap.appendChild(targetInput);
+    wrap.appendChild(targetWrap);
+
+    // 対象児（個人種別のみ・場所から prefill・編集可＝新規の子も入力できる）。
+    let childInput = null;
+    if (meta.wantsChild) {
+      const cw = el("label", "rup-field");
+      cw.innerHTML = `<span class="rup-label">対象児</span>`;
+      childInput = el("input", "rup-input");
+      childInput.type = "text";
+      childInput.placeholder = "子どもの呼び名";
+      childInput.value = child || "";
+      const listId = "rup-children";
+      childInput.setAttribute("list", listId);
+      const dl = el("datalist");
+      dl.id = listId;
+      for (const n of knownChildren()) {
+        const o = el("option");
+        o.value = n;
+        dl.appendChild(o);
+      }
+      cw.append(childInput, dl);
+      wrap.appendChild(cw);
+    }
+
+    // 年齢帯（要録以外・タグ語彙の枠組み＝0-2:3視点 / 3-5:5領域）。
+    let ageSelect = null;
+    if (meta.wantsAge) {
+      const aw = el("label", "rup-field");
+      aw.innerHTML = `<span class="rup-label">年齢帯</span>`;
+      ageSelect = el("select", "rup-input");
+      ageSelect.innerHTML =
+        `<option value="0-2">0〜2歳児クラス（3つの視点）</option>` +
+        `<option value="3-5">3〜5歳児クラス（5領域）</option>`;
+      aw.appendChild(ageSelect);
+      wrap.appendChild(aw);
+    }
+
+    // ファイル選択＋ドロップゾーン（ドラッグ&ドロップでも受け取る）。
+    const drop = el("div", "rup-drop");
+    const fileInput = el("input");
+    fileInput.type = "file";
+    fileInput.accept = ACCEPT;
+    fileInput.className = "rup-file";
+    const dropLabel = el("p", "rup-drop-label", "ここにファイルをドラッグするか、クリックして選択");
+    const chosen = el("p", "rup-chosen hidden");
+    drop.append(fileInput, dropLabel, chosen);
+    fileInput.onchange = () => showChosen();
+    function showChosen() {
+      const f = fileInput.files && fileInput.files[0];
+      if (f) {
+        chosen.textContent = `選択: ${f.name}`;
+        chosen.classList.remove("hidden");
+      } else {
+        chosen.classList.add("hidden");
+      }
+    }
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.classList.add("over");
+    });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        fileInput.files = e.dataTransfer.files;
+        showChosen();
+      }
+    });
+    wrap.appendChild(drop);
+
+    // 操作バー（解析する / キャンセル）＋メッセージ。
+    const bar = el("div", "rup-actions");
+    const msg = el("p", "rup-msg hidden");
+    const parseBtn = el("button", "btn btn-primary btn-sm", `${iconHTML("spark")}AIで解析する`);
+    parseBtn.type = "button";
+    const cancelBtn = el("button", "btn btn-ghost btn-sm", "キャンセル");
+    cancelBtn.type = "button";
+    cancelBtn.onclick = () => renderPlaceholder();
+    parseBtn.onclick = async () => {
+      const file = fileInput.files && fileInput.files[0];
+      if (!file) {
+        showMsg(msg, "ファイルを選んでください。", true);
+        return;
+      }
+      const target = targetInput.value.trim();
+      if (!target) {
+        showMsg(msg, `${meta.targetLabel}を入力してください。`, true);
+        return;
+      }
+      const childVal = childInput ? childInput.value.trim() : "";
+      if (meta.wantsChild && !childVal) {
+        showMsg(msg, "対象児を入力してください。", true);
+        return;
+      }
+      const ageBand = ageSelect ? ageSelect.value : "3-5"; // 要録は年長固定。
+      parseBtn.disabled = true;
+      cancelBtn.disabled = true;
+      const orig = parseBtn.innerHTML;
+      parseBtn.innerHTML = `<span class="spinner"></span>AIが読み取り中…`;
+      showMsg(msg, "", false);
+      const res = await adk.parseUpload(kind, { target, child: childVal, ageBand }, file);
+      parseBtn.disabled = false;
+      cancelBtn.disabled = false;
+      parseBtn.innerHTML = orig;
+      if (res.error) {
+        showMsg(msg, res.error, true);
+        return;
+      }
+      await renderConfirm(kind, res);
+    };
+    bar.append(parseBtn, cancelBtn, msg);
+    wrap.appendChild(bar);
+
+    ui.detail.appendChild(wrap);
+    targetInput.focus();
+  }
+
+  // 解析結果を標準様式の編集フォーム（docedit.js）で確認・修正 → finalize-edit で再検査 → 保存。
+  async function renderConfirm(kind, res) {
+    if (formMeta === null || docTemplates === null) {
+      try {
+        [formMeta, docTemplates] = await Promise.all([adk.getFormMeta(), adk.getDocTemplate()]);
+      } catch {
+        formMeta = formMeta || {};
+        docTemplates = docTemplates || { templates: {} };
+      }
+    }
+    const template = (docTemplates.templates || {})[kind] || null;
+    const editor = renderEditableDoc({ kind, entry: res.entry || {}, formMeta, template });
+
+    ui.detail.innerHTML = "";
+    const head = el("div", "rup-head");
+    head.innerHTML =
+      `<span class="card-title">${iconHTML("edit")}${esc(KIND_LABEL[kind])}を確認・修正</span>` +
+      `<p class="rup-sub">AI が読み取った内容です。日付・子ども・タグや本文を直してから保存してください` +
+      `（保存時の検査・整形は harness が行います）。</p>`;
+    ui.detail.appendChild(head);
+    if (res.parse_error) {
+      banner(ui.detail, "err", "AI 解析: " + res.parse_error);
+    }
+    ui.detail.appendChild(editor.panel);
+
+    const vNode = el("div", "validation");
+    setValidation(vNode, res.problems || [], res.parse_error);
+    editor.panel._body.appendChild(vNode);
+
+    const bar = el("div", "approve-bar");
+    const note = el("span", "persist-note", "内容を確認・修正して「取り込んで保存」を押してください。");
+    const recheck = el("button", "btn btn-ghost btn-sm", `${iconHTML("shield")}再チェック`);
+    recheck.type = "button";
+    const saveBtn = el("button", "btn btn-approve", `${iconHTML("check")}取り込んで保存する`);
+    saveBtn.type = "button";
+
+    async function revalidate() {
+      const entry = editor.collect();
+      const r = await adk.finalizeEdit(kind, entry, null);
+      setValidation(vNode, r.problems || [], r.parse_error);
+      return { entry, ...r };
+    }
+
+    recheck.onclick = async () => {
+      recheck.disabled = true;
+      try {
+        const r = await revalidate();
+        note.textContent = r.ok
+          ? "必須項目OK。よければ「取り込んで保存」へ。"
+          : "必須項目に不足があります（保存はできますが、確認をおすすめします）。";
+      } catch (e) {
+        note.textContent = "再チェックに失敗: " + e.message;
+      } finally {
+        recheck.disabled = false;
+      }
+    };
+
+    saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      recheck.disabled = true;
+      try {
+        const r = await revalidate();
+        if (r.parse_error) {
+          banner(ui.detail, "err", "保存できませんでした: " + r.parse_error);
+          saveBtn.disabled = false;
+          recheck.disabled = false;
+          return;
+        }
+        // アーカイブへ取込保存（author_kind=imported＝AI 生成でも保育士編集でもない第三の来歴）。
+        const saved = await adk.saveRecord(kind, r.entry, r.formatted, "imported", actorName());
+        if (saved.status === "saved") {
+          note.textContent = "取り込んで保存しました。";
+          await loadTree(); // ツリーを最新化（保存した書類が並ぶ＝以後 seed 参照可能）。
+          if (saved.document_id) {
+            const row = ui.tree.querySelector(`.fsrow.is-file[data-id="${saved.document_id}"]`);
+            await select(saved.document_id, row || null);
+          }
+        } else if (saved.status === "skipped") {
+          banner(ui.detail, "err", "保存先が未接続のため保存できませんでした（DATABASE_URL を設定してください）。");
+          saveBtn.disabled = false;
+          recheck.disabled = false;
+        } else {
+          banner(ui.detail, "err", "アーカイブ保存に失敗: " + (saved.detail || "不明なエラー"));
+          saveBtn.disabled = false;
+          recheck.disabled = false;
+        }
+      } catch (e) {
+        banner(ui.detail, "err", "保存に失敗: " + e.message);
+        saveBtn.disabled = false;
+        recheck.disabled = false;
+      }
+    };
+
+    bar.append(recheck, saveBtn, note);
+    editor.panel._body.appendChild(bar);
+  }
+
+  // 必須項目の不足（problems）／構造化失敗（parse_error）を正直に描く（偽の緑を出さない）。
+  function setValidation(node, problems, parseError) {
+    if (parseError) {
+      node.className = "validation ng";
+      node.innerHTML = `${iconHTML("alert")}構造化に失敗: ${esc(parseError)}`;
+      return;
+    }
+    if (!problems || !problems.length) {
+      node.className = "validation ok";
+      node.innerHTML = `${iconHTML("check")}必須項目は満たしています`;
+      return;
+    }
+    node.className = "validation ng";
+    node.innerHTML =
+      `${iconHTML("alert")}確認してください（${problems.length}件）` +
+      `<ul>${problems.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>`;
+  }
+
+  function showMsg(node, text, isErr) {
+    node.textContent = text;
+    node.className = "rup-msg" + (isErr ? " err" : "") + (text ? "" : " hidden");
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = el("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   async function init() {

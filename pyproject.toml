@@ -29,6 +29,13 @@ dependencies = [
     "alembic>=1.13",
     "psycopg[binary]>=3.1",
     "python-docx>=1.1",
+    # 書類アップロード取込（web/upload_extract・「書類を見る」タブ）。docx は python-docx（上）で、
+    # xlsx は openpyxl でテキスト抽出する（純 pip・システムライブラリ不要＝Dockerfile 不変）。
+    # pdf は Gemini マルチモーダルへ inline_data で直接渡すため追加のPDFライブラリは持たない。
+    "openpyxl>=3.1",
+    # アップロードの multipart 受信（FastAPI UploadFile が依存）。google-adk 経由で間接的に入るが、
+    # 取込エンドポイント（/api/parse-upload）が直接依存するので明示固定する（uvicorn と同じ流儀）。
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
