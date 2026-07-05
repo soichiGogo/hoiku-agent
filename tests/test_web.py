@@ -492,7 +492,9 @@ def test_notation_get_returns_rules_and_store() -> None:
     """GET /api/notation は表記ルール一覧＋store を返す（読み取りは素通し）。"""
     body = _client().get("/api/notation").json()
     assert "rules" in body and "store" in body
-    assert all({"id", "pattern", "replacement", "kind", "enabled"} <= r.keys() for r in body["rules"])
+    assert all(
+        {"id", "pattern", "replacement", "kind", "enabled"} <= r.keys() for r in body["rules"]
+    )
 
 
 def test_notation_crud_roundtrip(tmp_path, monkeypatch) -> None:
@@ -502,7 +504,9 @@ def test_notation_crud_roundtrip(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
     c = _client()
     # 追加
-    r = c.post("/api/notation", json={"pattern": "出来た", "replacement": "できた", "note": "補助動詞"})
+    r = c.post(
+        "/api/notation", json={"pattern": "出来た", "replacement": "できた", "note": "補助動詞"}
+    )
     assert r.status_code == 200 and r.json()["status"] == "ok"
     rules = r.json()["rules"]
     added = next(x for x in rules if x["pattern"] == "出来た")
@@ -524,7 +528,10 @@ def test_notation_add_duplicate_pattern_rejected(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
     c = _client()
-    assert c.post("/api/notation", json={"pattern": "子供", "replacement": "子ども"}).status_code == 200
+    assert (
+        c.post("/api/notation", json={"pattern": "子供", "replacement": "子ども"}).status_code
+        == 200
+    )
     dup = c.post("/api/notation", json={"pattern": "子供", "replacement": "こども"})
     assert dup.status_code == 409 and dup.json()["status"] == "rejected"
 
@@ -533,7 +540,9 @@ def test_notation_invalid_kind_400(tmp_path, monkeypatch) -> None:
     from hoiku_agent.harness import notation_store as ns
 
     monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
-    r = _client().post("/api/notation", json={"pattern": "x", "replacement": "y", "kind": "怪しい種別"})
+    r = _client().post(
+        "/api/notation", json={"pattern": "x", "replacement": "y", "kind": "怪しい種別"}
+    )
     assert r.status_code == 400 and r.json()["status"] == "error"
 
 
