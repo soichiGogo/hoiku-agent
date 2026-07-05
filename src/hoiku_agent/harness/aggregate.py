@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from ..schemas import DiaryEntry
+from ..schemas import ChildRecord, DiaryEntry
 
 
 def aggregate_by_child(entries: list[DiaryEntry]) -> dict[str, dict]:
@@ -87,4 +87,97 @@ def format_digest_for_prompt(digest: dict[str, dict], label: str = "前月") -> 
         )
         for state_text in slot["observed_states"]:
             lines.append(f"    ・{state_text}")
+    return "\n".join(lines)
+
+
+# ──────────────────── 保育要録（L4）＝最終年度の児童票の集積 ────────────────────
+# §19 が予告した集積階層の最終段。月案（L2＝前月日誌）・児童票（L3＝期間日誌）が日誌を集計するのに対し、
+# 要録（L4）は**最終年度の児童票（期の経過記録）**を child_id 別に決定的集計する（集計の実体はここに1つ）。
+# 児童票は叙述型（点数化されたタグは development_notes に付く）＝期順に並べ、領域頻度・発達叙述・総合所見を
+# 事実として列挙する。要約（保育の展開と子どもの育ち／個人の重点）の生成は要録 author の責務（§10/§19）。
+
+
+def child_record_digest(records: list[ChildRecord]) -> dict[str, dict]:
+    """最終年度の児童票群を child_id 別に集計し state へ載せられる serializable 形にする（L4 還流）。
+
+    要録は児童別なので通常は1児の複数期ぶんの児童票が入る。期は seed 順（呼び出し側が期順に渡す）で
+    保持し、発達叙述・総合所見・領域タグ頻度・配慮特記・次期に向けてを "事実" として集約する。
+    解釈・要約は author（LlmAgent）が行う（ここは集計のみ・§10）。
+
+    Args:
+        records: 最終年度の児童票（ChildRecord）のリスト（期順を想定）。
+
+    Returns:
+        {child_id: {"record_count", "periods", "tag_freq"(降順), "development", "overall_notes",
+        "care_notes", "next_aims"}} の serializable 集約。
+    """
+    slots: dict[str, dict] = {}
+    for rec in records:
+        slot = slots.setdefault(
+            rec.child_id,
+            {
+                "record_count": 0,
+                "periods": [],
+                "tag_freq": Counter(),
+                "development": [],
+                "overall_notes": [],
+                "care_notes": [],
+                "next_aims": [],
+            },
+        )
+        slot["record_count"] += 1
+        slot["periods"].append(rec.period)
+        for note in rec.development_notes:
+            slot["tag_freq"].update(t.value for t in note.tags)
+            slot["development"].append(f"（{rec.period}）{note.description}")
+        if rec.overall_note.strip():
+            slot["overall_notes"].append(f"（{rec.period}）{rec.overall_note}")
+        if rec.care_notes.strip():
+            slot["care_notes"].append(f"（{rec.period}）{rec.care_notes}")
+        if rec.next_aims.strip():
+            slot["next_aims"].append(f"（{rec.period}）{rec.next_aims}")
+    return {
+        child_id: {
+            "record_count": slot["record_count"],
+            "periods": list(slot["periods"]),
+            "tag_freq": dict(slot["tag_freq"].most_common()),
+            "development": list(slot["development"]),
+            "overall_notes": list(slot["overall_notes"]),
+            "care_notes": list(slot["care_notes"]),
+            "next_aims": list(slot["next_aims"]),
+        }
+        for child_id, slot in slots.items()
+    }
+
+
+def format_record_digest_for_prompt(digest: dict[str, dict], label: str = "最終年度") -> str:
+    """児童票集積（L4）を、後段 author が読む人間可読テキストへ整形する（決定的・要約しない）。
+
+    要約（保育の展開と子どもの育ち／個人の重点／最終年度に至るまでの育ちの文章化）は author の責務
+    （§10/§19）。ここは集計の "事実" を列挙するだけ。空（データ無し）なら降格メッセージを返す。
+    """
+    if not digest:
+        return (
+            f"【{label}の児童票 集積】{label}の児童票データがありません"
+            f"（アーカイブ未接続、または期の児童票が未作成）。"
+        )
+    lines = [
+        f"【{label}の児童票 集積（child_id 別・期順）】"
+        "要約は保育の展開と子どもの育ち／個人の重点を書くときに用いる:"
+    ]
+    for child_id, slot in digest.items():
+        tags = "、".join(f"{name}×{count}" for name, count in slot["tag_freq"].items())
+        periods = "・".join(slot["periods"]) if slot["periods"] else "（期不明）"
+        lines.append(
+            f"- {child_id}: 児童票{slot['record_count']}件（{periods}）"
+            + (f" / 多い領域: {tags}" if tags else "")
+        )
+        for text in slot["development"]:
+            lines.append(f"    ・発達: {text}")
+        for text in slot["overall_notes"]:
+            lines.append(f"    ・総合所見: {text}")
+        for text in slot["care_notes"]:
+            lines.append(f"    ・配慮: {text}")
+        for text in slot["next_aims"]:
+            lines.append(f"    ・次期: {text}")
     return "\n".join(lines)

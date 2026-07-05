@@ -4,7 +4,13 @@
 tools/ の薄いラッパ（FunctionTool）経由で呼ぶ（二重実装しない）。LLM はここでは呼ばない。
 """
 
-from .aggregate import aggregate_by_child, format_digest_for_prompt, prev_month_digest
+from .aggregate import (
+    aggregate_by_child,
+    child_record_digest,
+    format_digest_for_prompt,
+    format_record_digest_for_prompt,
+    prev_month_digest,
+)
 from .draft import (
     write_child_record_draft,
     write_draft,
@@ -51,12 +57,14 @@ from .schema_check import (
 from .pipeline import CAREGIVER_APPROVAL_KEY, build_document_pipeline, mark_caregiver_approved
 from .monthly import build_monthly_pipeline
 from .child_record import build_child_record_pipeline
+from .youroku import build_nursery_record_pipeline
 from .router import build_root_agent
 
 __all__ = [
     "build_document_pipeline",
     "build_monthly_pipeline",
     "build_child_record_pipeline",
+    "build_nursery_record_pipeline",
     "build_root_agent",
     "mark_caregiver_approved",
     "CAREGIVER_APPROVAL_KEY",
@@ -80,6 +88,8 @@ __all__ = [
     "aggregate_by_child",
     "prev_month_digest",
     "format_digest_for_prompt",
+    "child_record_digest",
+    "format_record_digest_for_prompt",
     # 育つ指針＝構造化カードストア（§8/§9）
     "load_book",
     "save_book",
