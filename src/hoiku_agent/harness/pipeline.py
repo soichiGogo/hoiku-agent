@@ -292,6 +292,9 @@ def build_document_pipeline(
     `after_agent_callback`＝`persist_visit_to_memory`：全段の後に1度、保育士の明示承認
     （caregiver_approved=True）＋型成立のときだけ来園を Memory Bank へ書き戻す（真の承認ゲート＝§9/§13）。
     memory_service 未配線・未承認でも降格/保留するため、注入の有無で順序制御や既存挙動は変わらない。
+
+    文書作成指針は author/reviewer の InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ
+    決定的に注入する（§5）。パイプラインに prep 段は置かない（author が最初の LLM 段）。
     """
     return SequentialAgent(
         name="document_pipeline",
