@@ -580,6 +580,41 @@ select.de-input{appearance:auto;min-height:38px}
 .nedit-act{display:flex;gap:6px;flex:0 0 auto;margin-left:auto}
 
 /* ============================================================
+   書類を見る（アーカイブ閲覧＝作成済みの確定書類）
+   ============================================================ */
+.rlist{display:flex;flex-direction:column;gap:var(--sp-2)}
+.rempty{margin:var(--sp-2) 0;font-size:var(--fs-sm);color:var(--muted)}
+/* 一覧の1行（クリックで詳細）＝ボタンだが行として並べる */
+.rrow{display:flex;align-items:center;gap:var(--sp-3);width:100%;text-align:left;padding:var(--sp-3);
+  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);color:var(--ink);
+  cursor:pointer;transition:.15s;font-family:inherit}
+.rrow:hover{border-color:var(--line-strong);background:var(--surface-2)}
+.rrow.is-active{border-color:var(--primary);background:var(--primary-soft)}
+.rrow-ic{display:grid;place-items:center;flex:0 0 auto;width:34px;height:34px;border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--muted)}
+.rrow.is-active .rrow-ic{background:color-mix(in srgb,var(--primary-soft) 60%,var(--surface));color:var(--primary-d)}
+.rrow-ic .ic{width:18px;height:18px}
+.rrow-main{flex:1 1 auto;min-width:0}
+.rrow-title{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-body);font-weight:700;flex-wrap:wrap}
+.rrow-target{font-weight:400;color:var(--muted);font-size:var(--fs-sm)}
+.rrow-sub{font-size:var(--fs-caption);color:var(--muted);margin-top:2px}
+.rbadge{display:inline-flex;align-items:center;font-size:var(--fs-caption);font-weight:700;padding:3px 10px;
+  border-radius:var(--r-pill);flex:0 0 auto}
+.rbadge.ok{background:var(--state-done-soft);color:var(--state-done-ink)}
+.rbadge.muted{background:var(--surface-2);color:var(--muted)}
+/* 詳細ビュー */
+.rdetail{margin-top:var(--sp-3)}
+.rdetail-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-3)}
+.rmeta{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.rmeta-actor{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-caption);color:var(--muted)}
+.rmeta-actor .ic{width:14px;height:14px}
+.rtext{margin:0;padding:var(--sp-4);background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r-md);
+  font-family:inherit;font-size:var(--fs-sm);line-height:1.9;color:var(--ink);white-space:pre-wrap;word-break:break-word;
+  max-height:60vh;overflow:auto}
+.rdetail-act{margin-top:var(--sp-3)}
+.rmsg{margin:var(--sp-2) 0 0;font-size:var(--fs-sm);font-weight:600;color:var(--state-fail-ink)}
+
+/* ============================================================
    レスポンシブ
    ============================================================ */
 @media (max-width:680px){

@@ -4,6 +4,7 @@ import { el, esc, iconHTML, hydrateIcons } from "./ui.js";
 import { makeDocFlow } from "./docflow.js";
 import { makePolicy } from "./policy.js";
 import { makeNotation } from "./notation.js";
+import { makeRecords } from "./records.js";
 
 // 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
 // さくらちゃんは 3–5 歳児クラスの仮名児（全年齢対応＝§19。年齢帯で枠組み＝3視点/5領域が切り替わるデモ）。
@@ -713,6 +714,17 @@ async function main() {
     addBtn: $("notation-add"),
   });
   await notation.init();
+
+  // ── 書類を見る（アーカイブ閲覧＝作成済みの確定書類・参照データの点検） ──
+  const records = makeRecords({
+    list: $("records-list"),
+    store: $("records-store"),
+    filter: $("records-filter"),
+    detail: $("records-detail"),
+  });
+  await records.init();
+  // タブを開くたびに最新化（他タブで確定・承認した書類がすぐ反映される）。
+  $("tabbtn-records").addEventListener("click", () => records.refresh());
 }
 
 main();

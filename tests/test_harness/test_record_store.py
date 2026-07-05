@@ -122,6 +122,50 @@ def test_edit_after_approve_keeps_versions(db):
     assert r["doc_status"] == "approved"
 
 
+# ──────────────────────────── 単一書類の全文取得（書類を見る＝アーカイブ閲覧） ────────────────────────────
+
+
+def test_get_document_returns_current_version_full(db):
+    """get_document は現行版の本文 entry＋整形テキスト＋確定/編集の区別を返す（閲覧の主眼）。"""
+    entry = _diary_entry("2026-07-01")
+    r = rs.save_document("diary", entry, "整形テキスト本文", author_kind="ai", now=_NOW)
+    got = rs.get_document(r["document_id"])
+    assert got is not None
+    assert got["doc_type"] == "diary"
+    assert got["rendered_text"] == "整形テキスト本文"
+    assert got["author_kind"] == "ai"
+    assert got["version_seq"] == 1
+    assert got["entry"]["date"] == "2026-07-01"
+    # 編集で版が積まれたら現行版（最新）が返る（担当者・整形テキストも最新に追従）。
+    rs.save_document(
+        "diary",
+        dict(entry, daily_aim="修正後"),
+        "整形v2",
+        author_kind="caregiver",
+        actor="保育士A",
+        now=_NOW,
+    )
+    got2 = rs.get_document(r["document_id"])
+    assert got2["version_seq"] == 2
+    assert got2["author_kind"] == "caregiver"
+    assert got2["created_by"] == "保育士A"
+    assert got2["rendered_text"] == "整形v2"
+    assert got2["entry"]["daily_aim"] == "修正後"
+
+
+def test_get_document_missing_or_invalid_is_none(db):
+    import uuid as _uuid
+
+    assert rs.get_document(str(_uuid.uuid4())) is None  # 不在
+    assert rs.get_document("not-a-uuid") is None  # 不正 id（例外にしない）
+
+
+def test_get_document_degrades_when_url_unset(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.get_document("any-id") is None
+
+
 # ──────────────────────────── 月案・児童票・seed クエリ ────────────────────────────
 
 

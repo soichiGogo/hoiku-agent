@@ -480,6 +480,45 @@ def list_documents(
         return []
 
 
+def get_document(document_id: str) -> dict | None:
+    """単一書類の全文（メタ＋現行版の本文 entry・整形テキスト・確定/編集の区別・担当者）を返す。
+
+    「作成済み書類を見る」タブ（アーカイブ閲覧＝参照データの点検）用。整形テキストは画面表示に、
+    entry は帳票PDF 出力に使う（どちらも現行版＝最新の内容）。版履歴の全展開・監査証跡はここでは
+    返さない（閲覧の主眼は確定内容そのもの）。未接続・不正 id・不在・障害は None（読取は落とさない）。
+    """
+    eng = _engine()
+    if eng is None:
+        return None
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except ValueError:
+        return None
+    try:
+        with Session(eng) as session:
+            doc = session.get(DocumentRecord, doc_uuid)
+            if doc is None:
+                return None
+            child_display = None
+            if doc.child_id is not None:
+                child = session.get(Child, doc.child_id)
+                child_display = child.display_name if child else None
+            version = (
+                session.get(DocumentVersion, doc.current_version_id)
+                if doc.current_version_id is not None
+                else None
+            )
+            view = _doc_view(doc, child_display)
+            view["entry"] = version.entry if version else {}
+            view["rendered_text"] = version.rendered_text if version else ""
+            view["author_kind"] = version.author_kind if version else ""
+            view["created_by"] = version.created_by if version else ""
+            view["version_seq"] = version.seq if version else 0
+            return view
+    except SQLAlchemyError:
+        return None
+
+
 def list_diary_entries(
     date_from: date,
     date_to: date,
