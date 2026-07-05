@@ -28,8 +28,12 @@ def upgrade() -> None:
     op.add_column("children", sa.Column("given_name", sa.String(50), nullable=True))
     op.add_column("children", sa.Column("gender", sa.String(10), nullable=True))
 
-    # 既存行の back-fill：呼び名＋敬称（display_name）から名と性別を復元（PostgreSQL。姓は不明＝空）。
+    # 既存行の back-fill：呼び名＋敬称（display_name）から名と性別を復元（姓は不明＝空）。
     # くん（2文字）→male / ちゃん（3文字）→female。さん・その他は判定不能として据え置く。
+    # 本番は Cloud SQL PostgreSQL＝char_length/left を使う。非 PG（sqlite の dev 等）は関数が無く、
+    # かつ新規 DB に旧行は無いので back-fill をスキップする（安全・害なし）。
+    if op.get_bind().dialect.name != "postgresql":
+        return
     op.execute(
         """
         UPDATE children

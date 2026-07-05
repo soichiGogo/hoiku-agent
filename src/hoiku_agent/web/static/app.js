@@ -11,6 +11,15 @@ import { makeRecords } from "./records.js";
 const CHILDREN = ["はるとくん", "ゆいちゃん", "そうたくん"];
 const RECORD_CHILDREN = [...CHILDREN, "さくらちゃん"];
 const AGE_BAND_OF = { さくらちゃん: "3-5" }; // 既定は 0-2
+
+// 性別→敬称（男→くん / 女→ちゃん 固定）。呼び名（名）＋敬称＝表示名＝child_id の同定キー。
+// サーバ（record_store.compose_display_name）と一致させる（新規児登録のプレビュー・降格時のセッション追加用）。
+const GENDER_OPTIONS = [
+  { value: "male", label: "男の子", honorific: "くん" },
+  { value: "female", label: "女の子", honorific: "ちゃん" },
+];
+const HONORIFIC_OF = Object.fromEntries(GENDER_OPTIONS.map((g) => [g.value, g.honorific]));
+const composeDisplayName = (given, gender) => `${(given || "").trim()}${HONORIFIC_OF[gender] || ""}`;
 const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
@@ -398,7 +407,7 @@ function highlightPrefix(name, query) {
 // 対象児コンボボックス：入力欄＋前方一致の候補ドロップダウン＋Tab/Enter/クリックで補完。
 // チップ全列挙（chipGroup）が 30 人規模で破綻するのを避ける入力式。契約は chipGroup と同じ＝
 // 確定中の表示名を返すゲッターを返す（onPick は確定が変わったとき呼ぶ）。
-function childCombo(container, names, { onPick, labelId } = {}) {
+function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
   container.classList.add("combo");
   container.classList.remove("chips");
   container.innerHTML = "";
@@ -423,6 +432,7 @@ function childCombo(container, names, { onPick, labelId } = {}) {
   let selected = names[0] || "";
   let visible = []; // 現在表示中の候補名
   let active = -1; // ハイライト中の候補（visible 上の index）
+  let formOpen = false; // 新規児の登録フォーム表示中か（blur の巻き戻しを止める）
   input.value = selected;
 
   const close = () => {
@@ -455,7 +465,23 @@ function childCombo(container, names, { onPick, labelId } = {}) {
     visible = q ? names.filter((n) => n.startsWith(q)) : names.slice();
     list.innerHTML = "";
     if (!visible.length) {
-      list.appendChild(el("li", "combo-empty", "該当なし"));
+      // 該当なし＝未登録の名前。onAddChild があれば「新規に追加」を促す（元の要望：まだ無い名前を足す）。
+      if (onAddChild && q) {
+        const li = el(
+          "li",
+          "combo-option combo-add-cue",
+          iconHTML("check") + `<span>「<b>${esc(q)}</b>」を新しい対象児として追加</span>`,
+        );
+        li.id = listId + "-add";
+        li.setAttribute("role", "option");
+        li.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          openAddForm(q);
+        });
+        list.appendChild(li);
+      } else {
+        list.appendChild(el("li", "combo-empty", "該当なし"));
+      }
       list.hidden = false;
       input.setAttribute("aria-expanded", "true");
       active = -1;
@@ -505,6 +531,7 @@ function childCombo(container, names, { onPick, labelId } = {}) {
   input.addEventListener("blur", () => {
     // 妥当な表示名でなければ確定値へ戻す（不正な自由入力を送らない）。mousedown 確定を待って次tick。
     setTimeout(() => {
+      if (formOpen) return; // 登録フォームを開いた＝巻き戻さない（フォーム側で確定/取消する）
       const typed = input.value.trim();
       if (typed !== selected) {
         if (names.includes(typed)) commit(typed);
@@ -515,6 +542,102 @@ function childCombo(container, names, { onPick, labelId } = {}) {
       } else close();
     }, 0);
   });
+
+  // 新規児の登録フォーム（本名＝姓/名＋性別）。名＋敬称（性別導出）＝表示名を合成し onAddChild へ渡す。
+  // 敬称の「くん/ちゃん問題」は性別セレクタで一意化＝入力ゆれ・重複児を構造で防ぐ。
+  function openAddForm(prefillGiven) {
+    formOpen = true;
+    close();
+    let gender = "male"; // 既定は男の子（プレビューで即分かるので取り違えは起きにくい）
+    const panel = el("div", "combo-add");
+
+    const family = el("input", "combo-input combo-add-input");
+    family.type = "text";
+    family.placeholder = "姓（任意・氏名欄用）";
+    const given = el("input", "combo-input combo-add-input");
+    given.type = "text";
+    given.placeholder = "名（呼び名）";
+    given.value = (prefillGiven || "").trim();
+    const nameRow = el("div", "combo-add-names");
+    nameRow.append(family, given);
+
+    const genderRow = el("div", "combo-add-gender");
+    const genderBtns = GENDER_OPTIONS.map((g) => {
+      const b = el("button", "chip", iconHTML("caregiver") + g.label);
+      b.type = "button";
+      b.onclick = () => {
+        gender = g.value;
+        genderBtns.forEach((x) => x.el.classList.toggle("is-active", x.value === gender));
+        syncPreview();
+      };
+      genderRow.append(b);
+      return { el: b, value: g.value };
+    });
+    genderBtns.forEach((x) => x.el.classList.toggle("is-active", x.value === gender));
+
+    const preview = el("div", "combo-add-preview");
+    const errBox = el("div", "combo-add-error");
+    errBox.hidden = true;
+    const addBtn = el("button", "btn btn-primary", iconHTML("check") + "追加");
+    addBtn.type = "button";
+    const cancelBtn = el("button", "btn btn-ghost", "キャンセル");
+    cancelBtn.type = "button";
+    const actions = el("div", "combo-add-actions");
+    actions.append(addBtn, cancelBtn);
+
+    function syncPreview() {
+      const dn = composeDisplayName(given.value, gender);
+      preview.innerHTML = dn
+        ? `呼び名：<b>${esc(dn)}</b>`
+        : `<span class="muted">名を入力してください</span>`;
+    }
+    given.addEventListener("input", syncPreview);
+    syncPreview();
+
+    function removeForm() {
+      formOpen = false;
+      panel.remove();
+      input.focus();
+    }
+    cancelBtn.onclick = removeForm;
+
+    addBtn.onclick = async () => {
+      const g = given.value.trim();
+      errBox.hidden = true;
+      if (!g) {
+        errBox.textContent = "名（呼び名）を入力してください。";
+        errBox.hidden = false;
+        given.focus();
+        return;
+      }
+      const displayName = composeDisplayName(g, gender);
+      if (names.includes(displayName)) {
+        // 既に居る＝そのまま選ぶ（重複を作らない）。
+        formOpen = false;
+        panel.remove();
+        commit(displayName);
+        return;
+      }
+      addBtn.disabled = true;
+      const res = await onAddChild({ family_name: family.value.trim(), given_name: g, gender });
+      addBtn.disabled = false;
+      if (!res || !res.ok) {
+        errBox.textContent = (res && res.message) || "登録に失敗しました。";
+        errBox.hidden = false;
+        return;
+      }
+      const dn = res.displayName || displayName;
+      if (!names.includes(dn)) names.push(dn);
+      formOpen = false;
+      panel.remove();
+      commit(dn);
+    };
+
+    panel.append(nameRow, genderRow, preview, actions, errBox);
+    container.append(panel);
+    given.focus();
+    given.setSelectionRange(given.value.length, given.value.length);
+  }
 
   return () => selected;
 }
@@ -619,6 +742,22 @@ async function main() {
   const docChild = childCombo($("doc-children"), recordChildNames, {
     onPick: (name) => onChildChange(name),
     labelId: "doc-child-label",
+    // 未登録名を選んだら本名（姓/名）＋性別で新規登録（呼び名＋敬称はサーバが合成＝重複児を防ぐ）。
+    onAddChild: async ({ family_name, given_name, gender }) => {
+      // アーカイブ未接続はセッション内だけ選択肢へ足す（本名/性別は保存されない＝氏名欄は呼び名へ降格）。
+      if (!cfg.records_connected) {
+        return { ok: true, displayName: composeDisplayName(given_name, gender) };
+      }
+      const res = await adk.addChild({ family_name, given_name, gender });
+      if (res && res.needsGate) {
+        window.__requireGate && window.__requireGate();
+        return { ok: false, message: "パスコードを入力してから、もう一度追加してください。" };
+      }
+      if (!res || res.status === "error") {
+        return { ok: false, message: (res && res.detail) || "登録に失敗しました。" };
+      }
+      return { ok: true, displayName: res.display_name };
+    },
   });
 
   // 日誌の入力欄（年齢帯チップ＋サンプル）。
