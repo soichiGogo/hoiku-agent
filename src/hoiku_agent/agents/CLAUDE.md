@@ -20,8 +20,15 @@
 - **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案/児童票/保育要録共用・開示前提の表現観点を含む）。**巡回（LoopAgent）と APPROVED 早期終了の
   "制御" は harness/pipeline.py 側**（決定的）。ここは reviewer 単体（指摘の生成）を返す。`date` 等 harness が
   確定時に補完する機械的メタの欠落は指摘対象外＝内容点検に集中する（prompts.py の注意書き）。
+- **アップロード取込の抽出AI（`upload_parser_agent.py`＝`build_upload_parser_agent`）は別エントリの単一 LlmAgent**
+  （improver と同じく root_agent には載せない）。「書類を見る」タブのアップロード（`web/upload_parse`）から起こし、
+  既にある保育書類（スキャンPDF/Word/Excel）を既存スキーマへ**忠実に書き起こす**（作文しない・tools なし・巡回なし・
+  1パス）。種別は保育士が選択済み＝1スキーマに固定（instruction を種別で切替＝`build_upload_extract_instruction`）。
+  対象キー・age_band・child は与件（保育士入力）を prompt に前置し、システムが最終的に上書きする（LLM の取り違えを封じる）。
+  **output_schema は使わず作成AI と同じ ```json フェンス出力**（タグ欄の union で responseSchema が不安定なため・harness の
+  `extract_json_block`→`finalize_entry` で復元・検査・整形＝決定的実体は harness）。確認・修正は保育士が編集フォームで行う。
 - **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_child_record_author_agent` /
-  `build_nursery_record_author_agent` / `build_review_agent`。
+  `build_nursery_record_author_agent` / `build_review_agent` / `build_upload_parser_agent`。
   トップレベルでインスタンス化しない（例外は `agent.py` の root_agent のみ）。任意引数 `model`（既定
   None＝`models.build_model()`＝`gemini_model` を `model_location`＝global に固定した Gemini。Gemini 3.x は
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の

@@ -47,7 +47,7 @@ src/hoiku_agent/
 ├── improver/           … ③ 回す（二階・別エントリ）：修正メモ→指針カードを提案・意味的競合を精査・保育士決定で即反映
 ├── tools/              … 4–8個のプリミティブ（記録/指針/RAG/メモリ/HITL/harness薄ラッパ）
 ├── schemas/            … 書類スキーマ（日誌/月案/児童票/保育要録）・指針カード（policy）・年齢分岐・10の姿タグ（pydantic 集約）
-├── web/                … 層A 配布UI（保育士 SPA /app/）：日誌/月案/児童票/保育要録は ADK REST 直駆動・園の帳票PDF出力（chohyo_pdf）・園の実 Word 様式への流し込み出力（docx_fill＝templates/*.docx）・指針を育てる（improver）は SSE 中継・表記ルール辞書（notation.js＝/api/notation の CRUD）
+├── web/                … 層A 配布UI（保育士 SPA /app/）：日誌/月案/児童票/保育要録は ADK REST 直駆動・園の帳票PDF出力（chohyo_pdf）・園の実 Word 様式への流し込み出力（docx_fill＝templates/*.docx）・指針を育てる（improver）は SSE 中継・表記ルール辞書（notation.js＝/api/notation の CRUD）・書類アップロード取込（upload_extract＝PDF/Word/Excel を format 変換＋upload_parse＝抽出AIで既存スキーマへ・/api/parse-upload・「書類を見る」タブから）
 knowledge/              … 育つ文書作成指針＝構造化カード（git・文書作成指針.json）＋ 保育所保育指針（RAGソース・gitignore）
 eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）＋ test_config.json / run_gate.py
 docs/                   … 設計コンテキスト.md（開発ハンドオフ）/ architecture.md（コード対応）
