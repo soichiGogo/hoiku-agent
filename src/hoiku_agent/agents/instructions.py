@@ -36,6 +36,8 @@ _Formatter = Callable[[dict, str], str]
 _DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter]] = {
     "保育日誌": (PolicyScope.保育日誌, None, "", format_digest_for_prompt),
     "月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt),
+    # クラス月案（園の実様式・§18）は個別月案と同じ scope（月案）・前月集積（L2）を流用する。
+    "クラス月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt),
     "児童票": (PolicyScope.児童票, "period_digest", "期間", format_digest_for_prompt),
     "保育要録": (
         PolicyScope.保育要録,

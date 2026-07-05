@@ -50,6 +50,7 @@ from google.genai import types
 from ..agents import build_author_agent, build_review_agent
 from .finalize import (
     finalize_child_record_document,
+    finalize_class_monthly_document,
     finalize_document,
     finalize_monthly_document,
     finalize_nursery_record_document,
@@ -158,8 +159,8 @@ class FinalizeAgent(BaseAgent):
 
     template_ref: str | None = None
     kind: str = (
-        # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）/
-        # "nursery_record"（NurseryRecord）
+        # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "class_monthly"（ClassMonthlyPlan）/
+        # "child_record"（ChildRecord）/ "nursery_record"（NurseryRecord）
         "diary"
     )
 
@@ -168,6 +169,9 @@ class FinalizeAgent(BaseAgent):
         if self.kind == "monthly":
             result = finalize_monthly_document(draft, template_ref=self.template_ref)
             schema_label = "MonthlyPlan"
+        elif self.kind == "class_monthly":
+            result = finalize_class_monthly_document(draft, template_ref=self.template_ref)
+            schema_label = "ClassMonthlyPlan"
         elif self.kind == "child_record":
             result = finalize_child_record_document(draft, template_ref=self.template_ref)
             schema_label = "ChildRecord"

@@ -20,6 +20,7 @@ from __future__ import annotations
 from ..schemas import (
     AgeBand,
     ChildRecord,
+    ClassMonthlyPlan,
     DiaryEntry,
     FiveDomains,
     MonthlyPlan,
@@ -132,6 +133,54 @@ def validate_monthly_fields(plan: MonthlyPlan) -> list[str]:
             problems.append(
                 f"教育のねらい[{i}]: {plan.age_band.value} は{tag_label}のタグが1つ以上必要"
             )
+
+    return problems
+
+
+def validate_class_monthly_fields(plan: ClassMonthlyPlan) -> list[str]:
+    """クラス月案（園の実様式）ドラフトの必須欄を検査し、違反メッセージの一覧を返す（空＝充足・§18）。
+
+    個別月案（validate_monthly_fields）と違い、園の実様式は 0–2/3–5 とも**区分×領域グリッドが同一の
+    7行**（養護2本柱＋教育5領域）なので、3つの視点/5領域のタグ分岐は課さない（様式が全年齢で5領域
+    グリッドのため＝§18）。grid はスキーマの model_validator が正準7行にそろえ済み＝ここでは各行の
+    「ねらい（aim）」の充足（月案の核）を見る。個人目標小表は **0–2 のみ**（園フォームに 0–2 だけ存在）で
+    1件以上を要求し、各件に子どもの姿・ねらい・配慮を求める（3–5 は課さない）。評価系欄は月末記入＝
+    AI 非生成なので検査しない（未記入は不備でない）。
+
+    Args:
+        plan: 検査対象のクラス月案ドラフト（ClassMonthlyPlan）。
+
+    Returns:
+        違反メッセージのリスト。空リストなら "型" として成立。
+    """
+    problems: list[str] = []
+
+    # ── 必須欄の充足（空文字も "未記入" 扱い） ──
+    if not plan.month.strip():
+        problems.append("対象月（month）が未記入")
+    if not plan.monthly_goal.strip():
+        problems.append("今月の保育目標が未記入（クラス全体のねらい＝§18）")
+    if not plan.prev_month_state.strip():
+        problems.append("先月の子どもの姿が未記入（L2 還流の入力＝§18）")
+
+    # ── 区分×領域グリッド（正準7行）：各行のねらい（aim）を必須にする ──
+    for row in plan.grid:
+        if not row.aim.strip():
+            problems.append(f"{row.category}「{row.domain}」のねらいが未記入（グリッド＝§18）")
+
+    # ── 個人目標小表：0–2 のみ必須（園フォームに 0–2 だけ存在・全年齢対応＝§18） ──
+    if plan.age_band is AgeBand.零から二歳:
+        if not plan.individual_goals:
+            problems.append(
+                "個人目標（月齢・一人ひとりに応じて）が空：0–2 は前月日誌の登場児ごとに1件以上必要（§18）"
+            )
+        for i, goal in enumerate(plan.individual_goals):
+            if not goal.child_id.strip():
+                problems.append(f"個人目標[{i}]: 対象児（child_id）が未記入")
+            if not goal.child_state.strip():
+                problems.append(f"個人目標[{i}]: 子どもの姿が未記入")
+            if not goal.aim_support.strip():
+                problems.append(f"個人目標[{i}]: ねらい・配慮が未記入")
 
     return problems
 

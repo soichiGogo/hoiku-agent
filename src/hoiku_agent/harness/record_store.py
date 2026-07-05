@@ -37,7 +37,7 @@ from . import db
 Base = db.Base
 _JSON = db.JSON_VARIANT
 
-DOC_KINDS = ("diary", "monthly", "child_record", "nursery_record")
+DOC_KINDS = ("diary", "monthly", "class_monthly", "child_record", "nursery_record")
 # 版の来歴：ai（AI が生成・確定）/ caregiver（保育士が編集して保存）/ imported（外部ファイルを
 # 取り込んで保存＝「書類を見る」タブのアップロード取込。AI 生成でも保育士の AI 下書き編集でもない
 # 第三の来歴なので混ぜない＝「修正差分の一次データ」を汚さない・§12/§19）。
@@ -245,10 +245,10 @@ def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, st
         if not raw:
             raise ValueError("日誌 entry に date（記録日）がありません")
         return date.fromisoformat(raw), None, None
-    if kind == "monthly":
+    if kind in ("monthly", "class_monthly"):
         month = str(entry.get("month") or "").strip()
         if not month:
-            raise ValueError("月案 entry に month（対象月）がありません")
+            raise ValueError(f"{kind} entry に month（対象月）がありません")
         return None, month, None
     if kind == "child_record":
         period = str(entry.get("period") or "").strip()
@@ -265,8 +265,8 @@ def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, st
 
 
 def _extract_child_display(kind: str, entry: dict) -> str:
-    """書類の主対象の子ども表示名（日誌はクラス単位なので空）。"""
-    if kind == "diary":
+    """書類の主対象の子ども表示名（日誌・クラス月案はクラス単位なので空）。"""
+    if kind in ("diary", "class_monthly"):
         return ""
     return str(entry.get("child_id") or "").strip()
 
@@ -284,6 +284,12 @@ def _mentioned_children(kind: str, entry: dict) -> list[str]:
                 names.append(name)
         for att in entry.get("attendance") or []:
             name = str((att or {}).get("child_id") or "").strip()
+            if name and name not in names:
+                names.append(name)
+    elif kind == "class_monthly":
+        # クラス月案は 0–2 の個人目標小表に登場児が並ぶ（クラス単位なので主対象児は無い）。
+        for goal in entry.get("individual_goals") or []:
+            name = str((goal or {}).get("child_id") or "").strip()
             if name and name not in names:
                 names.append(name)
     return names
