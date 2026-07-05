@@ -19,19 +19,30 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from ..harness.aggregate import format_digest_for_prompt
+from ..harness.aggregate import format_digest_for_prompt, format_record_digest_for_prompt
 from ..harness.policy_store import load_book, render_for_doc
 from ..schemas.policy import PolicyScope
 
 if TYPE_CHECKING:
     from google.adk.agents.readonly_context import ReadonlyContext
 
-# state["doc_type"] → (指針 scope, 集積の state キー, 集積の見出しラベル)。
-# 集積を持たない日誌は digest_key=None。router の doc_type 値（保育日誌/月案/児童票）に一致させる。
-_DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str]] = {
-    "保育日誌": (PolicyScope.保育日誌, None, ""),
-    "月案": (PolicyScope.月案, "prev_month_digest", "前月"),
-    "児童票": (PolicyScope.児童票, "period_digest", "期間"),
+# 集積 digest（state 値）を prompt 用テキストへ整形する formatter。日誌集積（月案 L2／児童票 L3）は
+# format_digest_for_prompt、要録 L4 は**日誌でなく最終年度の児童票**の集積なので別 shape＝
+# format_record_digest_for_prompt を使う（集積の実体は harness/aggregate・ここは組み立てのみ）。
+_Formatter = Callable[[dict, str], str]
+
+# state["doc_type"] → (指針 scope, 集積の state キー, 集積の見出しラベル, 集積 formatter)。
+# 集積を持たない日誌は digest_key=None。router の doc_type 値（保育日誌/月案/児童票/保育要録）に一致させる。
+_DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter]] = {
+    "保育日誌": (PolicyScope.保育日誌, None, "", format_digest_for_prompt),
+    "月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt),
+    "児童票": (PolicyScope.児童票, "period_digest", "期間", format_digest_for_prompt),
+    "保育要録": (
+        PolicyScope.保育要録,
+        "record_digest",
+        "最終年度",
+        format_record_digest_for_prompt,
+    ),
 }
 # doc_type 未設定時の既定（router の既定＝保育日誌＝§3）。
 _DEFAULT_ROUTING = _DOC_TYPE_ROUTING["保育日誌"]
@@ -45,7 +56,14 @@ def _policy_text(scope: PolicyScope) -> str:
         return ""
 
 
-def _compose(base: str, scope: PolicyScope, state, digest_key: str | None, label: str) -> str:
+def _compose(
+    base: str,
+    scope: PolicyScope,
+    state,
+    digest_key: str | None,
+    label: str,
+    formatter: _Formatter,
+) -> str:
     """指針（＋集積）を prompt 冒頭に前置し、base instruction を続ける（与件→手順の順）。"""
     parts: list[str] = []
     policy = _policy_text(scope)
@@ -54,36 +72,41 @@ def _compose(base: str, scope: PolicyScope, state, digest_key: str | None, label
     if digest_key:
         digest = state.get(digest_key)
         if digest:  # 空 digest（初回）は前置しない
-            parts.append(format_digest_for_prompt(digest, label=label))
+            parts.append(formatter(digest, label))
     parts.append(base)
     return "\n\n".join(parts)
 
 
 def build_author_instruction(
-    base: str, scope: PolicyScope, digest_key: str | None = None, digest_label: str = ""
+    base: str,
+    scope: PolicyScope,
+    digest_key: str | None = None,
+    digest_label: str = "",
+    digest_formatter: _Formatter = format_digest_for_prompt,
 ) -> Callable[[ReadonlyContext], str]:
     """作成AI の InstructionProvider を作る（scope は書類ごとに確定＝factory 時に固定）。
 
-    diary は digest_key=None（集積なし）／月案・児童票は state の digest（前月／期間）を前置する。
+    diary は digest_key=None（集積なし）／月案・児童票は日誌集積（前月／期間）を前置する。要録は
+    最終年度の児童票集積（record_digest）を `format_record_digest_for_prompt` で前置する（formatter 差替）。
     """
 
     def provider(ctx: ReadonlyContext) -> str:
-        return _compose(base, scope, ctx.state, digest_key, digest_label)
+        return _compose(base, scope, ctx.state, digest_key, digest_label, digest_formatter)
 
     return provider
 
 
 def build_review_instruction(base: str) -> Callable[[ReadonlyContext], str]:
-    """レビューAI（日誌/月案/児童票で共用）の InstructionProvider を作る。
+    """レビューAI（日誌/月案/児童票/保育要録で共用）の InstructionProvider を作る。
 
-    reviewer は書類共用なので scope・集積は runtime の state["doc_type"] から解決する
+    reviewer は書類共用なので scope・集積・formatter は runtime の state["doc_type"] から解決する
     （未設定は既定＝保育日誌）。作成AI と同じ指針・集積を評価基準として prompt 冒頭に前置する。
     """
 
     def provider(ctx: ReadonlyContext) -> str:
-        scope, digest_key, label = _DOC_TYPE_ROUTING.get(
+        scope, digest_key, label, formatter = _DOC_TYPE_ROUTING.get(
             ctx.state.get("doc_type"), _DEFAULT_ROUTING
         )
-        return _compose(base, scope, ctx.state, digest_key, label)
+        return _compose(base, scope, ctx.state, digest_key, label, formatter)
 
     return provider

@@ -52,6 +52,7 @@ from .finalize import (
     finalize_child_record_document,
     finalize_document,
     finalize_monthly_document,
+    finalize_nursery_record_document,
 )
 
 if TYPE_CHECKING:
@@ -157,7 +158,9 @@ class FinalizeAgent(BaseAgent):
 
     template_ref: str | None = None
     kind: str = (
-        "diary"  # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）
+        # "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）/
+        # "nursery_record"（NurseryRecord）
+        "diary"
     )
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
@@ -168,6 +171,9 @@ class FinalizeAgent(BaseAgent):
         elif self.kind == "child_record":
             result = finalize_child_record_document(draft, template_ref=self.template_ref)
             schema_label = "ChildRecord"
+        elif self.kind == "nursery_record":
+            result = finalize_nursery_record_document(draft, template_ref=self.template_ref)
+            schema_label = "NurseryRecord"
         else:
             doc_date = _resolve_doc_date(ctx.session.state.get(DOC_DATE_KEY))
             result = finalize_document(draft, template_ref=self.template_ref, doc_date=doc_date)

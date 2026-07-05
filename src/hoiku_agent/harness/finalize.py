@@ -26,13 +26,19 @@ from datetime import date
 
 from pydantic import BaseModel, ValidationError
 
-from ..schemas import ChildRecord, DiaryEntry, MonthlyPlan
+from ..schemas import ChildRecord, DiaryEntry, MonthlyPlan, NurseryRecord
 from . import notation_store
-from .draft import write_child_record_draft, write_draft, write_monthly_draft
+from .draft import (
+    write_child_record_draft,
+    write_draft,
+    write_monthly_draft,
+    write_nursery_record_draft,
+)
 from .schema_check import (
     validate_child_record_fields,
     validate_fields,
     validate_monthly_fields,
+    validate_nursery_record_fields,
 )
 
 
@@ -40,7 +46,9 @@ from .schema_check import (
 class FinalizedDocument:
     """確定処理の結果（決定的）。日誌（DiaryEntry）・月案（MonthlyPlan）・児童票（ChildRecord）で共用する。"""
 
-    entry: DiaryEntry | MonthlyPlan | ChildRecord | None = None  # 復元した書類モデル
+    entry: DiaryEntry | MonthlyPlan | ChildRecord | NurseryRecord | None = (
+        None  # 復元した書類モデル
+    )
     problems: list[str] = field(default_factory=list)  # validate_* 違反（空＝充足）
     formatted: str | None = None  # write_* の整形済み出力
     parse_error: str | None = None  # JSON 抽出/検証失敗の理由（None＝成功）
@@ -55,7 +63,12 @@ class FinalizedDocument:
 
 
 # 書類モデル型 → 正規化フィールド仕様のキー（notation_store.NARRATIVE_FIELDS）。
-_NOTATION_KIND = {DiaryEntry: "diary", MonthlyPlan: "monthly", ChildRecord: "child_record"}
+_NOTATION_KIND = {
+    DiaryEntry: "diary",
+    MonthlyPlan: "monthly",
+    ChildRecord: "child_record",
+    NurseryRecord: "nursery_record",
+}
 
 
 def _apply_notation(entry: BaseModel) -> tuple[BaseModel, list[dict]]:
@@ -195,6 +208,11 @@ def parse_draft_to_child_record(text: str) -> ChildRecord:
     return _parse_json_to_model(text, ChildRecord, "ChildRecord")  # type: ignore[return-value]
 
 
+def parse_draft_to_nursery_record(text: str) -> NurseryRecord:
+    """保育要録 author のドラフト文字列から NurseryRecord を復元する。失敗時は ValueError（§19・L4）。"""
+    return _parse_json_to_model(text, NurseryRecord, "NurseryRecord")  # type: ignore[return-value]
+
+
 def _finalize(text, *, parse, validate, write, template_ref) -> FinalizedDocument:
     """確定処理の汎用本体（復元→表記正規化→検査→整形）。日誌/月案で parse/validate/write を差し替える。
 
@@ -275,6 +293,27 @@ def finalize_child_record_document(text: str, template_ref: str | None = None) -
     )
 
 
+def finalize_nursery_record_document(
+    text: str, template_ref: str | None = None
+) -> FinalizedDocument:
+    """保育要録ドラフトを確定処理（復元→検査→整形）する（§19・L4）。日誌/月案/児童票の finalize_* と対称。
+
+    Args:
+        text: 保育要録 author が生成したドラフト（NurseryRecord の JSON を含む）。
+        template_ref: 様式参照（あれば write_nursery_record_draft に渡す）。
+
+    Returns:
+        FinalizedDocument（entry=NurseryRecord / problems / formatted / parse_error）。
+    """
+    return _finalize(
+        text,
+        parse=parse_draft_to_nursery_record,
+        validate=validate_nursery_record_fields,
+        write=write_nursery_record_draft,
+        template_ref=template_ref,
+    )
+
+
 def finalize_entry(
     data: dict,
     *,
@@ -292,8 +331,9 @@ def finalize_entry(
     （編集フォームでも人/LLM に日付を生成させない＝雛形 echo 耐性）。kind で日誌/月案/児童票の型・検査・整形を切替。
 
     Args:
-        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan / ChildRecord の JSON 相当の dict）。
-        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）。
+        data: 編集後の書類エントリ（DiaryEntry / MonthlyPlan / ChildRecord / NurseryRecord の JSON 相当の dict）。
+        kind: "diary"（DiaryEntry）/ "monthly"（MonthlyPlan）/ "child_record"（ChildRecord）/
+            "nursery_record"（NurseryRecord）。
         doc_date: 記録日（日誌のみ・与えられれば上書き）。
         template_ref: 様式参照（あれば write_* に渡す）。
 
@@ -311,6 +351,13 @@ def finalize_entry(
             validate_child_record_fields,
             write_child_record_draft,
             "ChildRecord",
+        )
+    elif kind == "nursery_record":
+        model_cls = NurseryRecord
+        validate, write, label = (
+            validate_nursery_record_fields,
+            write_nursery_record_draft,
+            "NurseryRecord",
         )
     else:
         model_cls = DiaryEntry

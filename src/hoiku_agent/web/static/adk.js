@@ -143,6 +143,18 @@ export async function getDiaryEntries(dateFrom, dateTo) {
   }
 }
 
+// 指定児の児童票（最新版）＝保育要録（L4）の seed 取得口。未接続/障害/該当なしは空＝
+// 呼び出し側がサンプルへ降格する（黙って誤解釈しない）。
+export async function getChildRecordEntries(child) {
+  try {
+    const r = await fetch(`/api/records/child-record-entries?child=${encodeURIComponent(child)}`);
+    if (!r.ok) return [];
+    return (await r.json()).entries || [];
+  } catch {
+    return [];
+  }
+}
+
 // 書類アーカイブの一覧（メタ）＝「書類を見る」タブ。docType 指定で種別フィルタ。未接続/障害は
 // 空＋store で正直に降格（偽の中身を出さない）。
 export async function listRecords(docType) {

@@ -520,18 +520,86 @@ def _child_record_story(entry: dict, past_entries: list[dict] | None = None) -> 
     return story
 
 
-_BUILDERS = {"diary": _diary_story, "monthly": _monthly_story, "child_record": _child_record_story}
+# ── 保育要録＝保育所児童保育要録（保育に関する記録・§19・L4） ──
+# 全国統一様式（こども家庭庁の参考例）は3列（氏名/性別/5領域ねらい｜保育の過程と子どもの育ち｜
+# 最終年度に至るまでの育ち）。左列は原簿系＋固定参照なので、帳票は harness の write_nursery_record_draft と
+# 同じ章立てで A4 縦に積む（最終年度の重点→個人の重点→保育の展開〔5領域/10の姿タグ〕→特に配慮すべき事項
+# →最終年度に至るまでの育ち）＝現場でそのまま綴じられる体裁にする。描画のみ（型の保証は harness＝§5）。
+
+
+def _nursery_record_story(entry: dict) -> list:
+    age = entry.get("age_band") or "3-5"
+    subject = entry.get("child_id") or "（対象児）"
+    months = str(entry.get("age_months") or "").strip()
+    if months:
+        subject = f"{subject}（{months}）"
+    meta_bits = [
+        f"対象年度: {entry.get('fiscal_year') or ''}",
+        f"対象児: {subject}",
+        f"クラス: {_AGE_LABEL.get(age, age)}",
+    ]
+    school = str(entry.get("school_name") or "").strip()
+    if school:
+        meta_bits.append(f"就学先: {school}")
+    period = str(entry.get("enrollment_period") or "").strip()
+    if period:
+        meta_bits.append(f"保育期間: {period}")
+    story: list = [
+        _P("保育所児童保育要録（保育に関する記録）", _TITLE),
+        _P("　　".join(meta_bits), _META),
+        Spacer(1, 3 * mm),
+        _P("保育の過程と子どもの育ちに関する事項", _LABEL),
+        Spacer(1, 1.5 * mm),
+        _section("最終年度の重点", _P(entry.get("final_year_focus"))),
+        _section("個人の重点", _P(entry.get("individual_focus"))),
+        Spacer(1, 2 * mm),
+        _P("保育の展開と子どもの育ち（5領域・10の姿の視点）", _LABEL),
+        Spacer(1, 1.5 * mm),
+    ]
+    dev = entry.get("development_notes") or []
+    if dev:
+        for note in dev:
+            note = note or {}
+            tags = note.get("tags") or []
+            tag_text = "、".join(str(t) for t in tags) if tags else "（タグ未付与）"
+            story.append(_section("育ちの姿", _P(note.get("description"), _SMALL)))
+            story.append(_section("対応する姿・領域", _P(tag_text, _SMALL)))
+            story.append(Spacer(1, 2 * mm))
+    else:
+        story.append(_section("", _P("（保育の展開と子どもの育ち 未記入）")))
+    story.extend(
+        [
+            _section("特に配慮すべき事項", _P(entry.get("special_notes") or "なし")),
+            Spacer(1, 2 * mm),
+            _P("最終年度に至るまでの育ちに関する事項", _LABEL),
+            Spacer(1, 1.5 * mm),
+            _section("入所時〜前年度の育ち", _P(entry.get("growth_until_final"))),
+        ]
+    )
+    story.append(_signoff_block())
+    return story
+
+
+_BUILDERS = {
+    "diary": _diary_story,
+    "monthly": _monthly_story,
+    "child_record": _child_record_story,
+    "nursery_record": _nursery_record_story,
+}
 
 
 def render_pdf(kind: str, entry: dict, past_entries: list[dict] | None = None) -> bytes:
-    """確定 entry（dict）を帳票PDF（bytes）へ描画する。kind = "diary" | "monthly" | "child_record"。
+    """確定 entry（dict）を帳票PDF（bytes）へ描画する。
+    kind = "diary" | "monthly" | "child_record" | "nursery_record"。
 
     past_entries は児童票のみ有効＝同じ子の保存済み児童票（アーカイブ由来）。同じ年度のものだけ
     年間マトリクスの他の期の列に埋める（割当は assign_period_columns・今回の entry が常に優先）。
     描画のみ（型検査はしない＝空欄は空セルで出す）。entry が dict でない・kind 不正は ValueError。
     """
     if kind not in _BUILDERS:
-        raise ValueError(f"未知の kind: {kind!r}（'diary' | 'monthly' | 'child_record'）")
+        raise ValueError(
+            f"未知の kind: {kind!r}（'diary' | 'monthly' | 'child_record' | 'nursery_record'）"
+        )
     if not isinstance(entry, dict):
         raise ValueError("entry は dict である必要があります")
     buf = io.BytesIO()
@@ -543,7 +611,12 @@ def render_pdf(kind: str, entry: dict, past_entries: list[dict] | None = None) -
         rightMargin=_MARGIN,
         topMargin=_MARGIN,
         bottomMargin=_MARGIN,
-        title={"diary": "保育日誌", "monthly": "個別月案", "child_record": "児童票"}[kind],
+        title={
+            "diary": "保育日誌",
+            "monthly": "個別月案",
+            "child_record": "児童票",
+            "nursery_record": "保育所児童保育要録",
+        }[kind],
     )
     if kind == "child_record":
         doc.build(_child_record_story(entry, past_entries))

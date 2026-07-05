@@ -109,6 +109,20 @@
           </div>
         </div>
 
+        <div id="doc-fields-youroku" class="doc-fields" hidden>
+          <div class="row">
+            <div>
+              <label class="field-label" for="youroku-year">対象年度</label>
+              <input id="youroku-year" class="input" type="text" value="2026" placeholder="例: 2026">
+            </div>
+          </div>
+          <div class="seed-note">
+            <span data-ic="chart"></span>
+            <span>最終年度（年長）の児童票（仮名サンプルを seed します）</span>
+            <span id="youroku-seed-count" class="badge">3 件</span>
+          </div>
+        </div>
+
         <button id="doc-run" class="btn btn-primary btn-block"><span data-ic="spark"></span><span id="doc-run-label">下書きを作成する</span></button>
       </div>
 
@@ -124,6 +138,10 @@
       <div id="doc-area-record" class="doc-area" hidden>
         <div id="record-stepper" class="stepper hidden"></div>
         <div id="record-flow" class="flow-area"></div>
+      </div>
+      <div id="doc-area-youroku" class="doc-area" hidden>
+        <div id="youroku-stepper" class="stepper hidden"></div>
+        <div id="youroku-flow" class="flow-area"></div>
       </div>
     </section>
 

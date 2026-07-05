@@ -16,32 +16,36 @@
 ## ファイルの責務
 
 - `schema_check.py` … `validate_fields`（日誌）/ `validate_monthly_fields`（月案）/ `validate_child_record_fields`
-  （児童票・§19）：必須欄＋年齢分岐（0–2＝3つの視点 / 3–5＝5領域）。分岐の実体は `_required_tag_type` に1つ
-  （日誌・月案・児童票で共用）。日誌の生活記録必須は **0–2 のみ**（3–5 は任意＝全年齢対応・§19）。
-- `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）/ `write_child_record_draft`（児童票・§19）：
-  pydantic → **標準様式テキスト**へ整形（ネット調査で裏取りした章立て・順序＝養護2本柱/生活記録/養護→教育、
-  児童票＝発達の経過（領域別叙述）→配慮・特記→家庭連携→総合所見→次期に向けて）。確定出力は pipeline 末尾で実行。
+  （児童票・§19）/ `validate_nursery_record_fields`（保育要録・§19・L4）：必須欄＋年齢分岐（0–2＝3つの視点 /
+  3–5＝5領域）。分岐の実体は `_required_tag_type` に1つ（日誌・月案・児童票・要録で共用。要録は年長＝5領域固定）。
+  日誌の生活記録必須は **0–2 のみ**（3–5 は任意＝全年齢対応・§19）。
+- `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）/ `write_child_record_draft`（児童票・§19）/
+  `write_nursery_record_draft`（保育要録・§19・L4）：pydantic → **標準様式テキスト**へ整形（ネット調査で裏取りした
+  章立て・順序＝養護2本柱/生活記録/養護→教育、児童票＝発達の経過（領域別叙述）→配慮・特記→家庭連携→総合所見→
+  次期に向けて、要録＝最終年度の重点→個人の重点→保育の展開と子どもの育ち（5領域/10の姿）→特に配慮すべき事項→
+  最終年度に至るまでの育ち）。確定出力は pipeline 末尾で実行。
 - `notation_store.py` … **ひらがな表記DX＝表記ルール辞書＋決定的な正規化器**（「子供→子ども」等の置換・混入
   スペース除去）。CRUD（保育士が育てる編集辞書）＋正規化（`normalize_text`/`normalize_entry_dict`＝**叙述系
   フィールド限定**で仮名/タグ/日付は不変＝誤変換を型で防ぐ）＋IO（`notation_books` 1行 JSONB・version 楽観ロック・
   ローカル `knowledge/表記ルール.json` シード・降格）。policy_store と同じ哲学（決定的実体はここに1つ・置き場は IO 節で
   解決・clock 外部注入）。**育つ指針カード（agentic な勘所）とは別の道具＝決定的な表記の統一**（線を混ぜない）。
 - `finalize.py` … `finalize_document`（日誌）/ `finalize_monthly_document`（月案）/
-  `finalize_child_record_document`（児童票）：復元→**表記正規化**→検査→整形（正規化は `notation_store` を呼び
+  `finalize_child_record_document`（児童票）/ `finalize_nursery_record_document`（保育要録）：復元→**表記正規化**→検査→整形（正規化は `notation_store` を呼び
   validate/write の前に決定的に当てる＝以降は整えた本文に走る・降格safe。変更点は `FinalizedDocument.notation_changes`）。
   汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。`finalize_entry(dict)` は
   編集UI用＝編集後 entry を直接 正規化→validate/write 再実行（web から中継・実体はここに1つ）。
 - `aggregate.py` … `aggregate_by_child`（Counter 版）/ `prev_month_digest`（state 用 serializable）/
-  `format_digest_for_prompt`（集積の人間可読テキスト・label で月案 L2＝前月／児童票 L3＝期間を切替）。
-  要約生成は各 author に委ねる（§10/§19）。
+  `format_digest_for_prompt`（集積の人間可読テキスト・label で月案 L2＝前月／児童票 L3＝期間を切替）/
+  `child_record_digest` ＋ `format_record_digest_for_prompt`（保育要録 L4＝**日誌でなく最終年度の児童票**を
+  child_id 別・期順に集計）。要約生成は各 author に委ねる（§10/§19）。
 - `pipeline.py` … 日誌：authoring_loop（作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御
   （旧 `workflow/document_pipeline.py`）。`build_authoring_loop` が author を巡回に包み NEEDS_REVISION で
   再作成、APPROVED 早期終了の**判定**（ApprovalGate）はここ（制御＝決定的）、レビュー内容の**生成**は reviewer。
-  `FinalizeAgent(kind=...)` で日誌/月案/児童票の確定を切替（実体は finalize.py）。**pipeline に prep 段は置かない**
+  `FinalizeAgent(kind=...)` で日誌/月案/児童票/保育要録の確定を切替（実体は finalize.py）。**pipeline に prep 段は置かない**
   ＝文書作成指針は author/reviewer の InstructionProvider（`../agents/instructions.py`）が `policy_store.render_for_doc`
   を prompt 冒頭へ前置注入する（探索を LLM の read_policy 呼び出しに委ねず決定的に用意＝§5）。**prep を先頭に置いて
   content イベントを出すと ADK eval の rubric judge が非LLM先頭段を採点不能にする**ため、集積の `DigestPrepAgent`
-  （monthly.py）も content 無しの state-only イベントにしてある（§12）。
+  （monthly.py）・`RecordDigestPrepAgent`（youroku.py・L4）も content 無しの state-only イベントにしてある（§12）。
 - `monthly.py` … 月案：`DigestPrepAgent`（旧 MonthlyPrepAgent を入出力キーで一般化。前月日誌を child_id 別集計＝
   L2 還流の決定的部分・児童票の L3 とも共用。**content 無しの state-only イベント**で `state["*_digest"]` に載せるだけ
   ＝集積の prompt 前置は author/reviewer の InstructionProvider が担う。content を持たせないのは eval judge が
@@ -49,7 +53,10 @@
   `build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
 - `child_record.py` … 児童票（§19）：`DigestPrepAgent`（period_prep・period_entries→period_digest＝L3 還流）→
   児童票 author の authoring_loop（共用）→ finalize(kind="child_record")。`build_child_record_pipeline`。
-- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／児童票を振り分ける
+- `youroku.py` … 保育要録（§19・L4）：`RecordDigestPrepAgent`（record_prep・**最終年度の児童票**（record_entries）を
+  `aggregate.child_record_digest` で集計→record_digest＝日誌でなく児童票を集める・content 無し state-only）→ 要録 author の
+  authoring_loop（共用）→ finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
+- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／児童票／保育要録を振り分ける
   決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§19）。
 - `policy_store.py` … 育つ指針＝構造化カードストアの決定的 CRUD・完全重複ガード・履歴・テキスト再生
   （全再生＝`render_to_text`（UI `/api/policy`・eval）／前置注入用＝`render_for_doc`（共通＋当該 scope のみ・

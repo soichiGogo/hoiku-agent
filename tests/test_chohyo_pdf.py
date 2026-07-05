@@ -80,11 +80,41 @@ _CHILD_RECORD = {
 }
 
 
+_NURSERY_RECORD = {
+    "fiscal_year": "2026",
+    "age_band": "3-5",
+    "child_id": "はるとくん",
+    "age_months": "6歳0か月",
+    "final_year_focus": "共通の目的に向かって思いや考えを出し合いながら活動を楽しむ",
+    "individual_focus": "自分を発揮しながらさまざまな活動を楽しむ",
+    "development_notes": [
+        {"description": "運動遊びに繰り返し挑戦し、できた喜びを味わった", "tags": ["健康"]},
+        {"description": "友だちと考えを出し合い協力する姿が増えた", "tags": ["人間関係"]},
+    ],
+    "special_notes": "",
+    "growth_until_final": "入園当初は不安が大きかったが、生き生きと表現を楽しむ姿へ育った",
+    "school_name": "○○小学校",
+    "enrollment_period": "2023-04〜2027-03",
+}
+
+
 def test_render_diary_pdf():
     b = render_pdf("diary", _DIARY)
     assert b[:4] == b"%PDF"
     # フォント埋め込みで一定サイズ以上（サブセット同梱の目安）。
     assert len(b) > 10_000
+
+
+def test_render_nursery_record_pdf():
+    b = render_pdf("nursery_record", _NURSERY_RECORD)
+    assert b[:4] == b"%PDF"
+    assert len(b) > 10_000
+
+
+def test_render_nursery_record_sparse_and_special_notes_empty():
+    """欄が空でも例外なく %PDF を返す（描画のみ・型検査は harness）。特に配慮=空は「なし」で描く。"""
+    b = render_pdf("nursery_record", {"age_band": "3-5", "development_notes": []})
+    assert b[:4] == b"%PDF"
 
 
 def test_render_monthly_pdf():

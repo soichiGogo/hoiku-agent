@@ -39,6 +39,13 @@ const DOC_TYPES = [
     runLabel: "児童票の下書きを作成する",
     desc: "期間中の日誌の積み重ねを AI が集計し、その期の「発達の経過」「総合所見」へ再構成します（L3 還流）。保護者に開示され得る書類なので、肯定的で断定しない表現に整えます。",
   },
+  {
+    key: "youroku",
+    label: "保育要録",
+    icon: "chart",
+    runLabel: "保育要録の下書きを作成する",
+    desc: "最終年度（年長）の児童票の積み重ねを AI が集計し、小学校へ引き継ぐ「保育要録」の下書き（保育の展開・個人の重点・最終年度に至るまでの育ち）へ再構成します（L4 還流）。年一回・年長のみだが最も労力のかかる書類です。",
+  },
 ];
 const DOC_TYPE_OF = Object.fromEntries(DOC_TYPES.map((d) => [d.key, d]));
 
@@ -182,6 +189,37 @@ function samplePeriodEntries(childId) {
       },
     ],
     evaluation: { child_focus: "興味の対象に自分から関わっていた", self_review: "発達に合わせた環境を用意できた" },
+  }));
+}
+
+// 保育要録（L4）の seed＝最終年度（年長=3–5）の児童票サンプル。1年を3期に区切り、育ちの推移
+// （自己発揮→協同→就学期待）を含める＝要録の「期の記録→1年の育ちの線」への再構成が見える（§14/§19）。
+// scripts/run_youroku.py の _sample_record_entries と同趣旨（ChildRecord の配列）。
+function sampleRecordEntries(childId) {
+  const periods = [
+    { period: "2026-04〜2026-07", months: "5歳4か月",
+      dev: [["進級当初は新しい環境に戸惑いも見られたが、生活の流れが分かると安心して過ごした", "健康"],
+            ["鬼ごっこなど走る遊びを好み、気の合う友だちと関わって遊んだ", "人間関係"]],
+      overall: "新しい環境に慣れ、好きな遊びを見つけて自分を発揮し始めた", next: "友だちとの関わりを広げていく" },
+    { period: "2026-08〜2026-11", months: "5歳8か月",
+      dev: [["製作活動で自分なりの思いを描き加えながら満足感を味わった", "表現"],
+            ["散歩で摘んできた草花に興味をもち、図鑑で名前や色を調べようとした", "環境"]],
+      overall: "自分の思いを表現しようとする姿が増え、探究する意欲が育った", next: "言葉で伝え合う楽しさを広げる" },
+    { period: "2026-12〜2027-03", months: "6歳0か月",
+      dev: [["メッセージボード作りが友だちに広がり、伝え合う喜びを味わった", "言葉"],
+            ["就学への期待をもち、当番活動に責任をもって取り組んだ", "人間関係"]],
+      overall: "自信をもって表現し、就学に向けて意欲的に生活する姿が育った", next: "小学校生活への期待をもつ" },
+  ];
+  return periods.map((p) => ({
+    period: p.period,
+    age_band: "3-5",
+    child_id: childId,
+    age_months: p.months,
+    development_notes: p.dev.map(([description, tag]) => ({ description, tags: [tag] })),
+    care_notes: "",
+    family_liaison: "",
+    overall_note: p.overall,
+    next_aims: p.next,
   }));
 }
 
@@ -552,6 +590,7 @@ async function main() {
   function onChildChange(name) {
     $("monthly-seed-count").textContent = samplePrevEntries(name).length + " 件";
     $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
+    $("youroku-seed-count").textContent = sampleRecordEntries(name).length + " 件";
     diaryAge.select(AGE_BAND_LABEL[ageBandOf(name)] || AGE_BANDS[0]);
   }
 
@@ -606,6 +645,16 @@ async function main() {
     status,
     onBusy: setSegBusy,
   });
+  const yourokuFlow = makeDocFlow({
+    area: $("youroku-flow"),
+    button: $("doc-run"),
+    stepper: $("youroku-stepper"),
+    steps: ["最終年度の集計", "情報を集める", "下書き", "レビュー", "確定"],
+    showDigest: true,
+    kind: "nursery_record",
+    status,
+    onBusy: setSegBusy,
+  });
 
   // 種別ごとの実行（seed 組み立て＋ flow.run）。ロジックは統合前の3ハンドラと同一。
   function runDiary() {
@@ -647,7 +696,29 @@ async function main() {
       `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の児童票（保育経過記録）を作成してください。period には「${period}」をそのまま書いてください。`,
     );
   }
-  const RUN = { diary: runDiary, monthly: runMonthly, record: runRecord };
+  async function runYouroku() {
+    const child = docChild();
+    const fiscalYear = $("youroku-year").value || "2026";
+    status.setSubject(child);
+    // L4 seed＝最終年度の児童票。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
+    let entries = null;
+    let source = "サンプル";
+    if (cfg.records_connected) {
+      const archived = await adk.getChildRecordEntries(child);
+      if (archived.length) {
+        entries = archived;
+        source = "アーカイブ";
+      }
+    }
+    if (!entries) entries = sampleRecordEntries(child);
+    $("youroku-seed-count").textContent = `${entries.length} 件（${source}）`;
+    const seed = { doc_type: "保育要録", record_entries: entries };
+    yourokuFlow.run(
+      seed,
+      `${fiscalYear}年度の ${child} の保育要録（保育所児童保育要録）を作成してください。fiscal_year には「${fiscalYear}」をそのまま書いてください。`,
+    );
+  }
+  const RUN = { diary: runDiary, monthly: runMonthly, record: runRecord, youroku: runYouroku };
 
   // 種別セグメント：切替で入力欄・結果エリア・説明文・ボタンラベルを追従（結果エリアは種別ごとに保持）。
   const docKind = chipGroup(

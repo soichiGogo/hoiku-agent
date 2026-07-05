@@ -12,6 +12,7 @@ from .document import (
     LifeRecord,
     MonthlyEducationNote,
     MonthlyPlan,
+    NurseryRecord,
     ReviewCriteria,
     ReviewFinding,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "MonthlyPlan",
     "DevelopmentNote",
     "ChildRecord",
+    "NurseryRecord",
     # enums
     "AgeBand",
     "Lineage",

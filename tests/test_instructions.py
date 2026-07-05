@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hoiku_agent.agents.instructions as instr
 from hoiku_agent.agents.instructions import build_author_instruction, build_review_instruction
+from hoiku_agent.harness.aggregate import format_record_digest_for_prompt
 from hoiku_agent.schemas.policy import PolicyScope
 
 
@@ -68,6 +69,36 @@ def test_author_provider_skips_absent_or_empty_digest():
         assert out.rstrip().endswith("BASE")
 
 
+def _record_digest() -> dict:
+    return {
+        "はるとくん": {
+            "record_count": 3,
+            "periods": ["2026-04〜2026-07", "2026-08〜2026-11", "2026-12〜2027-03"],
+            "tag_freq": {"人間関係": 2, "健康": 1},
+            "development": ["（2026-04〜2026-07）友だちと関わって遊んだ"],
+            "overall_notes": ["（2026-04〜2026-07）自分を発揮し始めた"],
+            "care_notes": [],
+            "next_aims": [],
+        }
+    }
+
+
+def test_author_provider_uses_record_formatter_for_youroku():
+    """保育要録 author は record_digest を format_record_digest_for_prompt で前置する（L4＝児童票集積）。"""
+    prov = build_author_instruction(
+        "BASE",
+        PolicyScope.保育要録,
+        digest_key="record_digest",
+        digest_label="最終年度",
+        digest_formatter=format_record_digest_for_prompt,
+    )
+    out = prov(_Ctx({"record_digest": _record_digest()}))
+    assert "### 保育要録（保育所児童保育要録・小学校引継ぎ）" in out  # 要録 scope の指針
+    assert "【最終年度の児童票 集積" in out  # format_record_digest_for_prompt の見出し
+    assert "はるとくん" in out and "友だちと関わって遊んだ" in out
+    assert out.rstrip().endswith("BASE")
+
+
 # ──────────────────────────── review provider ────────────────────────────
 
 
@@ -87,6 +118,15 @@ def test_review_provider_defaults_to_diary_when_doc_type_unset():
     out = prov(_Ctx({}))
     assert "### 保育日誌" in out
     assert "### 月案 / 週案 / 日案" not in out
+
+
+def test_review_provider_resolves_youroku_scope_and_record_digest():
+    """reviewer は doc_type=保育要録 で要録 scope＋record_digest（要録 formatter）を前置する（L4）。"""
+    prov = build_review_instruction("REVIEW-BASE")
+    out = prov(_Ctx({"doc_type": "保育要録", "record_digest": _record_digest()}))
+    assert "### 保育要録（保育所児童保育要録・小学校引継ぎ）" in out
+    assert "【最終年度の児童票 集積" in out  # 要録は record_digest を要録 formatter で前置
+    assert out.rstrip().endswith("REVIEW-BASE")
 
 
 # ──────────────────────────── 降格 ────────────────────────────

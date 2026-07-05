@@ -17,16 +17,28 @@ from pathlib import Path
 
 import pytest
 
-from hoiku_agent.harness import validate_child_record_fields, validate_fields
-from hoiku_agent.harness.finalize import parse_draft_to_child_record, parse_draft_to_entry
+from hoiku_agent.harness import (
+    validate_child_record_fields,
+    validate_fields,
+    validate_nursery_record_fields,
+)
+from hoiku_agent.harness.finalize import (
+    parse_draft_to_child_record,
+    parse_draft_to_entry,
+    parse_draft_to_nursery_record,
+)
 
 _CASES_DIR = Path(__file__).resolve().parents[1] / "eval" / "cases"
 _EVALSETS = sorted(_CASES_DIR.glob("*.evalset.json"))
 
 
-# evalset ファイル名 → 書類種別（参照ドラフトの型）。児童票（ChildRecord）は diary と検査を分岐する。
+# evalset ファイル名 → 書類種別（参照ドラフトの型）。児童票/要録は diary と検査を分岐する。
 def _kind_of(path: Path) -> str:
-    return "child_record" if path.name.startswith("child_record") else "diary"
+    if path.name.startswith("child_record"):
+        return "child_record"
+    if path.name.startswith("nursery_record"):
+        return "nursery_record"
+    return "diary"
 
 
 # §14 allowlist：eval ケース／月案 seed で使ってよい架空の子（実在しない仮名）の固定ロスター。
@@ -84,6 +96,9 @@ def test_reference_draft_passes_type_check(eval_id: str, case: dict):
     if case["_kind"] == "child_record":
         record = parse_draft_to_child_record(text)
         assert validate_child_record_fields(record) == [], f"{eval_id}: 参照ドラフトが型違反"
+    elif case["_kind"] == "nursery_record":
+        rec = parse_draft_to_nursery_record(text)
+        assert validate_nursery_record_fields(rec) == [], f"{eval_id}: 参照ドラフトが型違反"
     else:
         entry = parse_draft_to_entry(text)
         assert validate_fields(entry) == [], f"{eval_id}: 参照ドラフトが型違反"
@@ -99,6 +114,12 @@ def _child_ids_of(case: dict) -> list[str]:
         for e in state.get("period_entries") or []:
             ids.extend(n.get("child_id", "") for n in e.get("individual_notes") or [])
             ids.extend(a.get("child_id", "") for a in e.get("attendance") or [])
+        return ids
+    if case["_kind"] == "nursery_record":
+        ids = [parse_draft_to_nursery_record(text).child_id]
+        # 要録は最終年度の児童票を seed するため、seed 側の仮名も検査対象にする（§14）。
+        state = (case.get("session_input") or {}).get("state") or {}
+        ids.extend(r.get("child_id", "") for r in state.get("record_entries") or [])
         return ids
     entry = parse_draft_to_entry(text)
     return [a.child_id for a in entry.attendance] + [n.child_id for n in entry.individual_notes]
