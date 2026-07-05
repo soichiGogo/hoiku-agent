@@ -42,8 +42,14 @@
   --child-id はるとくん --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
 - 児童票（doc_type=児童票・L3 還流＝期間日誌の集積）は専用入口 `uv run python scripts/run_child_record.py
   --child-id はるとくん --period 2026-04〜2026-06`（要 LLM 資格情報。期間日誌を seed）。
-- 配信（層A）: `Dockerfile`＝`uvicorn server:app`（Cloud Run・scale-to-zero）。デプロイ＝
-  `.github/workflows/deploy.yml`（WIF）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
+- 配信（層A）: `Dockerfile`＝`uvicorn server:app`（Cloud Run・scale-to-zero・**非root/PID1 exec 形式で SIGTERM
+  グレースフル**）。デプロイ＝`.github/workflows/deploy.yml`（WIF・**MUST ハードニング配線**＝`--max-instances`（`MAX_INSTANCES`
+  var・既定4）/`--service-account`（`RUNTIME_SA` var＝最小権限・未設定は既定 SA 降格＋警告）/`DATABASE_URL` は
+  Secret Manager 優先（`DATABASE_URL_SECRET` var・無ければ GH secret 平文降格）。GCP 側の一度きり設定は
+  `docs/ライブ実行手順.md`「本番運用ハードニング」）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
+- 可観測性: `src/hoiku_agent/logging_config.py`＝Cloud Run 向け構造化 JSON ログ（stdout 1行 JSON・severity・
+  `X-Cloud-Trace-Context` 相関）。`server.py` 入口で `configure_logging()`＋`install_trace_middleware()`。
+  Cloud Logging クライアントは手組みしない（マネージド昇格に委ねる）。ローカルは `K_SERVICE` 無しでテキスト降格（`LOG_FORMAT`/`LOG_LEVEL`）。
 - 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
   `uv run python scripts/run_improver.py --diff "…" [--feedback "…"]` で起こす（要 LLM 資格情報）。
   document_pipeline には組み込まない。
@@ -103,7 +109,9 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格・**CI 品質回帰専用**）/
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
   **eval ケース 22 件**（日誌16＋児童票6・実在しない仮名ロスターのみ・現場に即した内容）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
-- **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。docker 起動を実機確認済み。
+- **配信（層A）**: `Dockerfile`/`deploy.yml`/`eval-gate.yml`（WIF）・決定論 CI（`ci.yml`）。**本番運用ハードニング**
+  （非root/PID1 SIGTERM グレースフル・max-instances 上限・専用実行SA・DATABASE_URL の Secret Manager 化・構造化 JSON ログ）を
+  配線し docker build→起動→SIGTERM を実機確認済み（GCP 側の一度きり設定＝`docs/ライブ実行手順.md`「本番運用ハードニング」）。
 - **標準様式への準拠＋制度用語是正**: `write_draft`/`write_monthly_draft` をネット調査で裏取りした 0–2 個別の標準様式へ
   （養護2本柱の分離・個別の生活記録＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。3つの視点/10の姿の
   文言誤り2件を告示準拠に是正。`LifeRecord` スキーマ＋年齢分岐は validate/draft/finalize/E2E/eval まで同調・テスト済み（§18・§10）。
