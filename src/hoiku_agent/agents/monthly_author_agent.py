@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING
 from google.adk.agents import LlmAgent
 
 from ..models import build_model
-from ..tools import ask_caregiver, read_policy, recall_child_history, search_guideline
+from ..schemas.policy import PolicyScope
+from ..tools import ask_caregiver, recall_child_history, search_guideline
+from .instructions import build_author_instruction
 from .prompts import MONTHLY_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -43,11 +45,16 @@ def build_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     return LlmAgent(
         name="monthly_author",
         model=model if model is not None else build_model(),
-        instruction=MONTHLY_AUTHOR_INSTRUCTION,
+        # 文書作成指針（共通＋月案）＋前月集積（state["prev_month_digest"]）を prompt 冒頭へ前置注入（§5）。
+        instruction=build_author_instruction(
+            MONTHLY_AUTHOR_INSTRUCTION,
+            PolicyScope.月案,
+            digest_key="prev_month_digest",
+            digest_label="前月",
+        ),
         tools=[
             recall_child_history,  # その子の前回までの像（前月連続性＝§9）
             search_guideline,
-            read_policy,
             ask_caregiver,
         ],
         output_key="draft",  # 月案下書きを state["draft"] に格納（finalize が MonthlyPlan で復元）

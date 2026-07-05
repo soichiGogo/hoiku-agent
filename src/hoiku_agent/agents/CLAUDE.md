@@ -25,6 +25,13 @@
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の
   `BaseLlm` を差し込むための注入口。本番は引数なしで不変。
 - **受け渡しは output_key→state**（`state["draft"]` / `state["review"]`）。独自グローバルで渡さない。
+- **文書作成指針は agent が読みに行かない**（`read_policy` ツールは撤去）。`instructions.py` の InstructionProvider
+  （`build_author_instruction`／`build_review_instruction`）が author/reviewer の `instruction` を callable にし、
+  作る書類（doc_type）の scope で harness の `render_for_doc`（共通＋当該書類の勘所）＋集積（前月/期間・state の
+  digest を `format_digest_for_prompt`）を **prompt 冒頭へ前置注入**する（author は factory で scope 固定／reviewer は
+  共用のため state["doc_type"]→scope 解決）。指針を agent の**与件**にする＝探索を LLM に委ねず決定的に用意（§5）。
+  ここは prompt 文字列の**組み立て**だけで、指針テキストの再生・集積の整形という決定ロジック実体は harness に置く
+  （tools が harness を呼ぶ薄いラッパなのと同じ）。prompts.py の各 instruction は「この指示の冒頭に示した指針/集積」を参照する。
 - **instruction は `prompts.py` に分離**（ADK 慣習）。日本語で書く。
 
 ## 決定的処理を書きたくなったら

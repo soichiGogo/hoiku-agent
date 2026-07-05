@@ -19,13 +19,14 @@ from typing import TYPE_CHECKING
 from google.adk.agents import LlmAgent
 
 from ..models import build_model
+from ..schemas.policy import PolicyScope
 from ..tools import (
     ask_caregiver,
-    read_policy,
     recall_child_history,
     search_guideline,
     validate_fields,
 )
+from .instructions import build_author_instruction
 from .prompts import AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -45,11 +46,11 @@ def build_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     return LlmAgent(
         name="author",
         model=model if model is not None else build_model(),
-        instruction=AUTHOR_INSTRUCTION,
+        # 文書作成指針（共通＋保育日誌）を prompt 冒頭へ決定的に前置注入する（§5）。
+        instruction=build_author_instruction(AUTHOR_INSTRUCTION, PolicyScope.保育日誌),
         tools=[
             recall_child_history,  # 同じ子の前回までの姿（継続性は必ずこれ＝§9・B方針）
             search_guideline,
-            read_policy,
             ask_caregiver,
             validate_fields,  # 生成途中の自己点検（最終確定は harness）
         ],
