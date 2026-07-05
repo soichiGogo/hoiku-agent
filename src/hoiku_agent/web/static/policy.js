@@ -13,7 +13,7 @@ const SCOPE_DT = {
   共通: ["common", "共通"],
   保育日誌: ["diary", "保育日誌"],
   月案: ["monthly", "個別月案"],
-  児童票: ["child_record", "児童票"],
+  保育経過記録: ["child_record", "保育経過記録"],
   保育要録: ["nursery_record", "保育要録"],
 };
 

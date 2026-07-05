@@ -166,7 +166,7 @@ def test_get_document_degrades_when_url_unset(monkeypatch):
     assert rs.get_document("any-id") is None
 
 
-# ──────────────────────────── 月案・児童票・seed クエリ ────────────────────────────
+# ──────────────────────────── 月案・保育経過記録・seed クエリ ────────────────────────────
 
 
 def test_monthly_and_child_record_targets(db):
@@ -206,7 +206,7 @@ def test_list_diary_entries_filters_by_range(db):
 
 
 def test_list_child_record_entries_returns_latest_per_period_for_child(db):
-    """児童票の過去期取得（年間マトリクス帳票の埋め込み用）＝その子の最新版だけ・期間順・他児は混ざらない。"""
+    """保育経過記録の過去期取得（年間マトリクス帳票の埋め込み用）＝その子の最新版だけ・期間順・他児は混ざらない。"""
     q1 = {"period": "2026-04〜2026-06", "child_id": "はるとくん", "overall_note": "1期の所見"}
     rs.save_document("child_record", q1, author_kind="ai", now=_NOW)
     rs.save_document(

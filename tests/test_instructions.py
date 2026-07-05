@@ -84,7 +84,7 @@ def _record_digest() -> dict:
 
 
 def test_author_provider_uses_record_formatter_for_youroku():
-    """保育要録 author は record_digest を format_record_digest_for_prompt で前置する（L4＝児童票集積）。"""
+    """保育要録 author は record_digest を format_record_digest_for_prompt で前置する（L4＝保育経過記録集積）。"""
     prov = build_author_instruction(
         "BASE",
         PolicyScope.保育要録,
@@ -94,7 +94,7 @@ def test_author_provider_uses_record_formatter_for_youroku():
     )
     out = prov(_Ctx({"record_digest": _record_digest()}))
     assert "### 保育要録（保育所児童保育要録・小学校引継ぎ）" in out  # 要録 scope の指針
-    assert "【最終年度の児童票 集積" in out  # format_record_digest_for_prompt の見出し
+    assert "【最終年度の保育経過記録 集積" in out  # format_record_digest_for_prompt の見出し
     assert "はるとくん" in out and "友だちと関わって遊んだ" in out
     assert out.rstrip().endswith("BASE")
 
@@ -105,10 +105,10 @@ def test_author_provider_uses_record_formatter_for_youroku():
 def test_review_provider_resolves_scope_from_doc_type():
     """reviewer は書類共用＝state["doc_type"] で scope（＋集積）を解決する。"""
     prov = build_review_instruction("REVIEW-BASE")
-    out = prov(_Ctx({"doc_type": "児童票", "period_digest": _digest()}))
-    assert "### 児童票（期ごとの保育経過記録）" in out
+    out = prov(_Ctx({"doc_type": "保育経過記録", "period_digest": _digest()}))
+    assert "### 保育経過記録（期ごと）" in out
     assert "### 月案 / 週案 / 日案" not in out
-    assert "【期間の集積" in out  # 児童票は period_digest を前置
+    assert "【期間の集積" in out  # 保育経過記録は period_digest を前置
     assert out.rstrip().endswith("REVIEW-BASE")
 
 
@@ -125,7 +125,7 @@ def test_review_provider_resolves_youroku_scope_and_record_digest():
     prov = build_review_instruction("REVIEW-BASE")
     out = prov(_Ctx({"doc_type": "保育要録", "record_digest": _record_digest()}))
     assert "### 保育要録（保育所児童保育要録・小学校引継ぎ）" in out
-    assert "【最終年度の児童票 集積" in out  # 要録は record_digest を要録 formatter で前置
+    assert "【最終年度の保育経過記録 集積" in out  # 要録は record_digest を要録 formatter で前置
     assert out.rstrip().endswith("REVIEW-BASE")
 
 

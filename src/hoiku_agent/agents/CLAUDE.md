@@ -11,13 +11,13 @@
   ApprovalGate] を1巡とする LoopAgent に author を包み、NEEDS_REVISION のとき次巡で author が指摘点を直して
   再提出する（「巡回保証が要る」と判断したための設計＝旧 v0 は author をループに包まなかった）。再作成時の
   挙動（白紙から作り直さない・同じ不足で `ask_caregiver` を繰り返さない）は `prompts.py` の revision mode。
-  **月案・児童票・保育要録も同じ形**（`monthly_author_agent.py` / `child_record_author_agent.py` /
+  **月案・保育経過記録・保育要録も同じ形**（`monthly_author_agent.py` / `child_record_author_agent.py` /
   `nursery_record_author_agent.py`＝単一 LlmAgent・authoring_loop を日誌と共用）。違いは instruction
-  （月案/児童票/要録スキーマ。児童票・要録は**開示前提の肯定的・非断定的表現**を含む＝§19。要録は小学校引継ぎ＝
+  （月案/保育経過記録/要録スキーマ。保育経過記録・要録は**開示前提の肯定的・非断定的表現**を含む＝§19。要録は小学校引継ぎ＝
   10の姿の活用・最終年度に至るまでの育ちを recall_child_history から叙述）と、前段 prep が決定的集計した集積
-  （月案＝前月 L2／児童票＝期間 L3／要録＝**最終年度の児童票** L4＝`RecordDigestPrepAgent`・formatter は
+  （月案＝前月 L2／保育経過記録＝期間 L3／要録＝**最終年度の保育経過記録** L4＝`RecordDigestPrepAgent`・formatter は
   `format_record_digest_for_prompt`）を InstructionProvider が前置注入する点（§10/§19）。
-- **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案/児童票/保育要録共用・開示前提の表現観点を含む）。**巡回（LoopAgent）と APPROVED 早期終了の
+- **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案/保育経過記録/保育要録共用・開示前提の表現観点を含む）。**巡回（LoopAgent）と APPROVED 早期終了の
   "制御" は harness/pipeline.py 側**（決定的）。ここは reviewer 単体（指摘の生成）を返す。`date` 等 harness が
   確定時に補完する機械的メタの欠落は指摘対象外＝内容点検に集中する（prompts.py の注意書き）。
 - **アップロード取込の抽出AI（`upload_parser_agent.py`＝`build_upload_parser_agent`）は別エントリの単一 LlmAgent**
@@ -37,7 +37,7 @@
 - **文書作成指針は agent が読みに行かない**（`read_policy` ツールは撤去）。`instructions.py` の InstructionProvider
   （`build_author_instruction`／`build_review_instruction`）が author/reviewer の `instruction` を callable にし、
   作る書類（doc_type）の scope で harness の `render_for_doc`（共通＋当該書類の勘所）＋集積（前月/期間・state の
-  digest を `format_digest_for_prompt`／**要録 L4 は最終年度の児童票集積なので `format_record_digest_for_prompt`
+  digest を `format_digest_for_prompt`／**要録 L4 は最終年度の保育経過記録集積なので `format_record_digest_for_prompt`
   を formatter に差し替え**）を **prompt 冒頭へ前置注入**する（author は factory で scope・formatter 固定／reviewer は
   共用のため state["doc_type"]→scope/formatter 解決）。指針を agent の**与件**にする＝探索を LLM に委ねず決定的に用意（§5）。
   ここは prompt 文字列の**組み立て**だけで、指針テキストの再生・集積の整形という決定ロジック実体は harness に置く

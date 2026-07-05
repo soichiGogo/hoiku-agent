@@ -24,7 +24,7 @@ const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
 
-// 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record（児童票フローの
+// 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record（保育経過記録フローの
 // kind は "child_record"＝makeDocFlow 側で指定）。将来「要録」等が増えてもこの配列に足すだけ（§19）。
 const DOC_TYPES = [
   {
@@ -43,9 +43,9 @@ const DOC_TYPES = [
   },
   {
     key: "record",
-    label: "児童票",
+    label: "保育経過記録",
     icon: "chart",
-    runLabel: "児童票の下書きを作成する",
+    runLabel: "保育経過記録の下書きを作成する",
     desc: "期間中の日誌の積み重ねを AI が集計し、その期の「発達の経過」「総合所見」へ再構成します（L3 還流）。保護者に開示され得る書類なので、肯定的で断定しない表現に整えます。",
   },
   {
@@ -53,7 +53,7 @@ const DOC_TYPES = [
     label: "保育要録",
     icon: "chart",
     runLabel: "保育要録の下書きを作成する",
-    desc: "最終年度（年長）の児童票の積み重ねを AI が集計し、小学校へ引き継ぐ「保育要録」の下書き（保育の展開・個人の重点・最終年度に至るまでの育ち）へ再構成します（L4 還流）。年一回・年長のみだが最も労力のかかる書類です。",
+    desc: "最終年度（年長）の保育経過記録の積み重ねを AI が集計し、小学校へ引き継ぐ「保育要録」の下書き（保育の展開・個人の重点・最終年度に至るまでの育ち）へ再構成します（L4 還流）。年一回・年長のみだが最も労力のかかる書類です。",
   },
 ];
 const DOC_TYPE_OF = Object.fromEntries(DOC_TYPES.map((d) => [d.key, d]));
@@ -102,13 +102,13 @@ const POLICY_TARGETS = [
   { key: "all", label: "すべて", scope: null, docTypes: null,
     hint: "すべての指針カードを表示中。対象の書類は、メモの内容から AI が判断します。" },
   { key: "common", label: "共通", scope: "共通", docTypes: ["common"],
-    hint: "共通の指針は、日誌・月案・児童票・保育要録の すべての書類に効きます。" },
+    hint: "共通の指針は、日誌・月案・保育経過記録・保育要録の すべての書類に効きます。" },
   { key: "diary", label: "保育日誌", scope: "保育日誌", docTypes: ["common", "diary"],
     hint: "保育日誌を書くとき、AI は『共通 ＋ 保育日誌』の指針を参考にします。下のカードはその範囲だけ表示中。" },
   { key: "monthly", label: "個別月案", scope: "月案", docTypes: ["common", "monthly"],
     hint: "個別月案を書くとき、AI は『共通 ＋ 月案』の指針を参考にします。下のカードはその範囲だけ表示中。" },
-  { key: "child_record", label: "児童票", scope: "児童票", docTypes: ["common", "child_record"],
-    hint: "児童票を書くとき、AI は『共通 ＋ 児童票』の指針を参考にします。下のカードはその範囲だけ表示中。" },
+  { key: "child_record", label: "保育経過記録", scope: "保育経過記録", docTypes: ["common", "child_record"],
+    hint: "保育経過記録を書くとき、AI は『共通 ＋ 保育経過記録』の指針を参考にします。下のカードはその範囲だけ表示中。" },
   { key: "nursery_record", label: "保育要録", scope: "保育要録", docTypes: ["common", "nursery_record"],
     hint: "保育要録を書くとき、AI は『共通 ＋ 保育要録』の指針を参考にします。下のカードはその範囲だけ表示中。" },
 ];
@@ -177,8 +177,8 @@ function samplePrevEntries(childId) {
   }));
 }
 
-// 期間中の日誌の仮名サンプル（児童票＝L3 還流のデモ seed）。3ヶ月にわたる発達の推移（月ごとに姿が
-// 進む）を含め、児童票の「点の記録→期の育ちの線」への再構成が見えるようにする（§14/§19）。
+// 期間中の日誌の仮名サンプル（保育経過記録＝L3 還流のデモ seed）。3ヶ月にわたる発達の推移（月ごとに姿が
+// 進む）を含め、保育経過記録の「点の記録→期の育ちの線」への再構成が見えるようにする（§14/§19）。
 // 0–2（既定）と 3–5（さくらちゃん＝5領域・生活記録なし）で内容を切り替える（全年齢対応）。
 function samplePeriodEntries(childId) {
   const ageBand = ageBandOf(childId);
@@ -221,7 +221,7 @@ function samplePeriodEntries(childId) {
   }));
 }
 
-// 保育要録（L4）の seed＝最終年度（年長=3–5）の児童票サンプル。1年を3期に区切り、育ちの推移
+// 保育要録（L4）の seed＝最終年度（年長=3–5）の保育経過記録サンプル。1年を3期に区切り、育ちの推移
 // （自己発揮→協同→就学期待）を含める＝要録の「期の記録→1年の育ちの線」への再構成が見える（§14/§19）。
 // scripts/run_youroku.py の _sample_record_entries と同趣旨（ChildRecord の配列）。
 function sampleRecordEntries(childId) {
@@ -733,7 +733,7 @@ async function main() {
     }
   }
 
-  // ══ 書類を作る（日誌/月案/児童票を種別セグメントで統合） ══════════════════
+  // ══ 書類を作る（日誌/月案/保育経過記録を種別セグメントで統合） ══════════════════
   // フロー本体（HITL・ステッパー・編集フォーム・承認・PDF・アーカイブ）は makeDocFlow 1実装の共用で、
   // 種別で違うのは入力欄と seed の組み立てだけ（バックエンドの DocTypeRouter＝doc_type 分岐と 1:1）。
 
@@ -764,7 +764,7 @@ async function main() {
   const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
   sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
 
-  // 対象児が変わったら：月案/児童票の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
+  // 対象児が変わったら：月案/保育経過記録の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
   function onChildChange(name) {
     $("monthly-seed-count").textContent = samplePrevEntries(name).length + " 件";
     $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
@@ -868,17 +868,17 @@ async function main() {
     // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
     const { entries, source } = await seedEntries(start, end, samplePeriodEntries(child));
     $("record-seed-count").textContent = `${entries.length} 件（${source}）`;
-    const seed = { doc_type: "児童票", period_entries: entries };
+    const seed = { doc_type: "保育経過記録", period_entries: entries };
     recordFlow.run(
       seed,
-      `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の児童票（保育経過記録）を作成してください。period には「${period}」をそのまま書いてください。`,
+      `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の保育経過記録を作成してください。period には「${period}」をそのまま書いてください。`,
     );
   }
   async function runYouroku() {
     const child = docChild();
     const fiscalYear = $("youroku-year").value || "2026";
     status.setSubject(child);
-    // L4 seed＝最終年度の児童票。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
+    // L4 seed＝最終年度の保育経過記録。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
     let entries = null;
     let source = "サンプル";
     if (cfg.records_connected) {

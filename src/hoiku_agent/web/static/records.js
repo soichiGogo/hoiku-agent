@@ -16,9 +16,9 @@ import * as adk from "./adk.js";
 import { renderEditableDoc } from "./docedit.js";
 import { actorName, banner, el, esc, iconHTML } from "./ui.js";
 
-const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", child_record: "児童票", nursery_record: "保育要録" };
+const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", child_record: "保育経過記録", nursery_record: "保育要録" };
 const KIND_ICON = { diary: "diary", monthly: "calendar", child_record: "chart", nursery_record: "chart" };
-// 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→月案→児童票→要録）。
+// 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→月案→保育経過記録→要録）。
 const TYPE_ORDER = ["diary", "monthly", "child_record", "nursery_record"];
 const NO_CHILD = ""; // child なしの書類は「クラス全体」フォルダへ。
 
@@ -218,7 +218,7 @@ export function makeRecords(ui) {
       label: childKey || "クラス全体",
       count: list.length,
       childrenBuilder: (kids) => {
-        // 個人単位の種別（月案/児童票/要録）は「この子に取り込む」を先頭に（child を場所から確定）。
+        // 個人単位の種別（月案/保育経過記録/要録）は「この子に取り込む」を先頭に（child を場所から確定）。
         if (childKey && UPLOAD_META[type] && UPLOAD_META[type].wantsChild) {
           kids.appendChild(importRow(type, childKey, 2, `${childKey}に取り込む`));
         }

@@ -1,21 +1,21 @@
 """harness：保育要録パイプラインと L4 還流の配線（決定的）。
 
-設計コンテキスト §19（集積階層の最終段 L4＝最終年度の児童票を集積して小学校へ引き継ぐ書類）。
-児童票（child_record.py＝L3）と対称に、要録の "順序" と "型の保証" をここで決定的に組む。中身の決定
-（最終年度の児童票集積の要約・保育の展開の叙述・入所〜前年度の育ちの叙述・開示前提の表現）は配下の
+設計コンテキスト §19（集積階層の最終段 L4＝最終年度の保育経過記録を集積して小学校へ引き継ぐ書類）。
+保育経過記録（child_record.py＝L3）と対称に、要録の "順序" と "型の保証" をここで決定的に組む。中身の決定
+（最終年度の保育経過記録集積の要約・保育の展開の叙述・入所〜前年度の育ちの叙述・開示前提の表現）は配下の
 要録 LlmAgent に委ねる（§6/§19）。
 
 要録パイプライン（doc_type=保育要録 のときルータが選ぶ）:
-    record_prep（最終年度の児童票を child_id 別に決定的集計＝L4 還流の素データ・月案 L2／児童票 L3 とは
-      集計対象が違う＝児童票を集める）→ state["record_digest"]
-      → authoring_loop（[nursery_record_author → reviewer → ApprovalGate] を巡回・日誌/月案/児童票と共用）
+    record_prep（最終年度の保育経過記録を child_id 別に決定的集計＝L4 還流の素データ・月案 L2／保育経過記録 L3 とは
+      集計対象が違う＝保育経過記録を集める）→ state["record_digest"]
+      → authoring_loop（[nursery_record_author → reviewer → ApprovalGate] を巡回・日誌/月案/保育経過記録と共用）
       → finalize(kind="nursery_record")（NurseryRecord を復元→validate_nursery_record_fields/
         write_nursery_record_draft）
       → [after_agent_callback] persist_visit_to_memory（保育士の明示承認＋型成立のとき書き戻し・§9）
 
-L4 還流の入力（最終年度の児童票）は session state["record_entries"]（ChildRecord の dict 列）から取る。
-呼び出し側（scripts/run_youroku.py・web の seed）が最終年度分の児童票をアーカイブ（record_store）から
-供給する（未接続はサンプル降格）。集積階層は 日誌→月案（L2）→児童票（期・L3）→要録（年・L4）＝§19。
+L4 還流の入力（最終年度の保育経過記録）は session state["record_entries"]（ChildRecord の dict 列）から取る。
+呼び出し側（scripts/run_youroku.py・web の seed）が最終年度分の保育経過記録をアーカイブ（record_store）から
+供給する（未接続はサンプル降格）。集積階層は 日誌→月案（L2）→保育経過記録（期・L3）→要録（年・L4）＝§19。
 """
 
 from __future__ import annotations
@@ -58,9 +58,9 @@ def _parse_record_entries(raw: object) -> list[ChildRecord]:
 
 
 class RecordDigestPrepAgent(BaseAgent):
-    """L4 還流の決定的 prep：最終年度の児童票（state["record_entries"]）を child_id 別に決定的集計する（§19）。
+    """L4 還流の決定的 prep：最終年度の保育経過記録（state["record_entries"]）を child_id 別に決定的集計する（§19）。
 
-    月案/児童票の DigestPrepAgent が日誌（DiaryEntry）を集計するのに対し、要録は**児童票（ChildRecord）**を
+    月案/保育経過記録の DigestPrepAgent が日誌（DiaryEntry）を集計するのに対し、要録は**保育経過記録（ChildRecord）**を
     集計する（集計対象の型が違うため別 prep）。集計結果（serializable digest）を state["record_digest"] に
     **state-only イベント**（content なし）で格納する。author はこの digest を InstructionProvider
     （`agents/instructions.py`＝`format_record_digest_for_prompt`）が prompt 冒頭へ整形注入して読む
@@ -92,8 +92,8 @@ def build_nursery_record_pipeline(
 ) -> SequentialAgent:
     """保育要録の型を保証するパイプラインを構築する（§19・L4）。
 
-    児童票の build_child_record_pipeline と対称。先頭に RecordDigestPrepAgent（L4 還流の決定的集計・
-    入力=record_entries／出力=record_digest）を置き、巡回は build_authoring_loop（日誌・月案・児童票と共用。
+    保育経過記録の build_child_record_pipeline と対称。先頭に RecordDigestPrepAgent（L4 還流の決定的集計・
+    入力=record_entries／出力=record_digest）を置き、巡回は build_authoring_loop（日誌・月案・保育経過記録と共用。
     NEEDS_REVISION で nursery_record_author が再作成）、finalize は kind="nursery_record"。
     after_agent_callback も共用（明示承認＋型成立で書き戻し・§9）。author_model/reviewer_model は
     通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。

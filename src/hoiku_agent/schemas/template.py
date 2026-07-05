@@ -35,7 +35,7 @@ class SectionKind(str, Enum):
     - attendance … 出欠のサマリ（`【label】 {出席N名 / 欠席:…}`）。日誌のみ。
     - individual_notes … 個別の記録（児ごとの姿＋タグ＋生活記録＋個人のねらい）。日誌のみの特殊ブロック。
     - tagged_list … 枠組みタグ付きの叙述リスト（`【label】\\n  - {item}\\n    └ 対応する姿/領域: {tags}`）。
-      月案の教育／児童票・要録の発達の経過で共用（読む item フィールドは item_field で切替）。
+      月案の教育／保育経過記録・要録の発達の経過で共用（読む item フィールドは item_field で切替）。
     - evaluation2 … 日誌の評価・反省（2視点の (a)/(b) 行）。日誌のみの特殊ブロック。
     """
 
@@ -72,7 +72,7 @@ class Section(BaseModel):
     show: ShowRule = ShowRule.always
     item_field: str | None = Field(
         default=None,
-        description="tagged_list が各要素から読む叙述フィールド名（月案=aim／児童票・要録=description）",
+        description="tagged_list が各要素から読む叙述フィールド名（月案=aim／保育経過記録・要録=description）",
     )
 
 

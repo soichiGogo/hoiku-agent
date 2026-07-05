@@ -134,7 +134,7 @@ def test_render_diary_with_temperature_and_class():
 
 
 def test_render_child_record_pdf():
-    """児童票は年間マトリクス様式（A4 横・行＝領域×列＝4期・実様式準拠）で描ける（§19）。"""
+    """保育経過記録は年間マトリクス様式（A4 横・行＝領域×列＝4期・実様式準拠）で描ける（§19）。"""
     b = render_pdf("child_record", _CHILD_RECORD)
     assert b[:4] == b"%PDF"
     assert len(b) > 10_000

@@ -1,15 +1,15 @@
-"""児童票パイプライン（L3 還流）の手動起動エントリ（設計コンテキスト §19）。
+"""保育経過記録パイプライン（L3 還流）の手動起動エントリ（設計コンテキスト §19）。
 
-月案（run_monthly.py）と対称。児童票は期間中の日誌の集積（L3 還流）を seed する必要があるため、
+月案（run_monthly.py）と対称。保育経過記録は期間中の日誌の集積（L3 還流）を seed する必要があるため、
 専用スクリプトで起こす（root_agent には組み込み済みだが、`adk web` は doc_type と期間日誌を
 seed しづらいので、デモ/検証はこの入口を使う）。
 
 このスクリプトは:
 1. 期間中の日誌を読む。優先順位＝ `--entries-file`（JSON 配列）＞ 書類アーカイブ
    （`DATABASE_URL` 設定時・record_store から期間分を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
-2. session state に doc_type="児童票" と period_entries を seed して root_agent（DocTypeRouter）を回す。
-3. DigestPrepAgent（period_prep）が child_id 別に集計（state["period_digest"]）→ 児童票 author が
-   領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer → 児童票 finalize（ChildRecord を検査・整形）。
+2. session state に doc_type="保育経過記録" と period_entries を seed して root_agent（DocTypeRouter）を回す。
+3. DigestPrepAgent（period_prep）が child_id 別に集計（state["period_digest"]）→ 保育経過記録 author が
+   領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer → 保育経過記録 finalize（ChildRecord を検査・整形）。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:
     uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06
@@ -37,7 +37,7 @@ _USER_ID = "caregiver"
 def _sample_period_entries(child_id: str) -> list[dict]:
     """期間中の日誌サンプル（L3 還流のデモ入力）。実データは置かない＝実在しない仮名のみ（§14）。
 
-    3ヶ月にわたる発達の推移（つかまり立ち→歩行→指さし・発語）を含め、児童票の
+    3ヶ月にわたる発達の推移（つかまり立ち→歩行→指さし・発語）を含め、保育経過記録の
     「点の記録 → 期の育ちの線」への再構成が見える素材にする（§19）。
     各要素は DiaryEntry として妥当（_parse_prev_entries が model_validate で復元する）。
     """
@@ -160,14 +160,14 @@ async def _run(period: str, child_id: str, period_entries: list[dict]) -> None:
     session = await runner.session_service.create_session(
         app_name=_APP_NAME,
         user_id=_USER_ID,
-        state={"doc_type": "児童票", "period_entries": period_entries},
+        state={"doc_type": "保育経過記録", "period_entries": period_entries},
     )
     message = types.Content(
         role="user",
         parts=[
             types.Part(
                 text=(
-                    f"対象期間 {period} の {child_id} の児童票（保育経過記録）を作成してください。"
+                    f"対象期間 {period} の {child_id} の保育経過記録を作成してください。"
                     f"period には「{period}」をそのまま書いてください。"
                 )
             )
@@ -196,7 +196,7 @@ async def _run(period: str, child_id: str, period_entries: list[dict]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="児童票パイプライン（L3 還流）の手動起動")
+    parser = argparse.ArgumentParser(description="保育経過記録パイプライン（L3 還流）の手動起動")
     parser.add_argument("--period", default="2026-04〜2026-06", help="対象期間（自由記述）")
     parser.add_argument(
         "--child-id", default="はるとくん", help="対象児（実在しない仮名のみ＝§14）"

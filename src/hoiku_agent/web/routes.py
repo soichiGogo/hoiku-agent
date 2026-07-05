@@ -137,7 +137,7 @@ def _doc_filename(kind: str, entry: dict, ext: str) -> str:
     if kind == "monthly":
         stem = f"月案_{entry.get('month') or ''}_{entry.get('child_id') or ''}".rstrip("_")
     elif kind == "child_record":
-        stem = f"児童票_{entry.get('period') or ''}_{entry.get('child_id') or ''}".rstrip("_")
+        stem = f"保育経過記録_{entry.get('period') or ''}_{entry.get('child_id') or ''}".rstrip("_")
     elif kind == "nursery_record":
         stem = f"保育要録_{entry.get('fiscal_year') or ''}_{entry.get('child_id') or ''}".rstrip(
             "_"
@@ -358,14 +358,14 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         sync def＝FastAPI が threadpool で回す（アーカイブ読取＋ReportLab 描画のブロッキングを
         イベントループに載せない・アーカイブ系エンドポイントと同じ流儀）。
 
-        児童票（年間マトリクス）は、同じ子の保存済み児童票をアーカイブ（record_store）から引いて
+        保育経過記録（年間マトリクス）は、同じ子の保存済み保育経過記録をアーカイブ（record_store）から引いて
         過去期の列も自動で埋める（同じ年度だけ・割当は chohyo_pdf の純関数。アーカイブ未接続/該当なしは
         従来どおり今回の期のみ＝降格）。描画のみ（型の保証は harness）。kind/entry 不正は 400
         （握りつぶさず可視化）。LLM 非課金で非ゲート。
         """
         past_entries: list[dict] = []
         official_name: str | None = None
-        # 保育要録/児童票の氏名欄は本名（姓＋名）で描く＝児童マスタから解決（AI は生成しない・§14）。
+        # 保育要録/保育経過記録の氏名欄は本名（姓＋名）で描く＝児童マスタから解決（AI は生成しない・§14）。
         # 未接続/未登録は None＝従来どおり呼び名（child_id）へ降格。
         if req.kind in ("child_record", "nursery_record"):
             child = str(req.entry.get("child_id") or "").strip()
@@ -501,7 +501,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     @app.get("/api/records/diary-entries")
     def web_list_diary_entries(date_from: str, date_to: str) -> dict:
-        """期間内の日誌 entry（最新版 JSON）＝月案 L2／児童票 L3 の seed 取得口。
+        """期間内の日誌 entry（最新版 JSON）＝月案 L2／保育経過記録 L3 の seed 取得口。
 
         フロントは entries が空/未接続なら従来のサンプル seed へ降格する（黙って空 seed で回さない）。
         """
@@ -519,7 +519,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     @app.get("/api/records/child-record-entries")
     def web_list_child_record_entries(child: str) -> dict:
-        """指定児の児童票（最新版・期間順）＝保育要録 L4 の seed 取得口（§19）。
+        """指定児の保育経過記録（最新版・期間順）＝保育要録 L4 の seed 取得口（§19）。
 
         リテラル路なので `/api/records/{document_id}` より前に宣言し優先させる（diary-entries と同じ）。
         フロントは entries が空/未接続ならサンプル seed へ降格する（黙って空 seed で回さない）。

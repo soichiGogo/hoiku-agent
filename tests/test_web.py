@@ -28,7 +28,7 @@ def test_config_shape() -> None:
     assert body["default_user_id"] == "caregiver"
     for key in ("memory_connected", "rag_connected", "passcode_required", "model"):
         assert key in body
-    # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（児童票は配線済み）。
+    # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（保育経過記録は配線済み）。
     assert "child_record" in body["docx_kinds"]
 
 
@@ -167,7 +167,7 @@ def test_finalize_edit_surfaces_validation_after_edit() -> None:
 
 
 def _edit_child_record_entry() -> dict:
-    """児童票の編集フォーム相当 dict（型を通す good 例・§19）。"""
+    """保育経過記録の編集フォーム相当 dict（型を通す good 例・§19）。"""
     return {
         "period": "2026-04〜2026-06",
         "age_band": "0-2",
@@ -187,18 +187,18 @@ def _edit_child_record_entry() -> dict:
 
 
 def test_finalize_edit_child_record_revalidates_and_formats() -> None:
-    """児童票の編集後 dict も harness で再検査・再整形できる（kind=child_record）。"""
+    """保育経過記録の編集後 dict も harness で再検査・再整形できる（kind=child_record）。"""
     r = _client().post(
         "/api/finalize-edit", json={"kind": "child_record", "entry": _edit_child_record_entry()}
     )
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
-    assert "児童票・保育経過記録" in body["formatted"] and "総合所見" in body["formatted"]
+    assert "保育経過記録" in body["formatted"] and "総合所見" in body["formatted"]
 
 
 def test_finalize_edit_child_record_surfaces_validation() -> None:
-    """総合所見を空にしたら不足を返す（児童票でも編集後の型成立ゲートが効く）。"""
+    """総合所見を空にしたら不足を返す（保育経過記録でも編集後の型成立ゲートが効く）。"""
     entry = _edit_child_record_entry()
     entry["overall_note"] = ""
     body = (
@@ -495,7 +495,7 @@ def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:
 
 
 def test_child_record_entries_endpoint_seeds_youroku(records_db) -> None:
-    """保育要録 L4 の seed 取得口＝指定児の児童票（最新版・期間順）を返す（読取なので非ゲート）。"""
+    """保育要録 L4 の seed 取得口＝指定児の保育経過記録（最新版・期間順）を返す（読取なので非ゲート）。"""
     c = _client()
     for period, overall in [("2026-04〜2026-07", "1期"), ("2026-08〜2026-11", "2期")]:
         c.post(
@@ -542,7 +542,7 @@ def test_records_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> 
 
 
 def test_records_diary_entries_returns_seed(records_db) -> None:
-    """seed 取得口＝期間内の日誌 entry（最新版）を返す（月案 L2／児童票 L3 の還流を DB から）。"""
+    """seed 取得口＝期間内の日誌 entry（最新版）を返す（月案 L2／保育経過記録 L3 の還流を DB から）。"""
     c = _client()
     c.post(
         "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
@@ -612,7 +612,7 @@ def test_get_record_read_not_passcode_gated(records_db, monkeypatch) -> None:
     assert c.get(f"/api/records/{saved['document_id']}").status_code == 200
 
 
-# ──────────────────── 児童票 年間マトリクスの過去期埋め込み（chohyo_pdf × record_store） ────────────────────
+# ──────────────────── 保育経過記録 年間マトリクスの過去期埋め込み（chohyo_pdf × record_store） ────────────────────
 
 
 def test_assign_period_columns_fills_same_fiscal_year_only() -> None:
@@ -643,7 +643,7 @@ def test_assign_period_columns_unparseable_current_stays_alone() -> None:
 
 
 def test_export_pdf_child_record_embeds_archived_periods(records_db) -> None:
-    """児童票の帳票PDF はアーカイブの同児・同年度の過去期で他列を埋めて返す（未接続は従来どおり）。"""
+    """保育経過記録の帳票PDF はアーカイブの同児・同年度の過去期で他列を埋めて返す（未接続は従来どおり）。"""
     past = dict(_edit_child_record_entry(), overall_note="1期の所見")
     saved = record_store.save_document(
         "child_record", past, author_kind="ai", now=datetime(2026, 7, 5)
@@ -870,7 +870,9 @@ def test_parse_upload_overrides_keys_and_relays_finalize(monkeypatch) -> None:
             "child": "はるとくん",
             "age_band": "3-5",
         },
-        files={"file": ("j.docx", _docx_bytes("児童票 はると 1期"), "application/octet-stream")},
+        files={
+            "file": ("j.docx", _docx_bytes("保育経過記録 はると 1期"), "application/octet-stream")
+        },
     )
     assert r.status_code == 200
     body = r.json()
