@@ -59,9 +59,11 @@
 
 # アーキ＝3責務（実装で混ぜてはいけない線。詳細は各層の CLAUDE.md）
 
-1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・指針カードストア。
-   LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。`tools/validate_fields.py`・`tools/write_draft.py` は
-   これを呼ぶ**薄いラッパ**（二重実装しない）。Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
+1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・指針カードストア・
+   **表記正規化（ひらがな表記DX＝`notation_store`）**。LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。
+   `tools/validate_fields.py`・`tools/write_draft.py` は これを呼ぶ**薄いラッパ**（二重実装しない）。表記の統一は
+   soft な指針カードでなく決定的正規化（確定時に取りこぼしなく適用＝型/表記の保証）＝別の道具（線を混ぜない）。
+   Memory 書き戻しは**保育士の明示承認＋型成立**でのみ発火（真の承認ゲート＝§9）。
 2. **agents/（agentic・中身の決定）** — author（日誌）/ monthly_author（月案）/ child_record_author（児童票）＝
    **単一 LlmAgent**（内部を多層化しない。巡回＝再作成は harness の `build_authoring_loop` が [作成→レビュー→ゲート]
    に包んで担う＝NEEDS_REVISION で author が指摘点を再作成）、reviewer＝Evaluator（日誌/月案/児童票で共用・
@@ -76,7 +78,9 @@
 ＝書類アーカイブと同じ DB へ統合（Phase 2・GCS は廃止）。未設定はローカル `knowledge/文書作成指針.json`＝
 git はシード（DB 行不在時のフォールバックシードも兼ねる）。agent は読み取り＝`read_policy`、
 improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowledge/保育所保育指針/` は gitignore のRAGソース）。
-「全部ファイルベース」にしない。
+「全部ファイルベース」にしない。なお **表記ルール辞書（ひらがな表記DX＝`notation_store`・`notation_books` 1行・
+migration 0004・未設定はローカル `knowledge/表記ルール.json` シード）** は "メモリ" ではなく決定的な表記統一の
+辞書（保育士が編集・harness が確定時に適用）＝育つ指針カードとは役割が別（agentic な勘所 vs 決定的な表記）。
 
 # コード規約（このリポジトリ固有）
 
@@ -105,7 +109,10 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   HITL（`ask_caregiver`・`awaiting_caregiver_approval`）/ Memory Bank 配線＋**真の承認ゲート**（書き戻しは
   `caregiver_approved`＋型成立でのみ・`mark_caregiver_approved`・§9/§13）/
   **育つ指針＝構造化カード（§8 v1）**（`policy_store`＝決定的 CRUD/render/完全重複ガード/履歴＝「回した証拠」・
-  improver は read→propose（意味的競合の申告）→ask（比較相談）→commit（保育士決定で即反映）の4ツール・eval は decouple）/
+  **scope＝共通/保育日誌/月案/児童票**・improver は read→propose（意味的競合の申告）→ask（比較相談）→commit（保育士決定で即反映）の4ツール・eval は decouple）/
+  **ひらがな表記DX＝表記正規化（`notation_store`）**（「子供→子ども」「友達→友だち」・混入スペース除去を確定時に決定的に適用＝
+  取りこぼしゼロ・叙述系フィールド限定で仮名/タグ/日付は不変・保育士が編集辞書で追加/編集/削除・`notation_books`＋migration 0004・
+  web `/api/notation`＋「表記ルール」タブ・降格safe）/
   **eval ゲート本採点**（`eval/test_config.json`＝3軸 rubric＋must_fix・`run_gate.py` が passed True/False・採点不能は None 降格・**CI 品質回帰専用**）/
   **main 比 baseline 保存**（committed `eval/baseline.json`・`run_gate` 既定で読み非劣化比較／`--update-baseline` で更新・nightly がコミットバック）/
   **eval ケース 22 件**（日誌16＋児童票6・実在しない仮名ロスターのみ・現場に即した内容）/ ツールの降格（RAG/Memory 未設定でも落ちない）。
@@ -115,7 +122,7 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
 - **標準様式への準拠＋制度用語是正**: `write_draft`/`write_monthly_draft` をネット調査で裏取りした 0–2 個別の標準様式へ
   （養護2本柱の分離・個別の生活記録＝食事/睡眠/排泄/機嫌体調・本日のねらい・月齢・養護→教育の順）。3つの視点/10の姿の
   文言誤り2件を告示準拠に是正。`LifeRecord` スキーマ＋年齢分岐は validate/draft/finalize/E2E/eval まで同調・テスト済み（§18・§10）。
-- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/**児童票**/**指針を育てる**）。日誌/月案/児童票は
+- **保育士向け配布 UI（`web/`・B-full）**: `/app/` の保育士 SPA（日誌/月案/**児童票**/**指針を育てる**/**表記ルール**）。日誌/月案/児童票は
   ADK ネイティブ REST をフロントが直接駆動（HITL は `function_response` 再送で再開。日誌は年齢帯チップ・児童票は期間指定＋
   期間日誌 seed）。**確定下書きは標準様式の見た目の編集フォーム（`docedit.js`）で
   保育士が欄ごとに自由に編集**でき、保存時 `/api/finalize-edit`（harness `finalize_entry` 中継）で再検査・再整形→承認（`PATCH`
@@ -123,7 +130,8 @@ improver が保育士決定で即反映）／静的知識＝Vertex RAG（`knowle
   「帳票PDFをダウンロード」→ `/api/export-pdf`（`web/chohyo_pdf.py`＝ReportLab。日誌/月案＝A4 縦・欄順は標準様式に一致、児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・実様式準拠・過去期の列はアーカイブの保存済み児童票から自動で埋める＝同じ子・同じ年度のみ・未接続は今回の期のみ）・
   **末尾に確認印欄（担任/主任/園長）**・**描画のみ／型の保証は harness**・日本語は IPAex ゴシック `web/fonts/ipaexg.ttf` を埋め込み＝閲覧側フォント非依存・純 pip で Dockerfile 不変・非ゲート）。
   **改善エージェント（指針を育てる＝`policy.js`）は
-  `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。
+  `/api/improve` の SSE 中継＋`/api/policy`（指針カード＋変更履歴の閲覧）**。**表記ルール（`notation.js`）は `/api/notation`
+  の CRUD（保育士が表記辞書を追加/編集/削除・書込は辞書荒らし防止でゲート・LLM 非課金）**。`DEMO_PASSCODE` で LLM を回す口のみゲート。
   実機検証済み（creds 有・gemini-2.5-pro＋Memory Bank）／非LLM面は `tests/test_web.py`。規約は `web/CLAUDE.md`。
 - **接続済み**: Gemini/Vertex（ADC＋`GOOGLE_CLOUD_PROJECT`/`GEMINI_MODEL`）。既定モデル＝`gemini-3.5-flash`は
   Vertex の **global 専用**なので、生成モデルだけ `MODEL_LOCATION`（既定 global）に固定し、RAG/Memory は
