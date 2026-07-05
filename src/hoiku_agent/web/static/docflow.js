@@ -50,6 +50,24 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   let maxStep = -1;
   let cur = null; // 直近の actor turn（連続イベントを同じ turn にまとめる）
   let toolBadges = {}; // functionCall id → バッジ要素（response で done へ）
+  // レビュー巡回（authoring_loop）の可視化状態。round＝現在の作成巡回（1 が初回）／reviewSeen＝
+  // この run でレビューが1回でも走ったか／lastKind＝直前フェーズ（review 直後に draft が来たら差し戻し
+  // ＝再作成と判定する）。maxRounds＝harness の巡回上限（/api/config の SSOT・未取得は 3 へ降格）。
+  let round = 1;
+  let reviewSeen = false;
+  let lastKind = null;
+  let maxRounds = 3;
+
+  // イベント著者名 → 計画ステッパー上のフェーズ種別。gate（承認）/finalize（確定）を draft と
+  // 誤分類すると、レビュー直後のこれらが偽の「差し戻し」を誘発するため明示的に分ける（§7）。
+  function phaseKindOf(author) {
+    const a = (author || "").toLowerCase();
+    if (a.includes("prep")) return "prep";
+    if (a.includes("review")) return "review";
+    if (a.includes("gate")) return "gate"; // approval_gate（APPROVED 検知時のみ発話）
+    if (a.includes("finalize")) return "finalize";
+    return "draft"; // author / monthly_author / child_record_author …
+  }
   // 過程ログ（作成/レビュー/ツール/前月集計）は既定で畳む <details>。状態はステッパー＋ステータスライン。
   let proc = null,
     procBody = null,
@@ -167,6 +185,10 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     cur = null;
     toolBadges = {};
     maxStep = -1;
+    round = 1;
+    reviewSeen = false;
+    lastKind = null;
+    maxRounds = (adk.config() && adk.config().max_review_iterations) || 3;
     proc = procBody = procSpin = null;
     buildProc();
     stepperEl.classList.remove("hidden");
@@ -225,17 +247,35 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
             if (t) {
               t = t.length > 360 ? t.slice(0, 360) + " …" : t;
               addText(it.author, t);
-              const a = (it.author || "").toLowerCase();
-              if (a.includes("prep")) {
+              const kind = phaseKindOf(it.author);
+              if (kind === "prep") {
                 toStep(iPrep);
                 phase(prepMeta ? prepMeta.phaseText : "積み重ねを集計しています", "working");
-              } else if (a.includes("review")) {
+              } else if (kind === "review") {
+                reviewSeen = true;
                 toStep(iReview);
-                phase("別の視点で点検しています", "working");
-              } else {
-                toStep(iDraft);
-                phase("下書きを作成しています", "working");
+                if (round > 1) stepper.badge(iReview, `${round}/${maxRounds}`);
+                phase(
+                  round > 1 ? `別の視点で点検しています（${round}巡目）` : "別の視点で点検しています",
+                  "working",
+                );
+              } else if (kind === "draft") {
+                // レビュー直後に作成へ戻った＝差し戻しでの再作成（新しい巡回）。ステッパーを「下書き」へ
+                // 巻き戻して再点灯し、レビューに周回バッジ（N/最大）を添える（§7 の authoring_loop）。
+                if (reviewSeen && lastKind === "review") {
+                  round += 1;
+                  stepper.rewindTo(iDraft, "now");
+                  maxStep = iDraft; // 巻き戻し後は下書きが最前線（toStep の前進基準を戻す）
+                  stepper.badge(iReview, `${round}/${maxRounds}`);
+                  phase(`レビュー指摘を反映して修正中（${round}巡目／最大${maxRounds}）`, "working");
+                } else {
+                  toStep(iDraft);
+                  phase("下書きを作成しています", "working");
+                }
               }
+              // gate（APPROVED 検知）/finalize（確定）はステッパーを動かさない（barrier として
+              // lastKind に記録し、レビュー直後でも偽の差し戻しを起こさない）。
+              lastKind = kind;
             }
           } else if (it.kind === "call") {
             const badge = addTool(it.author, it.name);

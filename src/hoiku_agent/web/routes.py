@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from ..config import settings
 from ..harness import notation_store, policy_store, record_store, template_store
 from ..harness.finalize import finalize_entry
+from ..harness.pipeline import MAX_REVIEW_ITERATIONS
 from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, ThreeViewpoint
 from .chohyo_pdf import render_pdf
 from .docx_fill import fill_docx
@@ -202,6 +203,9 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "user_email": verified_iap_email(request),
             # 園の実 Word 様式（.docx）流し込みに対応済みの kind＝UI が Word ダウンロードの出し分けに使う。
             "docx_kinds": docx_supported_kinds(),
+            # レビュー巡回の上限（harness の SSOT）。UI は差し戻し時に「N巡目/最大M」を出す際の M に使う
+            # （フロントで magic number を持たずドリフトを防ぐ＝harness/pipeline が正）。
+            "max_review_iterations": MAX_REVIEW_ITERATIONS,
         }
 
     @app.get("/api/policy")
