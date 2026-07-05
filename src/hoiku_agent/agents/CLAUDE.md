@@ -11,12 +11,15 @@
   ApprovalGate] を1巡とする LoopAgent に author を包み、NEEDS_REVISION のとき次巡で author が指摘点を直して
   再提出する（「巡回保証が要る」と判断したための設計＝旧 v0 は author をループに包まなかった）。再作成時の
   挙動（白紙から作り直さない・同じ不足で `ask_caregiver` を繰り返さない）は `prompts.py` の revision mode。
-  **月案・児童票・保育要録も同じ形**（`monthly_author_agent.py` / `child_record_author_agent.py` /
-  `nursery_record_author_agent.py`＝単一 LlmAgent・authoring_loop を日誌と共用）。違いは instruction
-  （月案/児童票/要録スキーマ。児童票・要録は**開示前提の肯定的・非断定的表現**を含む＝§19。要録は小学校引継ぎ＝
-  10の姿の活用・最終年度に至るまでの育ちを recall_child_history から叙述）と、前段 prep が決定的集計した集積
-  （月案＝前月 L2／児童票＝期間 L3／要録＝**最終年度の児童票** L4＝`RecordDigestPrepAgent`・formatter は
-  `format_record_digest_for_prompt`）を InstructionProvider が前置注入する点（§10/§19）。
+  **個別月案・クラス月案・児童票・保育要録も同じ形**（`monthly_author_agent.py` /
+  `class_monthly_author_agent.py` / `child_record_author_agent.py` / `nursery_record_author_agent.py`＝
+  単一 LlmAgent・authoring_loop を日誌と共用）。違いは instruction（月案/クラス月案/児童票/要録スキーマ。
+  **クラス月案は園の実様式**＝クラス全体のねらい・区分×領域グリッド〔養護2本柱＋教育5領域・0–2/3–5 共通〕・
+  0–2 は登場児ぶんの個人目標を生成し、評価系欄は AI 非生成＝§18。児童票・要録は**開示前提の肯定的・非断定的表現**を
+  含む＝§19。要録は小学校引継ぎ＝10の姿の活用・最終年度に至るまでの育ちを recall_child_history から叙述）と、
+  前段 prep が決定的集計した集積（個別/クラス月案＝前月 L2／児童票＝期間 L3／要録＝**最終年度の児童票** L4＝
+  `RecordDigestPrepAgent`・formatter は `format_record_digest_for_prompt`）を InstructionProvider が前置注入する点
+  （クラス月案の指針 scope は個別月案と同じ「月案」を流用＝§10/§18/§19）。
 - **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案/児童票/保育要録共用・開示前提の表現観点を含む）。**巡回（LoopAgent）と APPROVED 早期終了の
   "制御" は harness/pipeline.py 側**（決定的）。ここは reviewer 単体（指摘の生成）を返す。`date` 等 harness が
   確定時に補完する機械的メタの欠落は指摘対象外＝内容点検に集中する（prompts.py の注意書き）。
@@ -27,8 +30,9 @@
   対象キー・age_band・child は与件（保育士入力）を prompt に前置し、システムが最終的に上書きする（LLM の取り違えを封じる）。
   **output_schema は使わず作成AI と同じ ```json フェンス出力**（タグ欄の union で responseSchema が不安定なため・harness の
   `extract_json_block`→`finalize_entry` で復元・検査・整形＝決定的実体は harness）。確認・修正は保育士が編集フォームで行う。
-- **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_child_record_author_agent` /
-  `build_nursery_record_author_agent` / `build_review_agent` / `build_upload_parser_agent`。
+- **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_class_monthly_author_agent` /
+  `build_child_record_author_agent` / `build_nursery_record_author_agent` / `build_review_agent` /
+  `build_upload_parser_agent`。
   トップレベルでインスタンス化しない（例外は `agent.py` の root_agent のみ）。任意引数 `model`（既定
   None＝`models.build_model()`＝`gemini_model` を `model_location`＝global に固定した Gemini。Gemini 3.x は
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の
