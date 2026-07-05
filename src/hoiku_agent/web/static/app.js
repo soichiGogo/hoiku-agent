@@ -85,6 +85,26 @@ const POLICY_SAMPLES = [
   "保護者向けの一文は、できた事実だけでなく『次への意欲』が伝わる表現にしたい。",
 ];
 
+// 指針を育てるの「対象書類」＝改善エージェントの scope と 1:1（backend の PolicyScope 値をそのまま送る）。
+// この気づきがどの書類に効くかを保育士が先に選ぶ＝反映先を可視化する（依存の実体＝共通は全書類／各書類は
+// その1書類。render_for_doc が「共通＋その書類」を前置注入するのと一致）。「すべて」だけ scope=null＝
+// 対象は AI 判断（従来動作）で、デッキも全カード表示。docTypes は下のカードデッキの絞り込みキー（card_view の doc_type）。
+const POLICY_TARGETS = [
+  { key: "all", label: "すべて", scope: null, docTypes: null,
+    hint: "すべての指針カードを表示中。対象の書類は、メモの内容から AI が判断します。" },
+  { key: "common", label: "共通", scope: "共通", docTypes: ["common"],
+    hint: "共通の指針は、日誌・月案・児童票・保育要録の すべての書類に効きます。" },
+  { key: "diary", label: "保育日誌", scope: "保育日誌", docTypes: ["common", "diary"],
+    hint: "保育日誌を書くとき、AI は『共通 ＋ 保育日誌』の指針を参考にします。下のカードはその範囲だけ表示中。" },
+  { key: "monthly", label: "個別月案", scope: "月案", docTypes: ["common", "monthly"],
+    hint: "個別月案を書くとき、AI は『共通 ＋ 月案』の指針を参考にします。下のカードはその範囲だけ表示中。" },
+  { key: "child_record", label: "児童票", scope: "児童票", docTypes: ["common", "child_record"],
+    hint: "児童票を書くとき、AI は『共通 ＋ 児童票』の指針を参考にします。下のカードはその範囲だけ表示中。" },
+  { key: "nursery_record", label: "保育要録", scope: "保育要録", docTypes: ["common", "nursery_record"],
+    hint: "保育要録を書くとき、AI は『共通 ＋ 保育要録』の指針を参考にします。下のカードはその範囲だけ表示中。" },
+];
+const POLICY_TARGET_OF = Object.fromEntries(POLICY_TARGETS.map((t) => [t.key, t]));
+
 // 前月日誌の仮名サンプル（L2 還流のデモ seed）。現場に即した複数日（感触遊び/歩行/絵本）＝月齢・
 // 数量化した生活記録・具体的な姿。scripts/run_monthly.py の _sample_prev_entries と同趣旨（§14）。
 function samplePrevEntries(childId) {
@@ -314,6 +334,24 @@ function setupTabs() {
   });
 }
 
+// サブタブ（「育てる」タブ内の 指針を育てる／表記ルール）。上位タブと同じ流儀で、押した親パネル内の
+// .subtab/.subpanel だけを切り替える（他タブに副作用を出さない＝仕組みは分離のまま・presentation の統合②）。
+function setupSubTabs() {
+  document.querySelectorAll(".subtab").forEach((tab) => {
+    tab.onclick = () => {
+      const parent = tab.closest(".panel");
+      parent.querySelectorAll(".subtab").forEach((t) => {
+        t.classList.remove("is-active");
+        t.setAttribute("aria-selected", "false");
+      });
+      parent.querySelectorAll(".subpanel").forEach((p) => p.classList.remove("is-active"));
+      tab.classList.add("is-active");
+      tab.setAttribute("aria-selected", "true");
+      $("subtab-" + tab.dataset.subtab).classList.add("is-active");
+    };
+  });
+}
+
 // 選択式チップ群を作り、選択中の値を返すゲッターを提供。
 // iconName は文字列（全チップ共通）か、値→アイコン名の関数。labelOf は値→表示ラベル（既定は値そのもの）。
 // 返り値 getter() は選択中の値。getter.set(v) はクリック相当（onPick も発火）、getter.select(v) は表示だけ差し替え（onPick 不発火）。
@@ -536,6 +574,7 @@ async function main() {
   hydrateIcons();
   setupTheme();
   setupTabs();
+  setupSubTabs();
   setupActor();
 
   let cfg;
@@ -763,6 +802,26 @@ async function main() {
     status,
   });
   await policy.init();
+
+  // 対象書類セレクタ：デッキ（いまの指針カード）を「共通＋その書類」に絞り込み、提案 scope の既定にする。
+  // 「すべて」は絞り込みなし＝従来動作（AI が対象を判断）。反映先が保育士に見えるようにする（Thread A）。
+  const policyTarget = chipGroup(
+    $("policy-target"),
+    POLICY_TARGETS.map((t) => t.key),
+    (key) => onPolicyTargetChange(key),
+    null,
+    (key) => POLICY_TARGET_OF[key].label,
+  );
+  function onPolicyTargetChange(key) {
+    const t = POLICY_TARGET_OF[key];
+    $("policy-target-hint").textContent = t.hint;
+    const badge = $("policy-scope-badge");
+    badge.textContent = t.docTypes ? "この書類に効く指針のみ" : "";
+    badge.classList.toggle("hidden", !t.docTypes);
+    policy.setFilter(t.docTypes);
+  }
+  onPolicyTargetChange(policyTarget()); // 初期（既定＝すべて＝絞り込みなし）
+
   $("policy-run").onclick = () => {
     const memo = $("policy-memo").value.trim();
     if (!memo) {
@@ -770,7 +829,7 @@ async function main() {
       return;
     }
     status.setSubject(null);
-    policy.run(memo);
+    policy.run(memo, POLICY_TARGET_OF[policyTarget()].scope);
   };
 
   // ── 表記ルール（ひらがな表記DX＝保育士が育てる辞書） ──

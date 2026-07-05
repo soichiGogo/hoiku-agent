@@ -98,11 +98,16 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   fail-closed）。「誰か」を確定するだけ＝users への記録は harness/record_store、actor の採用は routes。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
-- `static/` … 保育士 SPA。**タブは4つ**：**書類を作る**（日誌/月案/児童票を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
+- `static/` … 保育士 SPA。**上位タブは3つ**：**書類を作る**（日誌/月案/児童票を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
   種別を切替。フロー本体は共通で入力欄と seed だけ切替・対象児コンボは共有・結果エリアは種別ごとに保持・生成中は種別切替をロック。
-  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1）／指針を育てる／表記ルール／**書類を見る**（アーカイブ閲覧）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取）／`docflow.js`（日誌・月案・児童票 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
+  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1）／**育てる**／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
+  「指針を育てる」（agentic な勘所）｜「表記ルール」（決定的な統一）**。仕組みは分離のまま（policy_store と notation_store・§5）で、
+  保育士から見た「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。**「指針を育てる」には対象書類セレクタ**（`app.js` の
+  `POLICY_TARGETS`＝すべて/共通/日誌/月案/児童票/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（いまの指針カード）を「共通＋その書類」に
+  絞り込み（`policy.setFilter`＝`render_for_doc` の前置注入範囲と一致）、`/api/improve` に `target_scope` を送って提案 scope の既定にする
+  （反映先の可視化・改善AIは既定として尊重しつつ内容的に共通と判断したら ask で提案＝勝手に変えない）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取）／`docflow.js`（日誌・月案・児童票 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
   `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
-  欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`notation.js`（表記ルール＝
+  欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋対象書類フィルタ＋即反映フロー）／`notation.js`（表記ルール＝
   `/api/notation` の CRUD UI・変換元→変換先の一覧・有効/無効トグル・インライン編集・保存先の永続性を正直表示）／`records.js`（書類を見る＝`GET /api/records`（種別フィルタ）で一覧→行クリックで
   `GET /api/records/{id}` を引き現行版の整形テキスト＋帳票PDF ボタンを描く読取専用ビュー・タブを開くたび最新化・未接続/空/障害は正直に降格）／`ui.js`・`app.js`・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
