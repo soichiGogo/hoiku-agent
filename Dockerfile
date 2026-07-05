@@ -3,10 +3,16 @@
 # ADC（Cloud Run のサービスアカウント）＋ 環境変数（AGENT_ENGINE_ID / RAG_CORPUS 等）で配線する
 # （未設定なら InMemory / 降格＝落ちない）。層A は「こなれた普通」で十分（§12）＝単段の素直な構成。
 
-FROM python:3.12-slim
+# uv（依存解決）は公式イメージからバイナリだけ持ち込む。バージョンは global ARG で固定して
+# 再現可能に（bump は1箇所）。`--from` は変数展開できないため、ARG 付き FROM で名前付きステージにする。
+ARG UV_VERSION=0.11.6
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uvbin
 
-# uv（依存解決）を公式イメージから持ち込む。
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# ベースは Debian リリースまで固定（`slim` 単独より再現性が高い）。供給網をさらに締めるなら
+# digest 固定（`python:3.12-slim-bookworm@sha256:...`）が望ましい＝TODO（脆弱性スキャンと併せ運用で）。
+FROM python:3.12-slim-bookworm
+
+COPY --from=uvbin /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -29,7 +35,15 @@ ENV GOOGLE_GENAI_USE_VERTEXAI=true
 # Cloud Run は $PORT を注入する（既定 8080）。
 ENV PORT=8080
 
+# 非 root で実行する（最小権限＝コンテナ侵害時の被害局限）。/app を所有させ、DB 未接続時の
+# 指針カードのローカル降格書込（knowledge/文書作成指針.json）も書けるようにする。
+RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8080
 
-# Cloud Run の $PORT を listen する（scale-to-zero）。
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT}"]
+# Cloud Run の $PORT を listen する（scale-to-zero）。`exec` で uvicorn を PID 1 に据え、
+# Cloud Run が scale-down で送る SIGTERM を uvicorn が直接受けてグレースフル終了できるようにする
+# （sh を挟むと信号が転送されず in-flight の SSE/LLM 応答を握ったまま SIGKILL されうる）。
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT}"]
