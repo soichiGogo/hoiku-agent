@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "rule-0001",
+      "pattern": "子供",
+      "replacement": "子ども",
+      "kind": "ひらがな化",
+      "note": "保育の公用表記。「供」は当て字で、子どもを一人の主体として尊重する観点から「子ども」と書く。",
+      "enabled": true,
+      "source": "seed:初版",
+      "created_at": "2026-07-05T00:00:00",
+      "updated_at": "2026-07-05T00:00:00"
+    },
+    {
+      "id": "rule-0002",
+      "pattern": "友達",
+      "replacement": "友だち",
+      "kind": "ひらがな化",
+      "note": "保育の公用表記。「達」は接尾語のため、保育書類ではひらがなで「友だち」と書くのが一般的。",
+      "enabled": true,
+      "source": "seed:初版",
+      "created_at": "2026-07-05T00:00:00",
+      "updated_at": "2026-07-05T00:00:00"
+    },
+    {
+      "id": "rule-0003",
+      "pattern": "出来る",
+      "replacement": "できる",
+      "kind": "ひらがな化",
+      "note": "補助動詞・可能の「できる」はひらがな。",
+      "enabled": true,
+      "source": "seed:初版",
+      "created_at": "2026-07-05T00:00:00",
+      "updated_at": "2026-07-05T00:00:00"
+    },
+    {
+      "id": "rule-0004",
+      "pattern": "沢山",
+      "replacement": "たくさん",
+      "kind": "ひらがな化",
+      "note": "副詞はひらがな（保育書類の読みやすさ）。",
+      "enabled": true,
+      "source": "seed:初版",
+      "created_at": "2026-07-05T00:00:00",
+      "updated_at": "2026-07-05T00:00:00"
+    },
+    {
+      "id": "rule-0005",
+      "pattern": "頑張る",
+      "replacement": "がんばる",
+      "kind": "ひらがな化",
+      "note": "子どもの姿を温かく伝えるため、保育書類では「がんばる」とひらがなで書くことが多い。",
+      "enabled": true,
+      "source": "seed:初版",
+      "created_at": "2026-07-05T00:00:00",
+      "updated_at": "2026-07-05T00:00:00"
+    },
+    {
+      "id": "rule-0006",
+      "pattern": "有難う",
+      "replacement": "ありがとう",
+      "kind": "ひらがな化",
+      "note": "あいさつ・感謝はひらがな。",
+      "enabled": true,
+      "source": "seed:初版",
+      "created_at": "2026-07-05T00:00:00",
+      "updated_at": "2026-07-05T00:00:00"
+    }
+  ]
+}

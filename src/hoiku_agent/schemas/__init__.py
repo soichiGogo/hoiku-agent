@@ -17,6 +17,7 @@ from .document import (
 )
 from .domain import FiveDomains, TenNoSugata, ThreeViewpoint
 from .enums import AgeBand, Certainty, Lineage
+from .notation import NotationBook, NotationKind, NotationRule
 from .policy import (
     PolicyBook,
     PolicyCard,
@@ -56,4 +57,8 @@ __all__ = [
     "PolicyCard",
     "PolicyChange",
     "PolicyBook",
+    # notation（ひらがな表記DX＝決定的な表記の統一・§5）
+    "NotationKind",
+    "NotationRule",
+    "NotationBook",
 ]

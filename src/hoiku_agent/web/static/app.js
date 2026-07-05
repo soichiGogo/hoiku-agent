@@ -3,6 +3,7 @@ import * as adk from "./adk.js";
 import { el, esc, iconHTML, hydrateIcons } from "./ui.js";
 import { makeDocFlow } from "./docflow.js";
 import { makePolicy } from "./policy.js";
+import { makeNotation } from "./notation.js";
 
 // 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
 // さくらちゃんは 3–5 歳児クラスの仮名児（全年齢対応＝§19。年齢帯で枠組み＝3視点/5領域が切り替わるデモ）。
@@ -614,6 +615,19 @@ async function main() {
     status.setSubject(null);
     policy.run(memo);
   };
+
+  // ── 表記ルール（ひらがな表記DX＝保育士が育てる辞書） ──
+  const notation = makeNotation({
+    list: $("notation-list"),
+    store: $("notation-store"),
+    msg: $("notation-msg"),
+    patternInput: $("notation-pattern"),
+    replacementInput: $("notation-replacement"),
+    kindSelect: $("notation-kind"),
+    noteInput: $("notation-note"),
+    addBtn: $("notation-add"),
+  });
+  await notation.init();
 }
 
 main();

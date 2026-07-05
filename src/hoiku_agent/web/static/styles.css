@@ -449,6 +449,7 @@ select.de-input{appearance:auto;min-height:38px}
   border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);box-shadow:var(--sh-sm)}
 .pcard.dt-diary{border-left-color:var(--actor-author)}
 .pcard.dt-monthly{border-left-color:var(--actor-prep)}
+.pcard.dt-child_record{border-left-color:var(--actor-review)}
 .pcard.dt-common{border-left-color:var(--actor-caregiver)}
 .pcard-body{font-size:var(--fs-sm);color:var(--ink);line-height:1.8}
 .pcard-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:var(--sp-2)}
@@ -515,6 +516,60 @@ select.de-input{appearance:auto;min-height:38px}
 .banner.info{background:var(--state-working-soft);color:var(--state-working)}
 
 .app-footer{max-width:var(--maxw);margin:0 auto;text-align:center;padding:24px var(--sp-4) 30px;font-size:11.5px;color:var(--muted);line-height:1.9}
+
+/* ============================================================
+   表記ルール（ひらがな表記DX＝保育士が育てる辞書）
+   ============================================================ */
+.badge.ok{background:var(--state-done-soft);color:var(--state-done-ink)}
+.badge.warn{background:var(--state-degraded-soft);color:var(--state-degraded-ink)}
+.badge.muted{background:var(--surface-2);color:var(--muted)}
+.card-title .badge{margin-left:auto;font-weight:600}
+
+/* 追加フォーム */
+.nadd{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center}
+.nadd-map{display:flex;align-items:center;gap:var(--sp-2);flex:1 1 260px;min-width:220px}
+.nadd-map .input{flex:1 1 auto;min-width:0}
+.nadd #notation-kind{flex:0 0 auto}
+.nadd #notation-note{flex:1 1 180px;min-width:150px}
+.narr{color:var(--muted);font-weight:700;flex:0 0 auto}
+.nmsg{margin:var(--sp-3) 0 0;font-size:var(--fs-sm);font-weight:600}
+.nmsg.info{color:var(--state-done-ink)}
+.nmsg.err{color:var(--state-fail-ink)}
+
+/* 一覧 */
+.nlist{display:flex;flex-direction:column;gap:var(--sp-2)}
+.nempty{color:var(--muted);font-size:var(--fs-sm);padding:var(--sp-3) 0}
+.nrow{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-3);border:1px solid var(--line);
+  border-radius:var(--r-md);background:var(--surface-2)}
+.nrow.is-off{opacity:.55}
+.nbody{flex:1 1 auto;min-width:0}
+.nmap{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--fs-body);flex-wrap:wrap}
+.nfrom{font-weight:700;color:var(--ink)}
+.nto{font-weight:700;color:var(--primary-d)}
+.nto-empty{color:var(--muted);font-weight:400}
+.nmeta{display:flex;align-items:center;gap:var(--sp-2);margin-top:2px;flex-wrap:wrap}
+.nkind{font-size:var(--fs-caption);font-weight:700;color:var(--primary-d);background:var(--primary-soft);
+  padding:1px 8px;border-radius:var(--r-pill)}
+.nnote{font-size:var(--fs-sm);color:var(--muted)}
+.nact{display:flex;gap:6px;flex:0 0 auto}
+
+/* 有効/無効トグル（チェックボックス） */
+.ntoggle{position:relative;display:inline-flex;flex:0 0 auto;width:40px;height:24px;cursor:pointer}
+.ntoggle input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.ntog-track{width:40px;height:24px;border-radius:var(--r-pill);background:var(--line-strong);
+  transition:background .15s;position:relative}
+.ntog-track::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;
+  background:#fff;box-shadow:var(--sh-sm);transition:transform .15s}
+.ntoggle input:checked + .ntog-track{background:var(--primary)}
+.ntoggle input:checked + .ntog-track::after{transform:translateX(16px)}
+.ntoggle input:focus-visible + .ntog-track{outline:2.5px solid var(--state-working);outline-offset:2px}
+
+/* 編集モード */
+.nrow.is-editing{flex-wrap:wrap;background:var(--surface)}
+.nedit-map{display:flex;align-items:center;gap:var(--sp-2);flex:1 1 260px;min-width:220px}
+.nedit-map .input{flex:1 1 auto;min-width:0}
+.nrow.is-editing #notation-kind,.nrow.is-editing .input{min-width:120px}
+.nedit-act{display:flex;gap:6px;flex:0 0 auto;margin-left:auto}
 
 /* ============================================================
    レスポンシブ

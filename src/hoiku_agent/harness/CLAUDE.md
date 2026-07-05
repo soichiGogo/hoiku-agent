@@ -21,10 +21,16 @@
 - `draft.py` … `write_draft`（日誌）/ `write_monthly_draft`（月案）/ `write_child_record_draft`（児童票・§19）：
   pydantic → **標準様式テキスト**へ整形（ネット調査で裏取りした章立て・順序＝養護2本柱/生活記録/養護→教育、
   児童票＝発達の経過（領域別叙述）→配慮・特記→家庭連携→総合所見→次期に向けて）。確定出力は pipeline 末尾で実行。
+- `notation_store.py` … **ひらがな表記DX＝表記ルール辞書＋決定的な正規化器**（「子供→子ども」等の置換・混入
+  スペース除去）。CRUD（保育士が育てる編集辞書）＋正規化（`normalize_text`/`normalize_entry_dict`＝**叙述系
+  フィールド限定**で仮名/タグ/日付は不変＝誤変換を型で防ぐ）＋IO（`notation_books` 1行 JSONB・version 楽観ロック・
+  ローカル `knowledge/表記ルール.json` シード・降格）。policy_store と同じ哲学（決定的実体はここに1つ・置き場は IO 節で
+  解決・clock 外部注入）。**育つ指針カード（agentic な勘所）とは別の道具＝決定的な表記の統一**（線を混ぜない）。
 - `finalize.py` … `finalize_document`（日誌）/ `finalize_monthly_document`（月案）/
-  `finalize_child_record_document`（児童票）：復元→検査→整形。
+  `finalize_child_record_document`（児童票）：復元→**表記正規化**→検査→整形（正規化は `notation_store` を呼び
+  validate/write の前に決定的に当てる＝以降は整えた本文に走る・降格safe。変更点は `FinalizedDocument.notation_changes`）。
   汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。`finalize_entry(dict)` は
-  編集UI用＝編集後 entry を直接 validate/write 再実行（web から中継・実体はここに1つ）。
+  編集UI用＝編集後 entry を直接 正規化→validate/write 再実行（web から中継・実体はここに1つ）。
 - `aggregate.py` … `aggregate_by_child`（Counter 版）/ `prev_month_digest`（state 用 serializable）/
   `format_digest_for_prompt`（集積の人間可読テキスト・label で月案 L2＝前月／児童票 L3＝期間を切替）。
   要約生成は各 author に委ねる（§10/§19）。

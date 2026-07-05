@@ -37,6 +37,43 @@ export async function getPolicy() {
   }
 }
 
+// 表記ルール辞書（ひらがな表記DX）を読む（未配線/壊れは空＋unavailable に降格＝偽の中身を出さない）。
+export async function getNotation() {
+  try {
+    const r = await fetch("/api/notation");
+    if (!r.ok) return { rules: [], store: "unavailable" };
+    const j = await r.json();
+    return { rules: j.rules || [], store: j.store || "unavailable" };
+  } catch {
+    return { rules: [], store: "unavailable" };
+  }
+}
+// 表記ルールの追加/編集/削除（成功で更新後の {rules, store} を返す。失敗は status:error/rejected＋detail）。
+export async function addNotationRule(body) {
+  return _notationWrite("/api/notation", "POST", body);
+}
+export async function updateNotationRule(ruleId, body) {
+  return _notationWrite(`/api/notation/${encodeURIComponent(ruleId)}`, "PATCH", body);
+}
+export async function deleteNotationRule(ruleId) {
+  return _notationWrite(`/api/notation/${encodeURIComponent(ruleId)}`, "DELETE", null);
+}
+async function _notationWrite(url, method, body) {
+  try {
+    const r = await fetch(url, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です" };
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { status: j.status || "error", detail: j.detail || `失敗 (${r.status})` };
+    return j; // { status:"ok", rules, store }
+  } catch (e) {
+    return { status: "error", detail: e.message };
+  }
+}
+
 // 編集フォームのタグ選択肢（schemas Enum が SSOT）。一度読んだらキャッシュする。
 let _formMeta = null;
 export async function getFormMeta() {
