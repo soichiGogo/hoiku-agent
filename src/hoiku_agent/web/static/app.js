@@ -32,28 +32,28 @@ const DOC_TYPES = [
     label: "保育日誌",
     icon: "diary",
     runLabel: "下書きを作成する",
-    desc: "その日の観察メモから、標準様式の保育日誌の下書きを作成します。",
+    desc: "",
   },
   {
     key: "monthly",
     label: "個別月案",
     icon: "calendar",
     runLabel: "月案の下書きを作成する",
-    desc: "前月の日誌の積み重ねを AI が集計し、翌月の個別の月案（ねらい・配慮）へ再構成します（L2 還流）。",
+    desc: "",
   },
   {
     key: "record",
     label: "児童票",
     icon: "chart",
     runLabel: "児童票の下書きを作成する",
-    desc: "期間中の日誌の積み重ねを AI が集計し、その期の「発達の経過」「総合所見」へ再構成します（L3 還流）。保護者に開示され得る書類なので、肯定的で断定しない表現に整えます。",
+    desc: "",
   },
   {
     key: "youroku",
     label: "保育要録",
     icon: "chart",
     runLabel: "保育要録の下書きを作成する",
-    desc: "最終年度（年長）の児童票の積み重ねを AI が集計し、小学校へ引き継ぐ「保育要録」の下書き（保育の展開・個人の重点・最終年度に至るまでの育ち）へ再構成します（L4 還流）。年一回・年長のみだが最も労力のかかる書類です。",
+    desc: "",
   },
 ];
 const DOC_TYPE_OF = Object.fromEntries(DOC_TYPES.map((d) => [d.key, d]));
