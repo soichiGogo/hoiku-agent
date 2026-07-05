@@ -12,6 +12,27 @@ const AGE_BAND_OF = { さくらちゃん: "3-5" }; // 既定は 0-2
 const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 
+// 表示名→誕生日（DB 接続時のみ・/api/children の birthdate を main() で流し込む）。年齢帯の自動判定に使う。
+const BIRTHDATE_OF = {};
+
+// 対象児の年齢帯（0-2/3-5）を解く。DB に誕生日があれば満年齢で判定（3歳以上=3-5・未満=0-2）、
+// 無ければ従来のハードコード表→既定 0-2 に降格。30人規模でも DB から正しく引ける。
+// 学年（4月区切り）の厳密さは v0 簡略化（§19 と同枠＝園差はヒアリング残課題）。
+function ageBandOf(name) {
+  const bd = BIRTHDATE_OF[name];
+  if (bd) {
+    const d = new Date(bd);
+    if (!isNaN(d.getTime())) {
+      const now = new Date();
+      let age = now.getFullYear() - d.getFullYear();
+      const m = now.getMonth() - d.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+      return age >= 3 ? "3-5" : "0-2";
+    }
+  }
+  return AGE_BAND_OF[name] || "0-2";
+}
+
 // サンプルメモは当日の生活情報（食事量・午睡時刻・排泄回数・体温・月齢）を含める＝生成される日誌の
 // 生活記録（食事/睡眠/排泄/機嫌・体調）が現場同様に埋まる（手がかりが無い欄は空のまま＝§14・作成AIは創作しない）。
 // 4例目は 3–5 歳児クラス向け（5領域・生活記録なしの全年齢デモ）。
@@ -94,7 +115,7 @@ function samplePrevEntries(childId) {
 // 進む）を含め、児童票の「点の記録→期の育ちの線」への再構成が見えるようにする（§14/§19）。
 // 0–2（既定）と 3–5（さくらちゃん＝5領域・生活記録なし）で内容を切り替える（全年齢対応）。
 function samplePeriodEntries(childId) {
-  const ageBand = AGE_BAND_OF[childId] || "0-2";
+  const ageBand = ageBandOf(childId);
   const days =
     ageBand === "3-5"
       ? [
@@ -243,6 +264,136 @@ function chipGroup(container, values, onPick, iconName) {
   return () => selected;
 }
 
+// 前方一致の共通部分を <b> で強調した候補ラベル HTML を返す（残りは通常字）。
+function highlightPrefix(name, query) {
+  if (query && name.startsWith(query)) return "<b>" + esc(query) + "</b>" + esc(name.slice(query.length));
+  return esc(name);
+}
+
+// 対象児コンボボックス：入力欄＋前方一致の候補ドロップダウン＋Tab/Enter/クリックで補完。
+// チップ全列挙（chipGroup）が 30 人規模で破綻するのを避ける入力式。契約は chipGroup と同じ＝
+// 確定中の表示名を返すゲッターを返す（onPick は確定が変わったとき呼ぶ）。
+function childCombo(container, names, { onPick, labelId } = {}) {
+  container.classList.add("combo");
+  container.classList.remove("chips");
+  container.innerHTML = "";
+  const listId = container.id + "-list";
+  const icon = el("span", "combo-ic", iconHTML("caregiver"));
+  icon.setAttribute("aria-hidden", "true");
+  const input = el("input", "combo-input");
+  input.type = "text";
+  input.autocomplete = "off";
+  input.setAttribute("role", "combobox");
+  input.setAttribute("aria-autocomplete", "list");
+  input.setAttribute("aria-expanded", "false");
+  input.setAttribute("aria-controls", listId);
+  input.placeholder = "名前を入力（先頭一致で候補・Tabで補完）";
+  if (labelId) input.setAttribute("aria-labelledby", labelId);
+  const list = el("ul", "combo-list");
+  list.id = listId;
+  list.setAttribute("role", "listbox");
+  list.hidden = true;
+  container.append(icon, input, list);
+
+  let selected = names[0] || "";
+  let visible = []; // 現在表示中の候補名
+  let active = -1; // ハイライト中の候補（visible 上の index）
+  input.value = selected;
+
+  const close = () => {
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    active = -1;
+  };
+  const setActive = (i) => {
+    active = i;
+    [...list.children].forEach((li, idx) => {
+      const on = idx === i;
+      li.classList.toggle("is-active", on);
+      li.setAttribute("aria-selected", on ? "true" : "false");
+      if (on) {
+        input.setAttribute("aria-activedescendant", li.id);
+        li.scrollIntoView({ block: "nearest" });
+      }
+    });
+  };
+  const commit = (name) => {
+    selected = name;
+    input.value = name;
+    close();
+    onPick && onPick(name);
+  };
+  const render = () => {
+    const q = input.value.trim();
+    // 前方一致（先頭から一致・§ユーザー指定）。空欄なら全件（一覧から選べる）。
+    visible = q ? names.filter((n) => n.startsWith(q)) : names.slice();
+    list.innerHTML = "";
+    if (!visible.length) {
+      list.appendChild(el("li", "combo-empty", "該当なし"));
+      list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      active = -1;
+      return;
+    }
+    visible.forEach((n, i) => {
+      const li = el("li", "combo-option", highlightPrefix(n, q));
+      li.id = listId + "-opt-" + i;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", "false");
+      // mousedown（click より前・blur より前）で確定＝候補押下時に入力欄の blur で消えない。
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        commit(n);
+      });
+      li.addEventListener("mouseenter", () => setActive(i));
+      list.appendChild(li);
+    });
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    setActive(0);
+  };
+
+  input.addEventListener("input", render);
+  input.addEventListener("focus", render);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (list.hidden) render();
+      else if (visible.length) setActive(Math.min(active + 1, visible.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (visible.length) setActive(Math.max(active - 1, 0));
+    } else if (e.key === "Enter") {
+      if (!list.hidden && active >= 0) {
+        e.preventDefault();
+        commit(visible[active]);
+      }
+    } else if (e.key === "Tab") {
+      // Tab 補完：ハイライト中の候補で確定する（フォーカス移動は妨げない＝そのまま次欄へ）。
+      if (!list.hidden && active >= 0) commit(visible[active]);
+    } else if (e.key === "Escape") {
+      input.value = selected;
+      close();
+    }
+  });
+  input.addEventListener("blur", () => {
+    // 妥当な表示名でなければ確定値へ戻す（不正な自由入力を送らない）。mousedown 確定を待って次tick。
+    setTimeout(() => {
+      const typed = input.value.trim();
+      if (typed !== selected) {
+        if (names.includes(typed)) commit(typed);
+        else {
+          input.value = selected;
+          close();
+        }
+      } else close();
+    }, 0);
+  });
+
+  return () => selected;
+}
+
 function sampleChips(container, samples, onPick) {
   container.innerHTML = "";
   samples.forEach((s, i) => {
@@ -330,11 +481,13 @@ async function main() {
     if (names.length) {
       childNames = names;
       recordChildNames = names;
+      // 誕生日を控えておき、年齢帯（0-2/3-5）を満年齢で自動判定できるようにする（ageBandOf）。
+      for (const c of dbChildren) if (c.birthdate) BIRTHDATE_OF[c.display_name] = c.birthdate;
     }
   }
 
   // ── 日誌 ──
-  const diaryChild = chipGroup($("diary-children"), childNames, null, "caregiver");
+  const diaryChild = childCombo($("diary-children"), childNames, { labelId: "diary-child-label" });
   const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
   sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
   const diaryFlow = makeDocFlow({
@@ -380,7 +533,10 @@ async function main() {
   }
 
   // ── 月案 ──
-  const monthlyChild = chipGroup($("monthly-children"), childNames, () => updateSeedCount(), "caregiver");
+  const monthlyChild = childCombo($("monthly-children"), childNames, {
+    onPick: () => updateSeedCount(),
+    labelId: "monthly-child-label",
+  });
   const updateSeedCount = () => ($("monthly-seed-count").textContent = samplePrevEntries(monthlyChild()).length + " 件");
   updateSeedCount();
   const monthlyFlow = makeDocFlow({
@@ -405,7 +561,10 @@ async function main() {
   };
 
   // ── 児童票（期ごとの保育経過記録・L3 還流） ──
-  const recordChild = chipGroup($("record-children"), recordChildNames, () => updateRecordSeed(), "caregiver");
+  const recordChild = childCombo($("record-children"), recordChildNames, {
+    onPick: () => updateRecordSeed(),
+    labelId: "record-child-label",
+  });
   const updateRecordSeed = () =>
     ($("record-seed-count").textContent = samplePeriodEntries(recordChild()).length + " 件");
   updateRecordSeed();
@@ -423,7 +582,7 @@ async function main() {
     const start = $("record-start").value || "2026-04";
     const end = $("record-end").value || "2026-06";
     const period = `${start}〜${end}`;
-    const ageBand = AGE_BAND_OF[child] || "0-2";
+    const ageBand = ageBandOf(child);
     status.setSubject(child);
     // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
     const { entries, source } = await seedEntries(start, end, samplePeriodEntries(child));

@@ -34,7 +34,9 @@
   （`IAP_AUDIENCE` 設定時のみ JWT 署名検証・users へ auto-provision＝`record_store.touch_user`・
   表示名設定済みなら「表示名（email）」）、未設定は完全降格＝ヘッダを信用しない（fail-closed）。
   **アーカイブの失敗で本流（state 保存・承認）を壊さない**が、skipped/error は表示行で正直に出す（偽の緑を出さない）。
-  子ども選択肢は `/api/children`（児童マスタ）があればそこから・無ければ従来の仮名チップへ降格。
+  子ども選択肢は入力式コンボボックス（`app.js` の `childCombo`＝前方一致の候補＋Tab/Enter/クリックで補完・
+  30人規模でもスケール。チップ全列挙は廃止）。候補ソースは `/api/children`（児童マスタ）があればそこから
+  （誕生日があれば年齢帯 0-2/3-5 を満年齢で自動判定＝`ageBandOf`）・無ければ従来の仮名ロスターへ降格。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
   **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
   （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/児童票）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
