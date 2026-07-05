@@ -4,12 +4,17 @@
 #
 # 前提（各自の GCP で1度だけ設定＝この workflow の外）:
 #   1. Workload Identity 連携（WIF）：GitHub OIDC を信頼する Provider と、Cloud Run/AR/Cloud Build 権限を
-#      持つデプロイ用サービスアカウント。鍵 JSON は作らない（鍵レス）。
+#      持つデプロイ用サービスアカウント。鍵 JSON は作らない（鍵レス）。Provider には自リポ限定の
+#      attribute condition を付ける（他リポが pool へ入れない＝WIF ベストプラクティス。手順は docs/ライブ実行手順.md）。
 #   2. リポジトリ変数（Settings > Secrets and variables > Actions > Variables）:
 #        GCP_PROJECT_ID / GCP_REGION / CLOUD_RUN_SERVICE / WIF_PROVIDER / DEPLOY_SA
+#      推奨: RUNTIME_SA（Cloud Run の実行 SA＝最小権限。未設定だと既定 Compute SA=過剰権限に降格・警告を出す）
 #      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / CLOUDSQL_INSTANCE / IAP_AUDIENCE
+#            MAX_INSTANCES（インスタンス上限＝コスト/濫用の実質ストッパ・既定 4）
+#            DATABASE_URL_SECRET（Secret Manager のシークレット名＝推奨の DB 接続注入経路）
 #      （未設定なら RAG/Memory/DB（アーカイブ＋指針）は降格＝§9/Phase 1/2）。
-#      任意 secret: DATABASE_URL（書類アーカイブの接続 URL。パスワードを含むため variable でなく secret）。
+#      任意 secret: DATABASE_URL（Secret Manager を使わない場合の後方互換フォールバック＝平文 env 注入。
+#        推奨は上の DATABASE_URL_SECRET（Secret Manager にパスワードを置き Cloud Run が参照）。
 #   WIF/変数が未設定なら job は skip する（誤発火・赤化を避ける）。決定論 CI（ci.yml）とは別物。
 
 name: Deploy (Cloud Run)
@@ -48,19 +53,37 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Deploy to Cloud Run (build from source, scale-to-zero)
-        # 書類アーカイブ（Cloud SQL・Phase 1）は任意配線：
+        # 書類アーカイブ＋育つ指針（Cloud SQL・Phase 1/2）は任意配線：
         #   - vars.CLOUDSQL_INSTANCE（<PROJECT:REGION:INSTANCE>）→ unix ソケットをマウント
-        #   - secrets.DATABASE_URL（接続 URL・パスワード含むので secret）→ env に注入
-        #   未設定なら従来どおり降格（record_store は skipped/空・policy_store はローカル）。
-        #   指針カードブックも同じ DATABASE_URL に統合済み（Phase 2・GCS は廃止）。
+        #   - DB 接続 URL の注入は2経路（推奨→フォールバックの順に選ぶ）:
+        #       (A) vars.DATABASE_URL_SECRET（Secret Manager のシークレット名）→ `--set-secrets` で参照【推奨】
+        #       (B) secrets.DATABASE_URL（GH secret）→ `--set-env-vars` で平文注入【後方互換・非推奨】
+        #     どちらも未設定なら降格（record_store は skipped/空・policy_store はローカル）。
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
+          # 実行 SA（最小権限）＝セキュリティ MUST。未設定は既定 Compute SA（Editor 相当を持ちうる）へ降格し警告する。
           EXTRA_FLAGS=()
-          if [ -n "$DATABASE_URL" ]; then
+          if [ -n "${{ vars.RUNTIME_SA }}" ]; then
+            EXTRA_FLAGS+=(--service-account "${{ vars.RUNTIME_SA }}")
+          else
+            echo "::warning::RUNTIME_SA 未設定＝既定 Compute SA で稼働（過剰権限）。専用の最小権限 SA を推奨（docs/ライブ実行手順.md）。"
+          fi
+
+          # インスタンス上限＝コスト/濫用の実質ストッパ（予算アラートは止めない）。既定は控えめな 4。
+          MAX_INSTANCES="${{ vars.MAX_INSTANCES }}"
+          MAX_INSTANCES="${MAX_INSTANCES:-4}"
+
+          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
+
+          # DB 接続の注入：Secret Manager（推奨）優先／無ければ GH secret の平文 env へフォールバック。
+          if [ -n "${{ vars.DATABASE_URL_SECRET }}" ]; then
+            EXTRA_FLAGS+=(--set-secrets "DATABASE_URL=${{ vars.DATABASE_URL_SECRET }}:latest")
+          elif [ -n "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL を平文 env で注入中（Cloud Run リビジョンに露出）。Secret Manager 化（DATABASE_URL_SECRET）を推奨。"
             ENV_VARS="$ENV_VARS,DATABASE_URL=$DATABASE_URL"
           fi
+
           # IAP（Phase 3 認証）は任意配線：vars.IAP_AUDIENCE を設定した場合のみ JWT 検証が有効になる
           # （IAP 自体の有効化＝`gcloud run services update --iap` は運用側の操作。未設定は従来どおり）。
           if [ -n "${{ vars.IAP_AUDIENCE }}" ]; then
@@ -75,6 +98,8 @@ jobs:
             --region "${{ vars.GCP_REGION }}" \
             --platform managed \
             --min-instances 0 \
+            --max-instances "$MAX_INSTANCES" \
             --allow-unauthenticated \
+            --labels "component=web,managed-by=github-actions" \
             "${EXTRA_FLAGS[@]}" \
             --set-env-vars "$ENV_VARS"
