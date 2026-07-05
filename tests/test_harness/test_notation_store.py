@@ -103,6 +103,47 @@ def test_normalize_entry_child_record_narrative_only():
     assert changes  # 変更点が集計される
 
 
+def test_normalize_entry_class_monthly_narrative_only():
+    """クラス月案：叙述系（保育目標・先月の姿・グリッド各欄・個人目標）だけ正規化し、仮名/領域/区分は不変。"""
+    rules = ns.enabled_rules(_seeded())
+    data = {
+        "month": "2026-07",
+        "age_band": "0-2",
+        "class_name": "ひよこ組",
+        "monthly_goal": "子供が友達と関わる",
+        "prev_month_state": "友達 に 興味",
+        "grid": [
+            {
+                "category": "教育",
+                "domain": "人間関係",
+                "aim": "友達と遊ぶ",
+                "environment": "",
+                "child_state": "子供の姿",
+                "support": "",
+            },
+        ],
+        "individual_goals": [
+            {
+                "child_id": "子供仮名",
+                "child_state": "友達と関わる",
+                "aim_support": "子供に寄り添う",
+                "evaluation": "",
+            },
+        ],
+        "teacher_evaluation": "子供の育ち",
+    }
+    out, _ = ns.normalize_entry_dict(data, "class_monthly", rules)
+    assert out["monthly_goal"] == "子どもが友だちと関わる"
+    assert out["prev_month_state"] == "友だちに興味"
+    assert out["grid"][0]["aim"] == "友だちと遊ぶ"
+    assert out["grid"][0]["child_state"] == "子どもの姿"
+    assert out["grid"][0]["domain"] == "人間関係"  # 領域（行の同定キー）は不変
+    assert out["grid"][0]["category"] == "教育"  # 区分も不変
+    assert out["individual_goals"][0]["child_id"] == "子供仮名"  # 仮名は不変
+    assert out["individual_goals"][0]["aim_support"] == "子どもに寄り添う"
+    assert out["teacher_evaluation"] == "子どもの育ち"
+
+
 def test_normalize_entry_diary_nested_paths():
     rules = ns.enabled_rules(_seeded())
     data = {

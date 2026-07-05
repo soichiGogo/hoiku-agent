@@ -183,6 +183,34 @@ def test_monthly_and_child_record_targets(db):
     assert len([d for d in rs.list_documents() if d["doc_type"] == "monthly"]) == 2
 
 
+def test_class_monthly_is_class_level_and_auto_creates_goal_children(db):
+    """クラス月案（class_monthly）はクラス単位（主対象児なし・月が対象期間キー）で保存でき、
+    個人目標の登場児が児童マスタへ auto-create される（§18）。"""
+    plan = {
+        "month": "2026-07",
+        "age_band": "0-2",
+        "class_name": "ひよこ組",
+        "individual_goals": [
+            {"child_id": "はるとくん", "child_state": "s", "aim_support": "a"},
+            {"child_id": "めいちゃん", "child_state": "s", "aim_support": "a"},
+        ],
+    }
+    assert rs.save_document("class_monthly", plan, author_kind="ai", now=_NOW)["status"] == "saved"
+    docs = [d for d in rs.list_documents() if d["doc_type"] == "class_monthly"]
+    assert len(docs) == 1
+    assert docs[0]["child"] in (None, "")  # クラス単位＝主対象児は持たない
+    # 個人目標の登場児が児童マスタへ登録される（下流の候補ソースになる）。
+    names = {c["display_name"] for c in rs.list_children()}
+    assert {"はるとくん", "めいちゃん"} <= names
+    # 同月・同クラス（年齢帯）は同一書類として版が積まれる（クラス月案は月＝同一性キー）。
+    r2 = rs.save_document("class_monthly", plan, author_kind="caregiver", now=_NOW)
+    assert r2["status"] == "saved"
+    assert len([d for d in rs.list_documents() if d["doc_type"] == "class_monthly"]) == 1
+    # month 欠落は fail-loud（同一性キーを黙って空にしない）。
+    bad = rs.save_document("class_monthly", {"age_band": "0-2"}, now=_NOW)
+    assert bad["status"] == "error"
+
+
 def test_nursery_record_target_is_fiscal_year(db):
     """保育要録（L4）は fiscal_year を対象期間キーにして保存でき、同年度・別児は別書類（§19）。"""
     rec = {"fiscal_year": "2026", "child_id": "はるとくん", "age_band": "3-5"}

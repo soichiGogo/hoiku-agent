@@ -28,8 +28,9 @@ def test_config_shape() -> None:
     assert body["default_user_id"] == "caregiver"
     for key in ("memory_connected", "rag_connected", "passcode_required", "model"):
         assert key in body
-    # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（児童票は配線済み）。
+    # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（児童票・クラス月案は配線済み）。
     assert "child_record" in body["docx_kinds"]
+    assert "class_monthly" in body["docx_kinds"]
 
 
 def test_doc_template_shape() -> None:
@@ -166,6 +167,29 @@ def test_finalize_edit_surfaces_validation_after_edit() -> None:
     assert any("生活記録" in p for p in body["problems"])
 
 
+def test_finalize_edit_class_monthly_revalidates_and_formats() -> None:
+    """クラス月案の編集後 dict も harness で再検査・再整形できる（kind=class_monthly・§18）。"""
+    r = _client().post(
+        "/api/finalize-edit",
+        json={"kind": "class_monthly", "entry": _edit_class_monthly_entry()},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert "月間指導計画" in body["formatted"] and "指導計画（区分×領域）" in body["formatted"]
+
+
+def test_finalize_edit_class_monthly_surfaces_validation() -> None:
+    """0–2 で個人目標を空にしたら不足を返す（編集後も型成立ゲートが効く）。"""
+    entry = _edit_class_monthly_entry()
+    entry["individual_goals"] = []
+    body = (
+        _client().post("/api/finalize-edit", json={"kind": "class_monthly", "entry": entry}).json()
+    )
+    assert body["ok"] is False
+    assert any("個人目標" in p for p in body["problems"])
+
+
 def _edit_child_record_entry() -> dict:
     """児童票の編集フォーム相当 dict（型を通す good 例・§19）。"""
     return {
@@ -279,6 +303,51 @@ def _edit_monthly_entry() -> dict:
     }
 
 
+def _edit_class_monthly_entry() -> dict:
+    """クラス月案の編集フォーム相当 dict（園の実様式＝区分×領域グリッド＋0–2 の個人目標）。"""
+    grid = [
+        {
+            "category": cat,
+            "domain": dom,
+            "aim": f"{dom}のねらい",
+            "environment": "環境",
+            "child_state": "姿",
+            "support": "配慮",
+        }
+        for cat, dom in (
+            ("養護", "生命の保持"),
+            ("養護", "情緒の安定"),
+            ("教育", "健康"),
+            ("教育", "人間関係"),
+            ("教育", "環境"),
+            ("教育", "言葉"),
+            ("教育", "表現"),
+        )
+    ]
+    return {
+        "month": "2026-07",
+        "age_band": "0-2",
+        "class_name": "ひよこ組",
+        "monthly_goal": "梅雨期も健康に過ごす",
+        "prev_month_state": "前月は感触遊びに集中していた",
+        "events": "七夕",
+        "parent_support": "連絡帳で連携",
+        "grid": grid,
+        "syokuiku": "手づかみ食べ",
+        "health_safety": "ブレスチェック",
+        "family_liaison": "連絡帳",
+        "staff_liaison": "申し送り",
+        "individual_goals": [
+            {
+                "child_id": "架空児A",
+                "age_months": "1歳3か月",
+                "child_state": "歩行安定",
+                "aim_support": "探索保障",
+            }
+        ],
+    }
+
+
 def _assert_is_pdf(r) -> None:
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/pdf"
@@ -294,6 +363,13 @@ def test_export_pdf_diary_returns_pdf() -> None:
 
 def test_export_pdf_monthly_returns_pdf() -> None:
     r = _client().post("/api/export-pdf", json={"kind": "monthly", "entry": _edit_monthly_entry()})
+    _assert_is_pdf(r)
+
+
+def test_export_pdf_class_monthly_returns_pdf() -> None:
+    r = _client().post(
+        "/api/export-pdf", json={"kind": "class_monthly", "entry": _edit_class_monthly_entry()}
+    )
     _assert_is_pdf(r)
 
 
@@ -345,6 +421,13 @@ def test_export_docx_child_record_returns_docx() -> None:
 
 def test_export_docx_monthly_returns_docx() -> None:
     r = _client().post("/api/export-docx", json={"kind": "monthly", "entry": _edit_monthly_entry()})
+    _assert_is_docx(r)
+
+
+def test_export_docx_class_monthly_returns_docx() -> None:
+    r = _client().post(
+        "/api/export-docx", json={"kind": "class_monthly", "entry": _edit_class_monthly_entry()}
+    )
     _assert_is_docx(r)
 
 
