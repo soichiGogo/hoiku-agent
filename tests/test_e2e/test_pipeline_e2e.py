@@ -235,6 +235,30 @@ def test_happy_path_approved_finalizes_and_skips_hitl():
     assert author.call_count == 1
 
 
+def test_first_content_event_authored_by_llm_author():
+    """eval 互換の回帰防止（§12）：invocation の先頭 content 付きイベントは LLM 段（author）が著者。
+
+    ADK の rubric judge は invocation_events（＝content を持つイベント）の先頭著者の developer
+    instructions を引き、非LLM段（prep）が登録されないため採点不能になる。文書作成指針・集積を prep の
+    content イベントでなく InstructionProvider／state-only 集計で運ぶことで、先頭 content 段＝author に
+    保つ（本設計変更の核）。ここでは日誌パイプラインの先頭 content イベントが author であることを固定する。
+    """
+    author = FakeLlm(responses=[_author_text(_valid_entry())])
+    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+
+    _, events = _run(author, reviewer)
+
+    def _has_content(ev) -> bool:
+        parts = getattr(ev.content, "parts", None) if ev.content else None
+        return bool(parts) and any(
+            (p.text or p.function_call or p.function_response) for p in parts
+        )
+
+    first = next((e for e in events if e.author != "user" and _has_content(e)), None)
+    assert first is not None
+    assert first.author == "author"
+
+
 def test_finalize_injects_date_when_author_emits_placeholder():
     """回帰防止（本バグ）：author が壊れた/雛形 echo の date を出しても harness が救って確定が通る。
 
