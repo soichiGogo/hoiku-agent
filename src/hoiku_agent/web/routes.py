@@ -422,6 +422,20 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "store": record_store.store_status(),
         }
 
+    @app.get("/api/records/{document_id}")
+    def web_get_record(document_id: str):
+        """単一書類の全文（現行版の整形テキスト＋本文 entry）＝「書類を見る」タブの詳細。
+
+        リテラル路（/api/records/diary-entries）より後に宣言し、そちらを優先させる（UUID なので実害は
+        ないが順序で担保）。未接続/不在/不正 id は 404（偽の中身を出さない）。読取なので非ゲート。
+        """
+        doc = record_store.get_document(document_id)
+        if doc is None:
+            return JSONResponse(
+                {"error": "書類が見つかりません", "code": "not_found"}, status_code=404
+            )
+        return doc
+
     @app.get("/api/children")
     def web_list_children() -> dict:
         """児童マスタ（アーカイブから auto-create された子）。未設定は空＝フロントは従来チップへ降格。"""

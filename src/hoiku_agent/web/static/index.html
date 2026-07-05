@@ -46,6 +46,7 @@
       <button class="tab is-active" data-tab="docs" role="tab" id="tabbtn-docs" aria-controls="tab-docs" aria-selected="true"><span data-ic="diary"></span><span class="tab-label">書類を作る</span></button>
       <button class="tab" data-tab="policy" role="tab" id="tabbtn-policy" aria-controls="tab-policy" aria-selected="false"><span data-ic="sprout"></span><span class="tab-label">指針を育てる</span></button>
       <button class="tab" data-tab="notation" role="tab" id="tabbtn-notation" aria-controls="tab-notation" aria-selected="false"><span data-ic="hash"></span><span class="tab-label">表記ルール</span></button>
+      <button class="tab" data-tab="records" role="tab" id="tabbtn-records" aria-controls="tab-records" aria-selected="false"><span data-ic="book"></span><span class="tab-label">書類を見る</span></button>
     </nav>
   </header>
 
@@ -188,6 +189,22 @@
         <div class="card-title"><span data-ic="clipboard"></span>いまの表記ルール<span id="notation-store" class="badge"></span></div>
         <div id="notation-list" class="nlist"></div>
       </div>
+    </section>
+
+    <!-- ───────── 書類を見る（アーカイブ閲覧＝作成済みの確定書類） ───────── -->
+    <section id="tab-records" class="panel" role="tabpanel" aria-labelledby="tabbtn-records" tabindex="0">
+      <div class="hero">
+        <h1>作成済みの書類を見る</h1>
+        <p>アーカイブに保存された日誌・月案・児童票を種別で絞り込み、確定した内容をそのまま確認できます（前月・期間の集計など、参照データが適切かの点検にも使えます）。保存先が未接続のときは表示されません。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span data-ic="book"></span>アーカイブ<span id="records-store" class="badge"></span></div>
+        <div id="records-filter" class="chips seg" role="group" aria-label="種別で絞り込み"></div>
+        <div id="records-list" class="rlist"></div>
+      </div>
+
+      <div id="records-detail" class="card rdetail" hidden></div>
     </section>
 
   </main>

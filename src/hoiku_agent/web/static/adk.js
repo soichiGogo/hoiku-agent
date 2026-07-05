@@ -143,6 +143,31 @@ export async function getDiaryEntries(dateFrom, dateTo) {
   }
 }
 
+// 書類アーカイブの一覧（メタ）＝「書類を見る」タブ。docType 指定で種別フィルタ。未接続/障害は
+// 空＋store で正直に降格（偽の中身を出さない）。
+export async function listRecords(docType) {
+  try {
+    const q = docType ? `?doc_type=${encodeURIComponent(docType)}` : "";
+    const r = await fetch(`/api/records${q}`);
+    if (!r.ok) return { documents: [], store: "unavailable" };
+    const j = await r.json();
+    return { documents: j.documents || [], store: j.store || "unavailable" };
+  } catch {
+    return { documents: [], store: "unavailable" };
+  }
+}
+
+// 単一書類の全文（現行版の整形テキスト＋本文 entry）。不在/未接続/障害は null（呼び出し側が正直に表示）。
+export async function getRecord(id) {
+  try {
+    const r = await fetch(`/api/records/${encodeURIComponent(id)}`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 // 児童マスタ（アーカイブに登場した子）。未設定/障害は空＝呼び出し側が従来チップへ降格する。
 export async function getChildren() {
   try {

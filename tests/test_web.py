@@ -40,6 +40,8 @@ def test_static_ui_served() -> None:
         "docflow.js",
         "docedit.js",
         "policy.js",
+        "notation.js",
+        "records.js",
         "ui.js",
         "styles.css",
     ):
@@ -374,6 +376,56 @@ def test_records_diary_entries_returns_seed(records_db) -> None:
     # 不正日付は 400（黙って全件を返さない）
     bad = c.get("/api/records/diary-entries", params={"date_from": "abc", "date_to": "2026-07-31"})
     assert bad.status_code == 400
+
+
+def test_get_record_returns_full_document(records_db) -> None:
+    """GET /api/records/{id}＝「書類を見る」タブの詳細（現行版の整形テキスト＋本文 entry）。"""
+    c = _client()
+    saved = c.post(
+        "/api/records",
+        json={
+            "kind": "diary",
+            "entry": _edit_diary_entry(),
+            "rendered_text": "整形本文",
+            "author_kind": "ai",
+        },
+    ).json()
+    r = c.get(f"/api/records/{saved['document_id']}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["doc_type"] == "diary"
+    assert body["rendered_text"] == "整形本文"
+    assert body["author_kind"] == "ai"
+    assert body["entry"]["date"] == "2026-06-25"
+
+
+def test_get_record_missing_or_invalid_404(records_db) -> None:
+    """不在・不正 id は 404（500 にしない・偽の中身を出さない）。リテラル路より後宣言でも衝突しない。"""
+    import uuid
+
+    c = _client()
+    assert c.get(f"/api/records/{uuid.uuid4()}").status_code == 404
+    assert c.get("/api/records/not-a-uuid").json()["code"] == "not_found"
+    # 併存するリテラル路（diary-entries）は {document_id} に飲まれない（宣言順で優先）。
+    assert (
+        c.get(
+            "/api/records/diary-entries",
+            params={"date_from": "2026-07-01", "date_to": "2026-07-31"},
+        ).status_code
+        == 200
+    )
+
+
+def test_get_record_read_not_passcode_gated(records_db, monkeypatch) -> None:
+    """単一書類の閲覧は読取＝非ゲート（保存はゲート・読み取りは素通し）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    saved = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"},
+        headers={"X-Demo-Passcode": "secret"},
+    ).json()
+    assert c.get(f"/api/records/{saved['document_id']}").status_code == 200
 
 
 # ──────────────────── 児童票 年間マトリクスの過去期埋め込み（chohyo_pdf × record_store） ────────────────────
