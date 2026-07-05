@@ -12,8 +12,36 @@ import io
 import docx
 import pytest
 
-from hoiku_agent.schemas import AgeBand, ChildRecord, DevelopmentNote, FiveDomains
+from hoiku_agent.schemas import (
+    AgeBand,
+    ChildRecord,
+    DevelopmentNote,
+    FiveDomains,
+    MonthlyEducationNote,
+    MonthlyPlan,
+    ThreeViewpoint,
+)
 from hoiku_agent.web.docx_fill import fill_docx, supported_kinds
+
+
+def _monthly(age_band: AgeBand = AgeBand.零から二歳) -> dict:
+    return MonthlyPlan(
+        month="2026-07",
+        age_band=age_band,
+        child_id="はるとくん",
+        age_months="1歳6か月",
+        prev_child_state="前月は探索活動が活発になった",
+        nurturing_life="夏の体調管理を丁寧に行う",
+        nurturing_emotion="甘えを受けとめ安心を支える",
+        education=[
+            MonthlyEducationNote(
+                aim="水や砂の感触を楽しむ", tags=[ThreeViewpoint.身近なものと関わり感性が育つ]
+            )
+        ],
+        monthly_goals="感触遊びで探索意欲を満たす",
+        environment_support="水遊びの動線を整える",
+        evaluation_reflection="感触遊びの幅を広げられた",
+    ).model_dump(mode="json")
 
 
 def _record() -> dict:
@@ -65,6 +93,39 @@ def test_fill_child_record_fills_header_and_period():
     assert "2026年度" in "".join(c.text for c in header.rows[0].cells)  # 対象期間から年度推定
     period_tbl = next(t for t in tables if t.rows[0].cells[0].text.strip() == "対象期間")
     assert "2026-04〜2026-06" in period_tbl.rows[0].cells[-1].text
+
+
+def test_supported_kinds_has_monthly():
+    assert "monthly" in supported_kinds()
+
+
+def test_fill_monthly_0_2_maps_individual_to_goals_table():
+    """0-2 月案フォームの「個人目標」小表に個別月案が写像される（クラス欄は温存）。"""
+    tables = _tables(fill_docx("monthly", _monthly(AgeBand.零から二歳)))
+    goals = next(t for t in tables if "個人目標" in t.rows[0].cells[0].text)
+    row = goals.rows[2]  # 記入1行目
+    assert "はるとくん" in row.cells[0].text
+    assert "探索活動が活発" in row.cells[1].text  # 子どもの姿←前月の姿
+    # ねらい・配慮＝今月のねらい＋養護＋教育＋環境の束（AI 内容を落とさない）。
+    assert "感触遊びで探索意欲を満たす" in row.cells[2].text
+    assert "養護（生命の保持）" in row.cells[2].text
+    assert "水や砂の感触を楽しむ" in row.cells[2].text
+    assert "感触遊びの幅を広げられた" in row.cells[3].text  # 評価・反省
+
+
+def test_fill_monthly_header_has_year_and_age():
+    tables = _tables(fill_docx("monthly", _monthly(AgeBand.零から二歳)))
+    header = next(t for t in tables if "年度・月" in "".join(c.text for c in t.rows[0].cells))
+    assert "2026年度 7月" in "".join(c.text for c in header.rows[0].cells)
+    assert "0〜2歳児" in "".join(c.text for c in header.rows[1].cells)
+
+
+def test_fill_monthly_3_5_has_no_goals_table_but_renders():
+    """3-5 フォームは個人目標小表が無い純クラス様式＝落ちずヘッダのみ流し込む（クラス月案対応は後続）。"""
+    tables = _tables(fill_docx("monthly", _monthly(AgeBand.三から五歳)))
+    assert not any("個人目標" in t.rows[0].cells[0].text for t in tables)
+    header = next(t for t in tables if "年度・月" in "".join(c.text for c in t.rows[0].cells))
+    assert "3〜5歳児" in "".join(c.text for c in header.rows[1].cells)
 
 
 def test_fill_unknown_kind_raises():

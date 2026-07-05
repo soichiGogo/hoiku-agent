@@ -10,9 +10,10 @@ Word で開いて微修正・印刷・PDF 化できる（＝Word が母艦の現
 同梱し実行時に外部取得しない（ローカル完結）。docx→PDF の**サーバ変換はしない**（LibreOffice 等の
 重い依存を持ち込まない＝確定・綴じ用の PDF は `chohyo_pdf.py` が担い、Word 編集用は本モジュールが担う）。
 
-現状スライス（PoC）＝**児童票（保育経過記録）**のみ配線。園フォームは 5領域×子どもの姿 の様式なので
-生成対象は 3–5（5領域）。月案（クラス月案の個人目標小表へ写像）・保育要録は後続スライスで足す
-（`_FILLERS` に kind を追加するだけで拡張できる形にしてある）。
+配線済みスライス：**児童票（保育経過記録）**＝5領域×子どもの姿（3–5）。**月案**＝園フォームは
+クラス月案だが、決定に従い**個別月案の中身を「個人目標」小表へ写像**しクラス欄は保育士記入で温存
+（個人目標小表がある 0-2 フォームが本命・3-5 フォームは小表が無くヘッダのみ）。保育要録（要 保育所
+様式の入手）は後続（`_FILLERS` に kind を追加するだけで拡張できる形にしてある）。
 """
 
 from __future__ import annotations
@@ -138,9 +139,91 @@ def _fill_child_record(entry: dict) -> Document:
     return doc
 
 
-# kind → (filler, 表示名)。新しい書類は filler を足すだけで拡張できる。
+def _monthly_label(month: str) -> str:
+    """月案の対象月（YYYY-MM）を「YYYY年度 M月」へ整形する（4月始まりの年度）。読めなければ原文。"""
+    m = re.match(r"\s*(\d{4})\s*[-/年]\s*(\d{1,2})", str(month or ""))
+    if not m:
+        return str(month or "")
+    year, mm = int(m.group(1)), int(m.group(2))
+    if not (1 <= mm <= 12):
+        return str(month or "")
+    fiscal = year if mm >= 4 else year - 1
+    return f"{fiscal}年度 {mm}月"
+
+
+def _monthly_individual_summary(entry: dict) -> str:
+    """個別月案の中身を「個人目標」小表の『ねらい・配慮』1セルへ収める要約（AI 内容を落とさない）。
+
+    園フォームの個人目標欄は 氏名/子どもの姿/ねらい・配慮/評価・反省 の4列しかないため、我々の
+    養護2本柱・教育ねらい・環境援助を『ねらい・配慮』に構造化して束ねる（クラス欄は保育士記入で温存）。
+    """
+    parts: list[str] = []
+    goals = str(entry.get("monthly_goals") or "").strip()
+    if goals:
+        parts.append(f"今月のねらい：{goals}")
+    nlife = str(entry.get("nurturing_life") or "").strip()
+    nemo = str(entry.get("nurturing_emotion") or "").strip()
+    if nlife:
+        parts.append(f"養護（生命の保持）：{nlife}")
+    if nemo:
+        parts.append(f"養護（情緒の安定）：{nemo}")
+    edu_aims = [
+        str((note or {}).get("aim") or "").strip()
+        for note in entry.get("education") or []
+        if str((note or {}).get("aim") or "").strip()
+    ]
+    if edu_aims:
+        parts.append("教育：" + "／".join(edu_aims))
+    env = str(entry.get("environment_support") or "").strip()
+    if env:
+        parts.append(f"環境・援助：{env}")
+    return "\n".join(parts)
+
+
+def _fill_monthly(entry: dict) -> Document:
+    """個別月案を園の月案フォーム（クラス月案）へ流し込む。
+
+    園フォームは**クラス月案**（区分×領域グリッド＝クラス全体のねらい）で、我々の出力は**個別月案**。
+    決定（2026-07-05）に従い、**個別の中身は「個人目標」小表へ写像**し、クラス全体欄（保育目標・
+    区分×領域グリッド・食育・評価等）は当面**保育士記入で空欄温存**する（勝手に埋めない）。
+
+    - ヘッダ：年度・月／年齢帯（機械メタなので埋める）。
+    - **個人目標小表（0-2 フォームのみ存在）**：氏名（月齢）／子どもの姿（前月の姿）／ねらい・配慮
+      （今月のねらい＋養護2本柱＋教育＋環境援助の要約）／評価・反省 の1行に写像。
+    - 3-5 フォームは個人目標小表が無い（純クラス様式）ため、ヘッダのみ流し込む＝個別内容の置き場が
+      様式に無い（クラス月案スキーマ対応は後続・§18）。
+    """
+    age = entry.get("age_band") or "0-2"
+    template = "monthly_0_2.docx" if age == "0-2" else "monthly_3_5.docx"
+    doc = Document(str(_TEMPLATE_DIR / template))
+
+    # ── ヘッダ（年度・月／年齢） ──
+    header = _find_table(doc, header_contains=("年度・月", "クラス"))
+    if header is not None:
+        _set_cell(header.rows[0].cells[1], _monthly_label(str(entry.get("month") or "")))
+        if len(header.rows) > 1:
+            _set_cell(header.rows[1].cells[1], f"{_AGE_LABEL.get(age, age)}歳児（　　名）")
+
+    # ── 個人目標小表（0-2 のみ）：個別月案の中身を1行へ写像 ──
+    goals_tbl = _find_table(doc, header_contains=("個人目標",))
+    if goals_tbl is not None:
+        # r0=見出し「個人目標…」、r1=列見出し（氏名/子どもの姿/ねらい・配慮/評価・反省）、r2 以降=記入行。
+        row = goals_tbl.rows[2] if len(goals_tbl.rows) > 2 else None
+        if row is not None and len(row.cells) >= 4:
+            name = str(entry.get("child_id") or "")
+            months = str(entry.get("age_months") or "").strip()
+            _set_cell(row.cells[0], f"{name}（{months}）" if months else name)
+            _set_cell(row.cells[1], str(entry.get("prev_child_state") or ""))
+            _set_cell(row.cells[2], _monthly_individual_summary(entry))
+            _set_cell(row.cells[3], str(entry.get("evaluation_reflection") or ""))
+
+    return doc
+
+
+# kind → filler。新しい書類は filler を足すだけで拡張できる。
 _FILLERS = {
     "child_record": _fill_child_record,
+    "monthly": _fill_monthly,
 }
 
 
