@@ -64,7 +64,8 @@
 
 1. **harness/（決定的・型の保証）** — 必須欄・年齢分岐・順序・集積・**doc_type分岐（router）**・指針カードストア・
    **表記正規化（ひらがな表記DX＝`notation_store`）**・**様式テンプレート（本文レイアウトのデータ＝`template_store`。
-   章立て・ラベル・出し分けを JSON に外出しし draft.py が歩いて描く＝§18 の園差をテンプレ編集で吸収・整形実体は harness）**。
+   章立て・ラベル・出し分けを JSON に外出しし、テキスト整形（draft.py）・帳票PDF・編集フォームの3レンダラが共通で歩いて描く
+   ＝§18 の園差をテンプレ編集で吸収・レイアウトの三重管理を解消・整形実体は harness）**。
    LLM を呼ばない。**決定ロジックの実体はここに1つだけ**。
    （文書作成指針の agent への提示は author/reviewer の InstructionProvider＝`agents/instructions.py` が harness の
    `render_for_doc` を prompt 冒頭へ注入＝薄い組み立て。決定ロジック実体は harness の policy_store／aggregate に1つ。）

@@ -27,10 +27,13 @@
   児童票:発達の経過→配慮特記→家庭連携→総合所見→次期、要録:最終年度の重点→個人の重点→保育の展開→特に配慮すべき事項→
   最終年度に至るまでの育ち（この順序・ラベルはテンプレが持つ）。確定出力は pipeline 末尾で実行。
 - `template_store.py` … **様式テンプレート＝本文レイアウトの宣言的データ**（`schemas/template.py` の
-  DocTemplate/Section・閉じた種別語彙）のストア。`load_template(doc_type)` を draft.py（後続で帳票PDF/編集フォーム）が
-  読む。レイアウトのデータのみ（validation は持たない＝型の保証は schema_check・§5）。置き場は policy_store/notation_store と
-  同型＝明示 path ＞ `DATABASE_URL`（`template_books` 1行 JSONB・version 楽観ロック・行不在はローカルシード）＞
-  ローカル `knowledge/様式テンプレート.json`（git はシード・migration 0005）。編集 UI は現状スコープ外（園差の実需で後続）。
+  DocTemplate/Section・閉じた種別語彙）のストア。`load_template(doc_type)` を**3レンダラ共通で読む**＝テキスト整形
+  （draft.py）・帳票PDF（web/chohyo_pdf の線形様式）・編集フォーム（web/docedit.js・`/api/doc-template`＝`book_view`）が
+  本文セクションの順序/ラベルをここから取る（レイアウトの三重管理を解消・§18）。レイアウトのデータのみ（validation は
+  持たない＝型の保証は schema_check・§5）。置き場は policy_store/notation_store と同型＝明示 path ＞ `DATABASE_URL`
+  （`template_books` 1行 JSONB・version 楽観ロック・行不在はローカルシード）＞ ローカル `knowledge/様式テンプレート.json`
+  （git はシード・migration 0005）。編集 UI は現状スコープ外（園差の実需で後続）。児童票の帳票PDF は年間マトリクス様式
+  （線形でない）ため対象外。
 - `notation_store.py` … **ひらがな表記DX＝表記ルール辞書＋決定的な正規化器**（「子供→子ども」等の置換・混入
   スペース除去）。CRUD（保育士が育てる編集辞書）＋正規化（`normalize_text`/`normalize_entry_dict`＝**叙述系
   フィールド限定**で仮名/タグ/日付は不変＝誤変換を型で防ぐ）＋IO（`notation_books` 1行 JSONB・version 楽観ロック・
