@@ -187,6 +187,29 @@ def test_child_record_scope_renders_and_views(when=T):
     assert ps.card_view(ps.find_card(book, "card-0001"))["doc_label"] == "児童票"
 
 
+def test_card_view_hides_seed_source():
+    """機械シード由来（"seed:初版"）は card_view の source から落とす（"だれの気づき" 欄に浮かせない・
+    history_view の by と揃える）。保育士由来はそのまま出す。"""
+    seed = PolicyCard(
+        id="card-0001",
+        scope=PolicyScope.共通,
+        body="個人名を書かない",
+        source="seed:初版",
+        created_at=T,
+        updated_at=T,
+    )
+    grown = PolicyCard(
+        id="card-0002",
+        scope=PolicyScope.保育日誌,
+        body="感触語を併記する",
+        source="保育士の修正メモ",
+        created_at=T,
+        updated_at=T,
+    )
+    assert ps.card_view(seed)["source"] == ""
+    assert ps.card_view(grown)["source"] == "保育士の修正メモ"
+
+
 # ──────────────────────────── IO / store_status / view ────────────────────────────
 
 
