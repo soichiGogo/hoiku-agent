@@ -453,10 +453,15 @@ def card_view(card: PolicyCard) -> dict:
 
 
 def history_view(change: PolicyChange) -> dict:
-    """変更履歴1件をフロント/API 用の dict に変換する（だれの気づきで何が増えたか）。"""
+    """変更履歴1件をフロント/API 用の dict に変換する（だれの気づきで何が増えたか）。
+
+    「だれ」欄（by）は決定者＝`decided_by`（保育士 / 初版）を優先する。`source`（"seed:初版"
+    や "保育士の修正メモ"＝由来・何/どこから）は "だれ" ではないので前面に出さない＝シードだけ
+    機械タグ "seed:初版" が浮くのを避け、保育士反映（"保育士"）とラベルを揃える。
+    """
     return {
         "at": change.timestamp.date().isoformat(),
-        "by": change.source or change.decided_by,
+        "by": change.decided_by or change.source,
         "summary": change.summary,
         "card_id": change.card_id,
     }

@@ -167,17 +167,13 @@
           <p id="policy-target-hint" class="doc-desc"></p>
         </div>
 
-        <!-- 上：閲覧（現在の指針＋履歴） -->
+        <!-- 上：閲覧（現在の指針） -->
         <div class="card">
           <div class="card-title"><span data-ic="clipboard"></span>いまの指針カード<span id="policy-scope-badge" class="badge hidden"></span></div>
           <div id="policy-grid" class="policy-grid"></div>
         </div>
-        <div class="card">
-          <div class="card-title"><span data-ic="clock"></span>変更履歴（だれの気づきで・何が増えたか）</div>
-          <div id="policy-history" class="phist"></div>
-        </div>
 
-        <!-- 下：提案フロー -->
+        <!-- 中：提案フロー（保育士の入力＝主行動） -->
         <div class="card">
           <label class="field-label" for="policy-memo">保育士の修正メモ・気づき</label>
           <textarea id="policy-memo" class="memo" rows="3" placeholder="例）感触遊びは『感触語＋そのときの表情』を併記したい。ただし断定的な評価表現は避けたい。"></textarea>
@@ -190,6 +186,12 @@
 
         <div id="policy-stepper" class="stepper hidden"></div>
         <div id="policy-flow" class="flow-area"></div>
+
+        <!-- 下：変更履歴（参照ログ） -->
+        <div class="card">
+          <div class="card-title"><span data-ic="clock"></span>変更履歴（だれの気づきで・何が増えたか）</div>
+          <div id="policy-history" class="phist"></div>
+        </div>
       </div>
 
       <!-- ── サブ：表記ルール（ひらがな表記DX） ── -->
