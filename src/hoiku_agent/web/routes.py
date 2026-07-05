@@ -77,8 +77,8 @@ class FinalizeEditRequest(BaseModel):
     生成・採点ロジックは持たず、harness の finalize_entry を中継するだけ（決定的実体は harness に1つ＝§5）。
     """
 
-    kind: str = "diary"  # "diary" / "monthly" / "child_record"
-    entry: dict  # 編集後の DiaryEntry / MonthlyPlan / ChildRecord 相当の dict
+    kind: str = "diary"  # "diary" / "monthly" / "child_record" / "nursery_record"
+    entry: dict  # 編集後の DiaryEntry / MonthlyPlan / ChildRecord / NurseryRecord 相当の dict
     doc_date: str | None = None  # 記録日（日誌・ISO 文字列。機械メタなので harness が上書き）
 
 
@@ -89,8 +89,8 @@ class ExportPdfRequest(BaseModel):
     型検査はしない（型の保証は harness の責務＝§5）。LLM 非課金なのでパスコード非ゲート。
     """
 
-    kind: str = "diary"  # "diary" / "monthly" / "child_record"
-    entry: dict  # 帳票に描く DiaryEntry / MonthlyPlan / ChildRecord 相当の dict
+    kind: str = "diary"  # "diary" / "monthly" / "child_record" / "nursery_record"
+    entry: dict  # 帳票に描く DiaryEntry / MonthlyPlan / ChildRecord / NurseryRecord 相当の dict
 
 
 class RecordSaveRequest(BaseModel):
@@ -121,6 +121,10 @@ def _pdf_filename(kind: str, entry: dict) -> str:
         stem = f"月案_{entry.get('month') or ''}_{entry.get('child_id') or ''}".rstrip("_")
     elif kind == "child_record":
         stem = f"児童票_{entry.get('period') or ''}_{entry.get('child_id') or ''}".rstrip("_")
+    elif kind == "nursery_record":
+        stem = f"保育要録_{entry.get('fiscal_year') or ''}_{entry.get('child_id') or ''}".rstrip(
+            "_"
+        )
     else:
         stem = f"保育日誌_{entry.get('date') or ''}".rstrip("_")
     return f"{stem or '書類'}.pdf"
@@ -419,6 +423,18 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             )
         return {
             "entries": record_store.list_diary_entries(f, t),
+            "store": record_store.store_status(),
+        }
+
+    @app.get("/api/records/child-record-entries")
+    def web_list_child_record_entries(child: str) -> dict:
+        """指定児の児童票（最新版・期間順）＝保育要録 L4 の seed 取得口（§19）。
+
+        リテラル路なので `/api/records/{document_id}` より前に宣言し優先させる（diary-entries と同じ）。
+        フロントは entries が空/未接続ならサンプル seed へ降格する（黙って空 seed で回さない）。
+        """
+        return {
+            "entries": record_store.list_child_record_entries(child),
             "store": record_store.store_status(),
         }
 

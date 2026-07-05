@@ -196,6 +196,47 @@ def test_finalize_edit_child_record_surfaces_validation() -> None:
     assert any("総合所見" in p for p in body["problems"])
 
 
+def _edit_nursery_record_entry() -> dict:
+    """保育要録の編集フォーム相当 dict（型を通す good 例・§19・L4）。"""
+    return {
+        "fiscal_year": "2026",
+        "age_band": "3-5",
+        "child_id": "架空児A",
+        "age_months": "6歳0か月",
+        "final_year_focus": "共通の目的に向かって思いや考えを出し合いながら活動を楽しむ",
+        "individual_focus": "自分を発揮しながらさまざまな活動を楽しむ",
+        "development_notes": [
+            {"description": "友だちと考えを出し合い協力する姿が増えた", "tags": ["人間関係"]}
+        ],
+        "special_notes": "",
+        "growth_until_final": "入園当初は不安が大きかったが、生き生きと表現を楽しむ姿へ育った",
+    }
+
+
+def test_finalize_edit_nursery_record_revalidates_and_formats() -> None:
+    """保育要録の編集後 dict も harness で再検査・再整形できる（kind=nursery_record）。"""
+    r = _client().post(
+        "/api/finalize-edit",
+        json={"kind": "nursery_record", "entry": _edit_nursery_record_entry()},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert "保育所児童保育要録" in body["formatted"]
+    assert "最終年度に至るまでの育ち" in body["formatted"]
+
+
+def test_finalize_edit_nursery_record_surfaces_validation() -> None:
+    """最終年度に至るまでの育ちを空にしたら不足を返す（要録でも編集後の型成立ゲートが効く）。"""
+    entry = _edit_nursery_record_entry()
+    entry["growth_until_final"] = ""
+    body = (
+        _client().post("/api/finalize-edit", json={"kind": "nursery_record", "entry": entry}).json()
+    )
+    assert body["ok"] is False
+    assert any("最終年度に至るまでの育ち" in p for p in body["problems"])
+
+
 def test_finalize_edit_not_passcode_gated(monkeypatch) -> None:
     """編集の再確定は LLM 非課金なのでパスコードでゲートしない（読み取り同様素通し）。"""
     monkeypatch.setattr(settings, "demo_passcode", "secret")
@@ -247,6 +288,13 @@ def test_export_pdf_monthly_returns_pdf() -> None:
 def test_export_pdf_child_record_returns_pdf() -> None:
     r = _client().post(
         "/api/export-pdf", json={"kind": "child_record", "entry": _edit_child_record_entry()}
+    )
+    _assert_is_pdf(r)
+
+
+def test_export_pdf_nursery_record_returns_pdf() -> None:
+    r = _client().post(
+        "/api/export-pdf", json={"kind": "nursery_record", "entry": _edit_nursery_record_entry()}
     )
     _assert_is_pdf(r)
 
@@ -336,6 +384,34 @@ def test_records_save_edit_approve_flow(records_db) -> None:
     # 監査証跡（誰が・いつ・何を）
     actions = [(e["action"], e["actor"]) for e in record_store.list_audit_events()]
     assert ("approve", "園長") in actions and ("edit", "保育士A") in actions
+
+
+def test_child_record_entries_endpoint_seeds_youroku(records_db) -> None:
+    """保育要録 L4 の seed 取得口＝指定児の児童票（最新版・期間順）を返す（読取なので非ゲート）。"""
+    c = _client()
+    for period, overall in [("2026-04〜2026-07", "1期"), ("2026-08〜2026-11", "2期")]:
+        c.post(
+            "/api/records",
+            json={
+                "kind": "child_record",
+                "entry": {
+                    "period": period,
+                    "age_band": "3-5",
+                    "child_id": "架空児A",
+                    "development_notes": [{"description": overall, "tags": ["健康"]}],
+                    "overall_note": overall,
+                },
+                "author_kind": "ai",
+            },
+        )
+    body = c.get("/api/records/child-record-entries", params={"child": "架空児A"}).json()
+    assert body["store"] == "ok"
+    assert [e["period"] for e in body["entries"]] == ["2026-04〜2026-07", "2026-08〜2026-11"]
+    # 未登録児は空＝フロントがサンプルへ降格
+    assert (
+        c.get("/api/records/child-record-entries", params={"child": "未登録"}).json()["entries"]
+        == []
+    )
 
 
 def test_records_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:

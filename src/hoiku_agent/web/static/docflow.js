@@ -12,6 +12,7 @@ const DOC_META = {
   diary: { title: "保育日誌", icon: "diary" },
   monthly: { title: "個別月案", icon: "calendar" },
   child_record: { title: "児童票", icon: "chart" },
+  nursery_record: { title: "保育要録", icon: "chart" },
 };
 
 // 集計 prep を持つ doc_type の表示メタ（digest の state キー・見出し・稼働中フェーズ文言）。
@@ -25,6 +26,11 @@ const PREP_META = {
     digestKey: "period_digest",
     digestTitle: "期間の積み重ね（自動集計・L3 還流）",
     phaseText: "期間の積み重ねを集計しています",
+  },
+  nursery_record: {
+    digestKey: "record_digest",
+    digestTitle: "最終年度の児童票の積み重ね（自動集計・L4 還流）",
+    phaseText: "最終年度の児童票を集計しています",
   },
 };
 

@@ -424,10 +424,78 @@ function buildChildRecord(body, entry, formMeta) {
   });
 }
 
+/* ---- 保育要録フォーム（保育所児童保育要録・年長・L4） ---- */
+function buildNurseryRecord(body, entry, formMeta) {
+  const ageBand = entry.age_band || "3-5";
+
+  const basic = section("基本情報");
+  const child = inp(entry.child_id, "はるとくん");
+  const months = inp(entry.age_months, "5歳8か月（任意）");
+  // 就学先・保育期間は「入所に関する記録」の原簿系＝AI は生成しない（保育士が記入）。
+  const school = inp(entry.school_name, "就学先の小学校名（任意）");
+  const enroll = inp(entry.enrollment_period, "保育期間 入所〜卒所（任意）");
+  const brow = el("div", "de-grid");
+  brow.append(
+    roField("対象年度", entry.fiscal_year),
+    field("対象児", child),
+    field("月齢・年齢", months),
+    roField("クラス", AGE_LABEL[ageBand] || ageBand),
+    field("就学先の小学校", school),
+    field("保育期間", enroll),
+  );
+  basic._b.appendChild(brow);
+  body.appendChild(basic);
+
+  const focus = ta(entry.final_year_focus, 2, "年長クラス全体の年間目標・ねらい");
+  const indiv = ta(entry.individual_focus, 2, "1年を振り返り特に重視した点");
+  const simple = (label, control, hint) => {
+    const s = section(label, hint);
+    s._b.appendChild(control);
+    body.appendChild(s);
+  };
+  simple("最終年度の重点", focus, "クラス全体のねらい");
+  simple("個人の重点", indiv);
+
+  // 保育の展開と子どもの育ち（5領域/10の姿タグ）＝児童票の developmentItem を共用。
+  const dev = listSection(
+    "保育の展開と子どもの育ち",
+    "5領域・10の姿でタグ付け",
+    entry.development_notes,
+    developmentItem(formMeta, ageBand),
+    () => ({}),
+    "育ちの姿を追加",
+  );
+  body.appendChild(dev);
+
+  const special = ta(entry.special_notes, 2, "特に配慮すべき事項（就学支援等。無ければ空＝「なし」）");
+  const growth = ta(
+    entry.growth_until_final,
+    3,
+    "入所時〜前年度の育ちの経過（開示前提＝肯定的・断定しない表現で）",
+  );
+  simple("特に配慮すべき事項", special);
+  simple("最終年度に至るまでの育ち", growth, "小学校の先生に伝わるよう具体的に");
+
+  return () => ({
+    fiscal_year: entry.fiscal_year,
+    age_band: ageBand,
+    child_id: child.value.trim(),
+    age_months: months.value.trim(),
+    final_year_focus: focus.value,
+    individual_focus: indiv.value,
+    development_notes: dev._collect(),
+    special_notes: special.value,
+    growth_until_final: growth.value,
+    school_name: school.value.trim(),
+    enrollment_period: enroll.value.trim(),
+  });
+}
+
 const META = {
   diary: { title: "保育日誌", icon: "diary", build: buildDiary },
   monthly: { title: "個別月案", icon: "calendar", build: buildMonthly },
   child_record: { title: "児童票", icon: "chart", build: buildChildRecord },
+  nursery_record: { title: "保育要録", icon: "chart", build: buildNurseryRecord },
 };
 
 // 編集フォーム panel と collect()（編集後 entry dict）を返す。

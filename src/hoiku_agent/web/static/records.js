@@ -1,11 +1,11 @@
-// 書類を見る＝アーカイブ閲覧タブ（作成済みの日誌/月案/児童票を種別で絞り込み・確定内容を確認）。
+// 書類を見る＝アーカイブ閲覧タブ（作成済みの日誌/月案/児童票/保育要録を種別で絞り込み・確定内容を確認）。
 // 生成ロジックは持たない＝harness/record_store の読取 API（/api/records・/api/records/{id}）を
 // 叩いて描くだけ（§5/§11）。参照データが適切かの点検にも使える（保存された確定内容そのものを見る）。
 import * as adk from "./adk.js";
 import { el, esc, iconHTML } from "./ui.js";
 
-const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", child_record: "児童票" };
-const KIND_ICON = { diary: "diary", monthly: "calendar", child_record: "chart" };
+const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", child_record: "児童票", nursery_record: "保育要録" };
+const KIND_ICON = { diary: "diary", monthly: "calendar", child_record: "chart", nursery_record: "chart" };
 
 // record_store.store_status は disabled/ok/unavailable を返す（policy/notation の persistent 系とは別語彙）。
 const STORE_LABEL = {
@@ -21,6 +21,7 @@ const FILTERS = [
   { key: "diary", label: "保育日誌" },
   { key: "monthly", label: "個別月案" },
   { key: "child_record", label: "児童票" },
+  { key: "nursery_record", label: "保育要録" },
 ];
 
 export function makeRecords(ui) {
