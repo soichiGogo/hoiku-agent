@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "doc_type": "diary",
+      "sections": [
+        { "key": "daily_aim", "label": "本日のねらい（養護・教育）", "kind": "text_block", "blank": "（未記入）", "show": "always", "item_field": null },
+        { "key": "attendance", "label": "出欠", "kind": "attendance", "blank": "", "show": "always", "item_field": null },
+        { "key": "practice_record", "label": "主な活動・保育者の援助", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "individual_notes", "label": "個別の記録（子ども一人ひとりの姿・生活）", "kind": "individual_notes", "blank": "（個別記録なし）", "show": "always", "item_field": null },
+        { "key": "health_notes", "label": "健康・視診", "kind": "text_inline", "blank": "特記なし", "show": "always", "item_field": null },
+        { "key": "parent_contact", "label": "家庭への連絡", "kind": "text_inline", "blank": "（なし）", "show": "always", "item_field": null },
+        { "key": "evaluation", "label": "評価・反省", "kind": "evaluation2", "blank": "", "show": "always", "item_field": null }
+      ]
+    },
+    {
+      "doc_type": "monthly",
+      "sections": [
+        { "key": "prev_child_state", "label": "前月の子どもの姿", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "monthly_goals", "label": "今月のねらい・内容", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "nurturing_life", "label": "養護：生命の保持", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "nurturing_emotion", "label": "養護：情緒の安定", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "education", "label": "教育（ねらい・内容）", "kind": "tagged_list", "blank": "（教育のねらい未記入）", "show": "always", "item_field": "aim" },
+        { "key": "environment_support", "label": "環境構成・援助（配慮）", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "events_family_food", "label": "家庭との連携／食育・健康・行事", "kind": "text_inline", "blank": "（なし）", "show": "always", "item_field": null },
+        { "key": "evaluation_reflection", "label": "評価・反省", "kind": "text_block", "blank": "", "show": "always", "item_field": null }
+      ]
+    },
+    {
+      "doc_type": "child_record",
+      "sections": [
+        { "key": "development_notes", "label": "発達の経過（領域別の叙述）", "kind": "tagged_list", "blank": "（発達の経過 未記入）", "show": "always", "item_field": "description" },
+        { "key": "care_notes", "label": "配慮事項・特記", "kind": "text_inline", "blank": "（なし）", "show": "always", "item_field": null },
+        { "key": "family_liaison", "label": "家庭との連携", "kind": "text_inline", "blank": "（なし）", "show": "always", "item_field": null },
+        { "key": "overall_note", "label": "総合所見", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "next_aims", "label": "次期に向けて", "kind": "text_inline", "blank": "（なし）", "show": "always", "item_field": null }
+      ]
+    },
+    {
+      "doc_type": "nursery_record",
+      "sections": [
+        { "key": "final_year_focus", "label": "最終年度の重点", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "individual_focus", "label": "個人の重点", "kind": "text_block", "blank": "", "show": "always", "item_field": null },
+        { "key": "development_notes", "label": "保育の展開と子どもの育ち（5領域・10の姿の視点）", "kind": "tagged_list", "blank": "（保育の展開と子どもの育ち 未記入）", "show": "always", "item_field": "description" },
+        { "key": "special_notes", "label": "特に配慮すべき事項", "kind": "text_inline", "blank": "なし", "show": "always", "item_field": null },
+        { "key": "growth_until_final", "label": "最終年度に至るまでの育ちに関する事項", "kind": "text_block", "blank": "", "show": "always", "item_field": null }
+      ]
+    }
+  ]
+}
