@@ -28,6 +28,8 @@ def test_config_shape() -> None:
     assert body["default_user_id"] == "caregiver"
     for key in ("memory_connected", "rag_connected", "passcode_required", "model"):
         assert key in body
+    # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（児童票は配線済み）。
+    assert "child_record" in body["docx_kinds"]
 
 
 def test_static_ui_served() -> None:
@@ -310,6 +312,30 @@ def test_export_pdf_sparse_entry_still_renders() -> None:
 
 def test_export_pdf_invalid_kind_400() -> None:
     r = _client().post("/api/export-pdf", json={"kind": "weekly", "entry": _edit_diary_entry()})
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_request"
+
+
+# ──────────── 園の実 Word 様式（/api/export-docx・Word 編集用の最終形・python-docx） ────────────
+
+
+def _assert_is_docx(r) -> None:
+    assert r.status_code == 200
+    assert "wordprocessingml.document" in r.headers["content-type"]
+    assert r.content[:2] == b"PK"  # docx = zip
+    assert "filename*=UTF-8''" in r.headers.get("content-disposition", "")
+
+
+def test_export_docx_child_record_returns_docx() -> None:
+    r = _client().post(
+        "/api/export-docx", json={"kind": "child_record", "entry": _edit_child_record_entry()}
+    )
+    _assert_is_docx(r)
+
+
+def test_export_docx_unsupported_kind_400() -> None:
+    """docx 未対応の kind（現状 diary 等）は 400 で正直に返す（握りつぶさない）。"""
+    r = _client().post("/api/export-docx", json={"kind": "diary", "entry": _edit_diary_entry()})
     assert r.status_code == 400
     assert r.json()["code"] == "invalid_request"
 

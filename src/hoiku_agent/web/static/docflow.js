@@ -364,35 +364,66 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       : `${iconHTML("check")}必須項目を満たしています`;
   }
 
-  // 園の帳票PDF（現場でそのまま綴じる最終形）をダウンロードする永続アクション行。
-  // editBar は承認時に clear されるため、ここは別行にして下書き段でも承認後でも押せるようにする。
-  function pdfDownloadRow(editor, docKind) {
-    const row = el("div", "doc-actions");
-    const btn = el("button", "btn btn-ghost btn-sm", `${iconHTML("download")}帳票PDFをダウンロード`);
+  // 受け取った blob をファイルとしてダウンロードさせる（PDF/Word 共通）。
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = el("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // ダウンロードボタン1つ分（busy 表示・失敗バナー・完了復帰を共通化）。fetcher は {blob,filename} を返す。
+  function downloadButton(label, title, busyLabel, errLabel, fetcher) {
+    const btn = el("button", "btn btn-ghost btn-sm", `${iconHTML("download")}${label}`);
     btn.type = "button";
-    btn.title = "園の様式（帳票）の PDF を保存します";
+    btn.title = title;
     btn.onclick = async () => {
       btn.disabled = true;
       const orig = btn.innerHTML;
-      btn.innerHTML = `<span class="spinner"></span>PDFを作成中…`;
+      btn.innerHTML = `<span class="spinner"></span>${busyLabel}`;
       try {
-        const { blob, filename } = await adk.exportPdf(docKind, editor.collect());
-        const url = URL.createObjectURL(blob);
-        const a = el("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        const { blob, filename } = await fetcher();
+        saveBlob(blob, filename);
       } catch (e) {
-        banner(area, "err", "帳票PDFの作成に失敗: " + e.message);
+        banner(area, "err", errLabel + ": " + e.message);
       } finally {
         btn.disabled = false;
         btn.innerHTML = orig;
       }
     };
-    row.appendChild(btn);
+    return btn;
+  }
+
+  // 確定書類のダウンロード行（永続アクション）。editBar は承認時に clear されるため別行にして、
+  // 下書き段でも承認後でも押せるようにする。綴じる確定版＝帳票PDF、Word 編集版＝園の実 Word 様式（対応 kind のみ）。
+  function pdfDownloadRow(editor, docKind) {
+    const row = el("div", "doc-actions");
+    row.appendChild(
+      downloadButton(
+        "帳票PDFをダウンロード",
+        "園の様式（帳票）の PDF を保存します",
+        "PDFを作成中…",
+        "帳票PDFの作成に失敗",
+        () => adk.exportPdf(docKind, editor.collect()),
+      ),
+    );
+    // 園の実 Word 様式に流し込み対応済みの書類だけ Word ボタンを添える（config の docx_kinds で出し分け）。
+    const docxKinds = (adk.config() && adk.config().docx_kinds) || [];
+    if (docxKinds.includes(docKind)) {
+      row.appendChild(
+        downloadButton(
+          "Word様式でダウンロード",
+          "園の Word 様式に流し込んで保存します（Word で微修正・印刷できます）",
+          "Word様式を作成中…",
+          "Word様式の作成に失敗",
+          () => adk.exportDocx(docKind, editor.collect()),
+        ),
+      );
+    }
     editor.panel._body.appendChild(row);
   }
 

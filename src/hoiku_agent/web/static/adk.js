@@ -214,6 +214,28 @@ export async function exportPdf(kind, entry) {
   return { blob, filename };
 }
 
+// 確定 entry を園の実 Word 様式（.docx）へ流し込んで受け取る（Word 編集用の最終形）。{ blob, filename } を返す。
+export async function exportDocx(kind, entry) {
+  const r = await fetch("/api/export-docx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, entry }),
+  });
+  if (!r.ok) throw new Error("Word様式の生成に失敗 (" + r.status + ")");
+  const blob = await r.blob();
+  let filename = "書類.docx";
+  const cd = r.headers.get("content-disposition") || "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (m) {
+    try {
+      filename = decodeURIComponent(m[1]);
+    } catch {
+      /* 壊れていれば既定名で保存する */
+    }
+  }
+  return { blob, filename };
+}
+
 export async function createSession(state) {
   const r = await fetch(`/apps/${app()}/users/${uid()}/sessions`, {
     method: "POST",

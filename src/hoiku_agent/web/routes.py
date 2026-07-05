@@ -28,6 +28,8 @@ from ..harness import notation_store, policy_store, record_store
 from ..harness.finalize import finalize_entry
 from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, ThreeViewpoint
 from .chohyo_pdf import render_pdf
+from .docx_fill import fill_docx
+from .docx_fill import supported_kinds as docx_supported_kinds
 from .iap import verified_iap_email
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
@@ -115,8 +117,8 @@ class RecordApproveRequest(BaseModel):
     actor: str = ""
 
 
-def _pdf_filename(kind: str, entry: dict) -> str:
-    """帳票PDF のダウンロード名（日本語。RFC5987 で Content-Disposition に載せる）。"""
+def _doc_filename(kind: str, entry: dict, ext: str) -> str:
+    """書類のダウンロード名（日本語。RFC5987 で Content-Disposition に載せる）。ext は "pdf"/"docx"。"""
     if kind == "monthly":
         stem = f"月案_{entry.get('month') or ''}_{entry.get('child_id') or ''}".rstrip("_")
     elif kind == "child_record":
@@ -127,7 +129,7 @@ def _pdf_filename(kind: str, entry: dict) -> str:
         )
     else:
         stem = f"保育日誌_{entry.get('date') or ''}".rstrip("_")
-    return f"{stem or '書類'}.pdf"
+    return f"{stem or '書類'}.{ext}"
 
 
 def _is_authed(request: Request) -> bool:
@@ -183,6 +185,8 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "passcode_required": bool(settings.demo_passcode),
             "model": settings.gemini_model,
             "user_email": verified_iap_email(request),
+            # 園の実 Word 様式（.docx）流し込みに対応済みの kind＝UI が Word ダウンロードの出し分けに使う。
+            "docx_kinds": docx_supported_kinds(),
         }
 
     @app.get("/api/policy")
@@ -340,12 +344,35 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             pdf = render_pdf(req.kind, req.entry, past_entries)
         except ValueError as e:
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
-        filename = _pdf_filename(req.kind, req.entry)
+        filename = _doc_filename(req.kind, req.entry, "pdf")
         # ASCII フォールバック＋RFC5987（UTF-8）で日本語ファイル名を両載せする。
         disposition = f"attachment; filename=\"document.pdf\"; filename*=UTF-8''{quote(filename)}"
         return Response(
             content=pdf,
             media_type="application/pdf",
+            headers={"Content-Disposition": disposition},
+        )
+
+    @app.post("/api/export-docx")
+    def web_export_docx(req: ExportPdfRequest):
+        """確定 entry を園の実 Word 様式（.docx）へ流し込んで返す（Word 編集用の最終形・§11/§18）。
+
+        帳票PDF（`/api/export-pdf`）が「綴じる確定版」なのに対し、こちらは保育士が Word で微修正・
+        印刷できる編集版。実体は web/docx_fill（python-docx で `web/templates/*.docx` を埋めるだけ・
+        描画のみ＝型の保証は harness＝§5）。docx→PDF のサーバ変換はしない（重い依存を持ち込まない）。
+        未対応 kind・entry 不正は 400（握りつぶさず可視化）。LLM 非課金で非ゲート。
+        """
+        try:
+            data = fill_docx(req.kind, req.entry)
+        except ValueError as e:
+            return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
+        filename = _doc_filename(req.kind, req.entry, "docx")
+        disposition = f"attachment; filename=\"document.docx\"; filename*=UTF-8''{quote(filename)}"
+        return Response(
+            content=data,
+            media_type=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
             headers={"Content-Disposition": disposition},
         )
 
