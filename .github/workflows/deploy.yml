@@ -9,12 +9,17 @@
 #   2. リポジトリ変数（Settings > Secrets and variables > Actions > Variables）:
 #        GCP_PROJECT_ID / GCP_REGION / CLOUD_RUN_SERVICE / WIF_PROVIDER / DEPLOY_SA
 #      推奨: RUNTIME_SA（Cloud Run の実行 SA＝最小権限。未設定だと既定 Compute SA=過剰権限に降格・警告を出す）
-#      任意: GEMINI_MODEL / RAG_CORPUS / AGENT_ENGINE_ID / CLOUDSQL_INSTANCE / IAP_AUDIENCE
+#      任意: GEMINI_MODEL / MODEL_LOCATION（生成モデルの location・既定 global＝gemini-3.5-flash 用）/
+#            RAG_CORPUS / AGENT_ENGINE_ID / CLOUDSQL_INSTANCE / IAP_AUDIENCE
 #            MAX_INSTANCES（インスタンス上限＝コスト/濫用の実質ストッパ・既定 4）
 #            DATABASE_URL_SECRET（Secret Manager のシークレット名＝推奨の DB 接続注入経路）
 #      （未設定なら RAG/Memory/DB（アーカイブ＋指針）は降格＝§9/Phase 1/2）。
 #      任意 secret: DATABASE_URL（Secret Manager を使わない場合の後方互換フォールバック＝平文 env 注入。
 #        推奨は上の DATABASE_URL_SECRET（Secret Manager にパスワードを置き Cloud Run が参照）。
+#        DEMO_PASSCODE（LLM を回す口のゲート＝公開/パスコード運用のコスト・濫用対策。--set-env-vars は
+#        全置換ゆえ CI で明示管理しないと再デプロイのたびに落ちてゲートが外れる。IAP 環境でも二重防御に残せる）。
+#   認証ポリシー: IAP_AUDIENCE を設定した環境は IAP ゲート（Google アカウント認証）を維持＝`--iap`＋
+#      `--no-allow-unauthenticated`（公開しない）。未設定は従来どおり公開＋パスコード（`--allow-unauthenticated`）。
 #   WIF/変数が未設定なら job は skip する（誤発火・赤化を避ける）。決定論 CI（ci.yml）とは別物。
 
 name: Deploy (Cloud Run)
@@ -61,6 +66,9 @@ jobs:
         #     どちらも未設定なら降格（record_store は skipped/空・policy_store はローカル）。
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # LLM を回す口のゲート（公開/パスコード運用時のコスト・濫用対策）。--set-env-vars は全置換ゆえ
+          # ここで明示管理しないと自動デプロイのたびに落ちてゲートが外れる（GH secret に置く）。
+          DEMO_PASSCODE: ${{ secrets.DEMO_PASSCODE }}
         run: |
           # 実行 SA（最小権限）＝セキュリティ MUST。未設定は既定 Compute SA（Editor 相当を持ちうる）へ降格し警告する。
           EXTRA_FLAGS=()
@@ -74,7 +82,18 @@ jobs:
           MAX_INSTANCES="${{ vars.MAX_INSTANCES }}"
           MAX_INSTANCES="${MAX_INSTANCES:-4}"
 
-          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
+          # 生成モデルの location（既定モデル gemini-3.5-flash は Vertex global 専用＝models.build_model）。
+          # RAG/Memory の GOOGLE_CLOUD_LOCATION（regional）とは分離する（§11）。既定 global。
+          MODEL_LOCATION="${{ vars.MODEL_LOCATION }}"
+          MODEL_LOCATION="${MODEL_LOCATION:-global}"
+
+          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,MODEL_LOCATION=$MODEL_LOCATION,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
+
+          # DEMO_PASSCODE（LLM を回す口のゲート）を設定時のみ注入する。未設定なら注入しない
+          # （＝ゲート無効）。IAP 有効環境でも二重防御として維持できる（§ Phase 3）。
+          if [ -n "$DEMO_PASSCODE" ]; then
+            ENV_VARS="$ENV_VARS,DEMO_PASSCODE=$DEMO_PASSCODE"
+          fi
 
           # DB 接続の注入：Secret Manager（推奨）優先／無ければ GH secret の平文 env へフォールバック。
           if [ -n "${{ vars.DATABASE_URL_SECRET }}" ]; then
@@ -84,10 +103,15 @@ jobs:
             ENV_VARS="$ENV_VARS,DATABASE_URL=$DATABASE_URL"
           fi
 
-          # IAP（Phase 3 認証）は任意配線：vars.IAP_AUDIENCE を設定した場合のみ JWT 検証が有効になる
-          # （IAP 自体の有効化＝`gcloud run services update --iap` は運用側の操作。未設定は従来どおり）。
+          # 認証ポリシー：vars.IAP_AUDIENCE を設定した環境は IAP ゲート（Google アカウント認証）を
+          # 維持し公開しない＝`--iap`（IAP 有効を再宣言・冪等）＋`--no-allow-unauthenticated`（allUsers を
+          # invoker にしない）。同時に JWT 検証用に IAP_AUDIENCE を env へ注入する（web/iap.py）。
+          # 未設定は従来どおり公開＋パスコード運用（`--allow-unauthenticated`）。
           if [ -n "${{ vars.IAP_AUDIENCE }}" ]; then
             ENV_VARS="$ENV_VARS,IAP_AUDIENCE=${{ vars.IAP_AUDIENCE }}"
+            EXTRA_FLAGS+=(--iap --no-allow-unauthenticated)
+          else
+            EXTRA_FLAGS+=(--allow-unauthenticated)
           fi
           if [ -n "${{ vars.CLOUDSQL_INSTANCE }}" ]; then
             EXTRA_FLAGS+=(--add-cloudsql-instances "${{ vars.CLOUDSQL_INSTANCE }}")
@@ -99,7 +123,6 @@ jobs:
             --platform managed \
             --min-instances 0 \
             --max-instances "$MAX_INSTANCES" \
-            --allow-unauthenticated \
             --labels "component=web,managed-by=github-actions" \
             "${EXTRA_FLAGS[@]}" \
             --set-env-vars "$ENV_VARS"
