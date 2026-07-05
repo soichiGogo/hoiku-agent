@@ -31,7 +31,10 @@
   （draft.py）・帳票PDF（web/chohyo_pdf の線形様式）・編集フォーム（web/docedit.js・`/api/doc-template`＝`book_view`）が
   本文セクションの順序/ラベルをここから取る（レイアウトの三重管理を解消・§18）。レイアウトのデータのみ（validation は
   持たない＝型の保証は schema_check・§5）。置き場は policy_store/notation_store と同型＝明示 path ＞ `DATABASE_URL`
-  （`template_books` 1行 JSONB・version 楽観ロック・行不在はローカルシード）＞ ローカル `knowledge/様式テンプレート.json`
+  （`template_books` 1行 JSONB・version 楽観ロック・行不在はローカルシード。**DB 到達不能／テーブル未整備＝migration 0005
+  未適用等の DB 障害も同梱シードへ降格**＝テンプレは全書類の write_*／帳票PDF／編集フォームが確定処理で必ず読むため
+  fail-loud だと全生成が落ちる。レイアウトは常にシードで代替可＝§5「降格safe」。`store_status` は DB を直接叩いて到達性を
+  正直表示）＞ ローカル `knowledge/様式テンプレート.json`
   （git はシード・migration 0005）。編集 UI は現状スコープ外（園差の実需で後続）。児童票の帳票PDF は年間マトリクス様式
   （線形でない）ため対象外。
 - `notation_store.py` … **ひらがな表記DX＝表記ルール辞書＋決定的な正規化器**（「子供→子ども」等の置換・混入
