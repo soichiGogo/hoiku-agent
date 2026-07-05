@@ -81,6 +81,19 @@ export async function getFormMeta() {
   _formMeta = await (await fetch("/api/form-meta")).json();
   return _formMeta;
 }
+
+let _docTemplate = null;
+// 様式テンプレート（本文セクションの順序・ラベル・種別）。編集フォームが本文の並び/見出しに使う。
+// 取得失敗は空 templates（フロントは既定順にフォールバック）。
+export async function getDocTemplate() {
+  if (_docTemplate) return _docTemplate;
+  try {
+    _docTemplate = await (await fetch("/api/doc-template")).json();
+  } catch {
+    _docTemplate = { templates: {} };
+  }
+  return _docTemplate;
+}
 // 保育士の編集後 entry を harness で再検査・再整形する（決定的ロジックは harness 側）。
 export async function finalizeEdit(kind, entry, docDate) {
   const r = await fetch("/api/finalize-edit", {
@@ -202,6 +215,28 @@ export async function exportPdf(kind, entry) {
   const blob = await r.blob();
   // Content-Disposition の filename*（RFC5987・UTF-8）からダウンロード名を取り出す。
   let filename = kind === "monthly" ? "月案.pdf" : "保育日誌.pdf";
+  const cd = r.headers.get("content-disposition") || "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (m) {
+    try {
+      filename = decodeURIComponent(m[1]);
+    } catch {
+      /* 壊れていれば既定名で保存する */
+    }
+  }
+  return { blob, filename };
+}
+
+// 確定 entry を園の実 Word 様式（.docx）へ流し込んで受け取る（Word 編集用の最終形）。{ blob, filename } を返す。
+export async function exportDocx(kind, entry) {
+  const r = await fetch("/api/export-docx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, entry }),
+  });
+  if (!r.ok) throw new Error("Word様式の生成に失敗 (" + r.status + ")");
+  const blob = await r.blob();
+  let filename = "書類.docx";
   const cd = r.headers.get("content-disposition") || "";
   const m = cd.match(/filename\*=UTF-8''([^;]+)/i);
   if (m) {

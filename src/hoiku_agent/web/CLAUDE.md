@@ -80,17 +80,27 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 ## 物理マッピング
 
 - `routes.py` … `register_web_ui(app)`（server.py が1回呼ぶ）。`/api/config`・`/api/policy`（**指針カード＋履歴＋store**・
-  `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/finalize-edit`**（編集後 entry を
+  `policy_store.book_view`）・`/api/gate`・**`/api/form-meta`**（タグ語彙＝schemas Enum）・**`/api/doc-template`**（様式テンプレート＝本文セクションの順序/ラベル/種別＝`template_store.book_view`・編集フォームが使う・読取非ゲート・壊れは空で 200）・**`/api/finalize-edit`**（編集後 entry を
   harness の `finalize_entry` で再検査・再整形＝中継のみ・LLM 非課金で非ゲート）・**`/api/export-pdf`**（確定 entry を
   `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート。児童票は同じ子の保存済み児童票を
-  アーカイブから引いて past_entries で渡す＝年間マトリクスの過去期埋め込み・未接続は降格）・**`/api/records`／`/api/records/approve`／
+  アーカイブから引いて past_entries で渡す＝年間マトリクスの過去期埋め込み・未接続は降格）・**`/api/export-docx`**（確定 entry を
+  `docx_fill.fill_docx` で園の実 Word 様式に流し込んで返す＝Word 編集版・描画のみ・非ゲート・未対応 kind は 400。対応 kind は
+  `/api/config` の `docx_kinds` で UI に伝えボタン出し分け）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
   リテラル路 diary-entries より後に宣言し優先させる）／`/api/children`**（書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
   **書込＝POST のみパスコードゲート**・読み取りは素通し）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
   辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
-- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み児童票で自動埋め＝`assign_period_columns`））。
+- `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案/保育要録＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み児童票で自動埋め＝`assign_period_columns`））。
+  **線形様式（日誌/月案/要録）の本文セクション順序・ラベルは `template_store` から駆動**（テキスト整形と共通の SSOT・種別→flowable は chohyo_pdf が持つ）。児童票マトリクスは対象外。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
+- `docx_fill.py` … 確定 entry → **園の実 Word 様式（`web/templates/*.docx`）へ流し込んだ .docx**（`fill_docx(kind, entry)`＝
+  python-docx で見出し語からセルを同定して埋める）。帳票PDF が「綴じる確定版」なのに対し**Word 編集版**（保育士が Word で
+  微修正・印刷）。純 pip・システムライブラリ不要＝Dockerfile 不変（雛形は `web/templates/` 同梱・実行時に外部取得しない）。
+  **docx→PDF のサーバ変換はしない**（重い依存を持ち込まない）。描画のみ（型の保証は harness＝§5）。配線済み＝児童票
+  （5領域×子どもの姿）／月案（園フォーム＝クラス月案・個別出力を「個人目標」小表へ写像・クラス欄は保育士記入で温存・
+  0-2 フォームのみ小表あり・3-5 はヘッダのみ）／保育要録（公式様式＝こども家庭庁 保育所児童保育要録の「保育に関する記録」の
+  括弧ラベル直下＋列4へ追記・ラベルは残す）。`_FILLERS` に kind 追加で拡張。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
 - `iap.py` … IAP for Cloud Run の検証済み identity 取得（`verified_iap_email`）。`IAP_AUDIENCE` 設定時のみ
@@ -101,11 +111,14 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `static/` … 保育士 SPA。**タブは4つ**：**書類を作る**（日誌/月案/児童票を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
   種別を切替。フロー本体は共通で入力欄と seed だけ切替・対象児コンボは共有・結果エリアは種別ごとに保持・生成中は種別切替をロック。
   バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1）／指針を育てる／表記ルール／**書類を見る**（アーカイブ閲覧）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取）／`docflow.js`（日誌・月案・児童票 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
-  `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
-  欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`notation.js`（表記ルール＝
+  `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」＋対応 kind のみ「Word様式でダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
+  欄ごと入力・タグ多選択・collect()→entry。**本文セクションの順序/ラベルは `/api/doc-template`（様式テンプレート）から駆動**＝ヘッダ・widget・collect はコード・
+  未取得は既定順フォールバック）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`notation.js`（表記ルール＝
   `/api/notation` の CRUD UI・変換元→変換先の一覧・有効/無効トグル・インライン編集・保存先の永続性を正直表示）／`records.js`（書類を見る＝`GET /api/records`（種別フィルタ）で一覧→行クリックで
   `GET /api/records/{id}` を引き現行版の整形テキスト＋帳票PDF ボタンを描く読取専用ビュー・タブを開くたび最新化・未接続/空/障害は正直に降格）／`ui.js`・`app.js`・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
+- `templates/` … `docx_fill` が流し込む**園の実 Word 様式（空欄フォーム・PII なし）**：`child_record.docx`（保育経過記録）・
+  `monthly_0_2.docx`／`monthly_3_5.docx`（月間指導計画）。`COPY src ./src` で同梱＝実行時に外部取得しない（ローカル完結）。
 
 ## 入口
 

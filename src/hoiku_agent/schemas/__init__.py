@@ -19,6 +19,7 @@ from .document import (
 from .domain import FiveDomains, TenNoSugata, ThreeViewpoint
 from .enums import AgeBand, Certainty, Lineage
 from .notation import NotationBook, NotationKind, NotationRule
+from .template import DocTemplate, Section, SectionKind, ShowRule, TemplateBook
 from .policy import (
     PolicyBook,
     PolicyCard,
@@ -63,4 +64,10 @@ __all__ = [
     "NotationKind",
     "NotationRule",
     "NotationBook",
+    # template（様式テンプレート＝本文レイアウトの宣言的データ・§18）
+    "SectionKind",
+    "ShowRule",
+    "Section",
+    "DocTemplate",
+    "TemplateBook",
 ]
