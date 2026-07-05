@@ -31,6 +31,8 @@ _SESSIONS: dict[str, tuple[Any, str]] = {}
 class ImproveRequest(BaseModel):
     diff: str
     feedback: str | None = None
+    # 保育士が選んだ対象書類（PolicyScope 値・None＝すべて＝AI 判断）。
+    target_scope: str | None = None
     session_id: str | None = None  # フロントが採番（resume と対応づけ）
 
 
@@ -40,10 +42,19 @@ class ImproveResumeRequest(BaseModel):
     answer: str
 
 
-def _build_input(diff: str, feedback: str | None) -> str:
+def _build_input(diff: str, feedback: str | None, target_scope: str | None = None) -> str:
     parts = [f"保育士の修正メモ:\n{diff}"]
     if feedback:
         parts.append(f"\nフィードバック(👍👎):\n{feedback}")
+    if target_scope:
+        # 保育士が UI で対象書類を選んでいる＝どの書類のための気づきかが確定済み。scope の既定にする
+        # （ただし内容的に共通＝全書類向きだと判断したら「共通では?」と提案してよい＝勝手には変えない）。
+        parts.append(
+            f"\n保育士が指定した対象書類: {target_scope}"
+            "（この気づきの反映先。原則この scope をカードの scope の既定にしてください。"
+            "ただし内容が明らかに全書類向き＝『共通』が適切だと判断したら、決めつけず ask_caregiver で"
+            "『共通（すべての書類）にしますか？』と提案してから決めてください。保育士の選択を勝手に変えない）。"
+        )
     parts.append(
         "\n上記から育つ指針カードの追加/改訂案を作り、既存カードと意味的に競合しないか精査してください。"
         "競合があれば該当カードと比較相談し、保育士の決定で即反映（commit_policy_card）してください。"
@@ -135,7 +146,8 @@ def register_improver_route(app: FastAPI) -> None:
         improve_sid = req.session_id or session.id
         _SESSIONS[improve_sid] = (runner, session.id)
         message = types.Content(
-            role="user", parts=[types.Part(text=_build_input(req.diff, req.feedback))]
+            role="user",
+            parts=[types.Part(text=_build_input(req.diff, req.feedback, req.target_scope))],
         )
         return StreamingResponse(
             _stream_run(runner, session.id, message, improve_sid),
