@@ -158,8 +158,8 @@ def test_render_for_doc_common_plus_scope_only():
 def test_render_for_doc_empty_scope_shows_unregistered():
     """当該 scope にカードが無ければ共通＋「（未登録）」を返す（空文字にはしない）。"""
     book = ps.add_card(PolicyBook(), _card("card-0001", PolicyScope.共通, "個人名を書かない"))
-    text = ps.render_for_doc(book, PolicyScope.児童票)
-    assert "### 児童票（期ごとの保育経過記録）" in text
+    text = ps.render_for_doc(book, PolicyScope.保育経過記録)
+    assert "### 保育経過記録（期ごと）" in text
     assert "- （未登録）" in text
     assert "- 個人名を書かない" in text
 
@@ -172,19 +172,19 @@ def test_render_for_doc_scope_common_no_duplicate_section():
 
 
 def test_child_record_scope_renders_and_views(when=T):
-    """児童票 scope が render・active_cards・view マップに相乗りしている（§19・二重実装しない）。"""
+    """保育経過記録 scope が render・active_cards・view マップに相乗りしている（§19・二重実装しない）。"""
     book = ps.add_card(
         PolicyBook(),
-        _card("card-0001", PolicyScope.児童票, "開示前提で肯定的に書く"),
+        _card("card-0001", PolicyScope.保育経過記録, "開示前提で肯定的に書く"),
     )
-    # 全再生に児童票の節と本文が出る
+    # 全再生に保育経過記録の節と本文が出る
     text = ps.render_to_text(book)
-    assert "### 児童票（期ごとの保育経過記録）" in text
+    assert "### 保育経過記録（期ごと）" in text
     assert "- 開示前提で肯定的に書く" in text
     # scope 絞り込み・view マップ（doc_type/label）も対応
-    assert [c.id for c in ps.active_cards(book, PolicyScope.児童票)] == ["card-0001"]
+    assert [c.id for c in ps.active_cards(book, PolicyScope.保育経過記録)] == ["card-0001"]
     assert ps.card_view(ps.find_card(book, "card-0001"))["doc_type"] == "child_record"
-    assert ps.card_view(ps.find_card(book, "card-0001"))["doc_label"] == "児童票"
+    assert ps.card_view(ps.find_card(book, "card-0001"))["doc_label"] == "保育経過記録"
 
 
 def test_card_view_hides_seed_source():

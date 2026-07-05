@@ -35,7 +35,7 @@ def test_continuity_tool_wiring_author_and_reviewer():
 
 
 def test_child_record_author_shape():
-    """児童票 author は単一 LlmAgent・output_key="draft"（日誌/月案と共通の受け渡し＝§6/§19）。"""
+    """保育経過記録 author は単一 LlmAgent・output_key="draft"（日誌/月案と共通の受け渡し＝§6/§19）。"""
     pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync で有効化）")
     from hoiku_agent.agents.child_record_author_agent import build_child_record_author_agent
 

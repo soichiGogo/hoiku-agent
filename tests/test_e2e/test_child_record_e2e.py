@@ -1,13 +1,13 @@
-"""決定論E2E（結合テスト）：児童票パイプライン＋doc_type 分岐＋L3 還流を LLM 非依存に通す。
+"""決定論E2E（結合テスト）：保育経過記録パイプライン＋doc_type 分岐＋L3 還流を LLM 非依存に通す。
 
-設計コンテキスト §19（児童票＝期ごとの保育経過記録・L3 集積）/ §16。月案の test_monthly_e2e と
-対称に、児童票パスを実 ADK ランタイムで end-to-end に回す（creds 不要・無料・決定的）。担保する結合経路:
-  1. ルータ分岐   doc_type=="児童票" → child_record_pipeline
+設計コンテキスト §19（保育経過記録（期ごと）・L3 集積）/ §16。月案の test_monthly_e2e と
+対称に、保育経過記録パスを実 ADK ランタイムで end-to-end に回す（creds 不要・無料・決定的）。担保する結合経路:
+  1. ルータ分岐   doc_type=="保育経過記録" → child_record_pipeline
   2. L3 還流      期間中の日誌（state["period_entries"]）→ period_prep が child_id 別集計
                   → state["period_digest"]（要約は author・集計は harness）
   3. 確定         child_record finalize が ChildRecord を復元→検査→整形（final_document /
                   final_doc_kind="child_record"）
-  4. 降格         期間日誌が無くても空 digest で素通りし児童票は作れる（落ちない）
+  4. 降格         期間日誌が無くても空 digest で素通りし保育経過記録は作れる（落ちない）
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ def _child_record() -> dict:
 
 def _author_text(record: dict) -> str:
     return (
-        "期間集積から児童票の下書きを作成しました。\n```json\n"
+        "期間集積から保育経過記録の下書きを作成しました。\n```json\n"
         + json.dumps(record, ensure_ascii=False, indent=2)
         + "\n```"
     )
@@ -114,7 +114,7 @@ def _run(author_model, reviewer_model, initial_state: dict, session_id: str = "c
                 session_id=session_id,
                 new_message=types.Content(
                     role="user",
-                    parts=[types.Part(text="2026-04〜2026-06 の児童票を作成してください。")],
+                    parts=[types.Part(text="2026-04〜2026-06 の保育経過記録を作成してください。")],
                 ),
             )
         ]
@@ -127,11 +127,11 @@ def _run(author_model, reviewer_model, initial_state: dict, session_id: str = "c
 
 
 def test_child_record_path_aggregates_period_and_finalizes():
-    """① ルータ分岐（児童票）＋② L3 還流（期間集計）＋③ 児童票確定。"""
+    """① ルータ分岐（保育経過記録）＋② L3 還流（期間集計）＋③ 保育経過記録確定。"""
     author = FakeLlm(responses=[_author_text(_child_record())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
     state = {
-        "doc_type": "児童票",
+        "doc_type": "保育経過記録",
         "period_entries": [_period_entry(4, 10), _period_entry(5, 15), _period_entry(6, 12)],
     }
 
@@ -143,24 +143,24 @@ def test_child_record_path_aggregates_period_and_finalizes():
     assert digest["架空児A"]["note_count"] == 3
     # 月案の digest キーは汚さない（キー一般化の分離）
     assert final_state.get("prev_month_digest") is None
-    # ③ 確定：ChildRecord が復元・検査通過・児童票様式で整形される
+    # ③ 確定：ChildRecord が復元・検査通過・保育経過記録様式で整形される
     assert final_state.get("finalize_parse_error") is None
     assert final_state.get("validation") == []
-    assert "児童票・保育経過記録" in (final_state.get("final_document") or "")
+    assert "保育経過記録" in (final_state.get("final_document") or "")
     assert final_state.get("final_doc_kind") == "child_record"
     assert final_state.get("awaiting_caregiver_approval") is True
-    # ① 児童票 author が呼ばれた
+    # ① 保育経過記録 author が呼ばれた
     assert author.call_count == 1
     # custom BaseAgent（period_prep 等）が invocation_id を伝播している（ADK eval 整合の回帰防止）
     assert all(ev.invocation_id for ev in events)
 
 
 def test_period_prep_degrades_without_entries():
-    """期間日誌が無くても（初回）空 digest で素通りし児童票は作れる（降格・落ちない）。"""
+    """期間日誌が無くても（初回）空 digest で素通りし保育経過記録は作れる（降格・落ちない）。"""
     author = FakeLlm(responses=[_author_text(_child_record())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
 
-    final_state, _ = _run(author, reviewer, {"doc_type": "児童票"})
+    final_state, _ = _run(author, reviewer, {"doc_type": "保育経過記録"})
 
     assert final_state.get("period_digest") == {}
-    assert final_state.get("final_document")  # 初回でも児童票は確定下書きまで作る
+    assert final_state.get("final_document")  # 初回でも保育経過記録は確定下書きまで作る

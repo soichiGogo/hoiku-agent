@@ -7,8 +7,8 @@
 
 - **評価セットは `cases/` に ADK の evalset JSON（`*.evalset.json`）で置く。** 1ケース＝入力（観察メモ
   ＋DocumentSpec）と期待値（採点の根拠／`must_fix` 条件）。**15–30ケースで十分（数より質＝現場のリアルな失敗）。**
-  児童票（`child_record.*`）は `session_input.state` で doc_type/期間日誌を seed する（L3 還流＝§19）。
-  参照ドラフトの型検査は `tests/test_eval_cases.py` がファイル名で日誌/児童票を分岐する。
+  保育経過記録（`child_record.*`）は `session_input.state` で doc_type/期間日誌を seed する（L3 還流＝§19）。
+  参照ドラフトの型検査は `tests/test_eval_cases.py` がファイル名で日誌/保育経過記録を分岐する。
 - **judge プロンプトは `judges/` に置く。3軸固定（勝手に増減しない）**：
   ①指針整合（保育所保育指針への整合）②10の姿マッピング ③保護者向け表現の適切さ。
   各軸 LLM-judge を **0–1** で採点し、3軸平均をケーススコアとする。

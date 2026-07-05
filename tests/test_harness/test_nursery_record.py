@@ -1,7 +1,7 @@
 """保育要録 harness（validate_nursery_record_fields / write_nursery_record_draft / finalize）の単体テスト。
 
-設計コンテキスト §19（保育要録＝集積階層の最終段 L4・最終年度の児童票を集積）/ §16（決定的ロジックは
-pytest 必須）。LLM 非依存・高速。児童票（test_child_record.py）と対称の検査を要録でも担保する。
+設計コンテキスト §19（保育要録＝集積階層の最終段 L4・最終年度の保育経過記録を集積）/ §16（決定的ロジックは
+pytest 必須）。LLM 非依存・高速。保育経過記録（test_child_record.py）と対称の検査を要録でも担保する。
 要録は年長（5歳児）専用のため年齢分岐は実質 5領域に畳まれる（共通の _required_tag_type を流用）。
 """
 
@@ -175,7 +175,7 @@ def _cr(period: str, tag, desc: str, overall: str) -> _ChildRecord:
 
 
 def test_child_record_digest_aggregates_by_child_and_period():
-    """最終年度の児童票を child_id 別・期順に集計し、領域頻度・発達叙述・総合所見を事実として集める。"""
+    """最終年度の保育経過記録を child_id 別・期順に集計し、領域頻度・発達叙述・総合所見を事実として集める。"""
     records = [
         _cr("2026-04〜2026-07", FiveDomains.健康, "運動遊びに親しんだ", "自分を発揮し始めた"),
         _cr("2026-08〜2026-11", FiveDomains.人間関係, "友だちと協力した", "関わりが広がった"),
@@ -192,7 +192,7 @@ def test_child_record_digest_aggregates_by_child_and_period():
 def test_child_record_digest_empty_and_format_degrades():
     assert child_record_digest([]) == {}
     text = format_record_digest_for_prompt({}, label="最終年度")
-    assert "児童票データがありません" in text
+    assert "保育経過記録データがありません" in text
 
 
 def test_format_record_digest_lists_facts():

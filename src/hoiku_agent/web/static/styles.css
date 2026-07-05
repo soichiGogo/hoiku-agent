@@ -228,7 +228,7 @@ a{color:var(--primary-d)}
 .chip:disabled,.chip.is-locked{cursor:default;opacity:.55}
 .chip:disabled:hover,.chip.is-locked:hover{border-color:var(--line-strong)}
 
-/* 種別セグメント（書類を作る＝日誌/月案/児童票の切替）＝均等割の少し大きめチップ */
+/* 種別セグメント（書類を作る＝日誌/月案/保育経過記録の切替）＝均等割の少し大きめチップ */
 .seg{gap:var(--sp-2);margin-bottom:var(--sp-2)}
 .seg .chip{flex:1 1 0;justify-content:center;min-height:44px;padding:10px 14px;font-weight:600}
 /* 種別ごとの説明1行（hero の代替＝統合タブ内で選択中の書類を説明） */

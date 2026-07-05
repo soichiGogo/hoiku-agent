@@ -81,18 +81,21 @@ def test_commit_add_reflects_immediately(store):
 
 
 def test_commit_child_record_scope(store):
-    """児童票 scope も既存機構に相乗りして propose→commit できる（§19・二重実装しない）。"""
+    """保育経過記録 scope も既存機構に相乗りして propose→commit できる（§19・二重実装しない）。"""
     assert (
-        propose_policy_card("児童票", "身体測定値は創作しない（原簿系＝保育士が記入）")["status"]
+        propose_policy_card("保育経過記録", "身体測定値は創作しない（原簿系＝保育士が記入）")[
+            "status"
+        ]
         == "ok"
     )
     r = commit_policy_card(
-        "児童票", "身体測定値は創作しない（原簿系＝保育士が記入）", source="保育士C"
+        "保育経過記録", "身体測定値は創作しない（原簿系＝保育士が記入）", source="保育士C"
     )
     assert r["status"] == "committed"
-    assert r["card"]["doc_type"] == "child_record" and r["card"]["doc_label"] == "児童票"
+    assert r["card"]["doc_type"] == "child_record" and r["card"]["doc_label"] == "保育経過記録"
     assert any(
-        c.body.startswith("身体測定値") for c in ps.active_cards(ps.load_book(), PolicyScope.児童票)
+        c.body.startswith("身体測定値")
+        for c in ps.active_cards(ps.load_book(), PolicyScope.保育経過記録)
     )
 
 

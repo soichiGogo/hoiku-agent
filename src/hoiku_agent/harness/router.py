@@ -1,7 +1,7 @@
 """harness：doc_type 分岐ルータ（決定的）。
 
 設計コンテキスト §5「harness＝どの欄を・何の書類か」/ §10「doc_type／年齢分岐」。
-書類種別（保育日誌 / 月案 / 児童票 / 保育要録）で実行するパイプラインを決定的に振り分ける。分岐は
+書類種別（保育日誌 / 月案 / 保育経過記録 / 保育要録）で実行するパイプラインを決定的に振り分ける。分岐は
 LLM ではなく harness の制御（state["doc_type"] を読むだけ・"何を書くか" の判断は配下の LlmAgent）。
 
 root_agent（agent.py）の実体。`adk run` / `adk web` は doc_type を state に入れないため**既定は
@@ -33,9 +33,9 @@ _NURSERY_RECORD = "nursery_record_pipeline"
 
 
 class DocTypeRouter(BaseAgent):
-    """state["doc_type"] で日誌／月案／児童票／保育要録パイプラインを振り分ける（決定的・§10/§19）。
+    """state["doc_type"] で日誌／月案／保育経過記録／保育要録パイプラインを振り分ける（決定的・§10/§19）。
 
-    既定は保育日誌（doc_type 未設定＝既存デモの挙動）。doc_type=="月案" は月案、"児童票" は児童票、
+    既定は保育日誌（doc_type 未設定＝既存デモの挙動）。doc_type=="月案" は月案、"保育経過記録" は保育経過記録、
     "保育要録" は要録（L4）のパイプラインへ。選んだサブパイプラインの確定処理（after_agent_callback の
     書き戻し含む）はそのまま委譲する。
     """
@@ -44,7 +44,7 @@ class DocTypeRouter(BaseAgent):
         doc_type = (ctx.session.state.get("doc_type") or "").strip()
         if doc_type == "月案":
             target_name = _MONTHLY
-        elif doc_type == "児童票":
+        elif doc_type == "保育経過記録":
             target_name = _CHILD_RECORD
         elif doc_type == "保育要録":
             target_name = _NURSERY_RECORD
@@ -62,7 +62,7 @@ def build_root_agent(
 ) -> DocTypeRouter:
     """doc_type 分岐ルータ（root_agent の実体）を構築する（§10/§19）。
 
-    日誌・月案・児童票のパイプラインを子に持ち、doc_type で選ぶ。author_model/reviewer_model は
+    日誌・月案・保育経過記録のパイプラインを子に持ち、doc_type で選ぶ。author_model/reviewer_model は
     通常 None（実 Gemini）。テストでは FakeLlm を各パイプラインへ注入できる。
     """
     diary = build_document_pipeline(author_model, reviewer_model)
