@@ -220,6 +220,34 @@ def test_touch_user_degrades(monkeypatch, db):
     assert rs.touch_user("sensei@example.com", now=_NOW)["status"] == "skipped"  # DB 未設定
 
 
+def test_upsert_child_creates_fills_birthdate_and_is_idempotent(db):
+    r1 = rs.upsert_child("つむぎちゃん", birthdate=date(2021, 11, 18), now=_NOW)
+    assert r1["status"] == "created"
+    assert r1["display_name"] == "つむぎちゃん"
+    assert r1["birthdate"] == "2021-11-18"
+    # 2回目は既存＝重複を作らない（表示名 upsert）。
+    r2 = rs.upsert_child("つむぎちゃん", birthdate=date(2000, 1, 1), now=_NOW)
+    assert r2["status"] == "exists"
+    assert r2["birthdate"] == "2021-11-18"  # 既存の誕生日は上書きしない
+    names = [c["display_name"] for c in rs.list_children()]
+    assert names.count("つむぎちゃん") == 1
+
+
+def test_upsert_child_fills_missing_birthdate_on_existing_row(db):
+    # 先に誕生日なしで作られた行（例：書類の auto-create）に後から補完できる。
+    assert rs.upsert_child("れんくん", now=_NOW)["birthdate"] is None
+    r = rs.upsert_child("れんくん", birthdate=date(2021, 9, 3), now=_NOW)
+    assert r["status"] == "exists"
+    assert r["birthdate"] == "2021-09-03"
+
+
+def test_upsert_child_degrades(monkeypatch, db):
+    assert rs.upsert_child("", now=_NOW)["status"] == "skipped"  # 空名
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.upsert_child("つむぎちゃん", now=_NOW)["status"] == "skipped"  # DB 未設定
+
+
 # ──────────────────────────── 期間パース（seed の範囲解決・純関数） ────────────────────────────
 
 

@@ -383,6 +383,36 @@ def touch_user(email: str, *, now: datetime) -> dict:
         return {"status": "error", "detail": str(e)}
 
 
+def upsert_child(display_name: str, *, birthdate: date | None = None, now: datetime) -> dict:
+    """児童マスタへ表示名で upsert する（無ければ作成・誕生日を補完）。冪等。
+
+    表示名→children.id 解決の唯一の境界（`_resolve_child`）を共有する。園名簿の事前登録
+    （seed）や表示名の後付け整備に使う想定＝**実名は扱わず display_name は仮名**（§14）。
+    誕生日は年齢帯（0-2/3-5）自動判定の材料。既存行の誕生日は上書きしない（保育士が
+    後から DB で整えた値を壊さない）＝未設定のときだけ補完する。降格・空名は skipped。
+    """
+    display_name = display_name.strip()
+    eng = _engine()
+    if eng is None or not display_name:
+        return {"status": "skipped"}
+    try:
+        with Session(eng) as session, session.begin():
+            existing = session.scalar(sa.select(Child).where(Child.display_name == display_name))
+            created = existing is None
+            child = _resolve_child(session, display_name, now)
+            if birthdate is not None and child.birthdate is None:
+                child.birthdate = birthdate
+                child.updated_at = now
+            return {
+                "status": "created" if created else "exists",
+                "id": str(child.id),
+                "display_name": child.display_name,
+                "birthdate": child.birthdate.isoformat() if child.birthdate else None,
+            }
+    except SQLAlchemyError as e:
+        return {"status": "error", "detail": str(e)}
+
+
 def approve_document(kind: str, entry: dict, *, actor: str, now: datetime) -> dict:
     """書類を承認済み（approved）にし、証跡（audit action=approve）を残す。
 
