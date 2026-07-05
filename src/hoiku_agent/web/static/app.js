@@ -983,9 +983,10 @@ async function main() {
     }
     const t = DOC_TYPE_OF[key];
     // クラス月案はクラス単位なので上部の対象児コンボを隠す（他書類は対象児を使う）。
+    // .field-label は display:block を持つため [hidden] 属性では隠れない＝.hidden クラス（!important）で隠す。
     const needsChild = t.needsChild !== false;
-    $("doc-child-label").hidden = !needsChild;
-    $("doc-children").hidden = !needsChild;
+    $("doc-child-label").classList.toggle("hidden", !needsChild);
+    $("doc-children").classList.toggle("hidden", !needsChild);
     $("doc-desc").textContent = t.desc;
     $("doc-run-label").textContent = t.runLabel;
     status.clearPhase();
