@@ -307,6 +307,54 @@ def test_upsert_child_degrades(monkeypatch, db):
     assert rs.upsert_child("つむぎちゃん", now=_NOW)["status"] == "skipped"  # DB 未設定
 
 
+def test_honorific_and_name_helpers():
+    # 性別→敬称は固定（男→くん / 女→ちゃん）。呼び名＋敬称＝表示名（child_id 同定キー）。
+    assert rs.honorific_for("male") == "くん"
+    assert rs.honorific_for("female") == "ちゃん"
+    assert rs.honorific_for("") == "" and rs.honorific_for(None) == ""
+    assert rs.compose_display_name("はると", "male") == "はるとくん"
+    assert rs.compose_display_name("ゆい", "female") == "ゆいちゃん"
+    assert rs.compose_display_name("そら", "") == "そら"  # 性別不明は敬称なし
+    # 氏名欄＝姓＋名（全角空白区切り・空要素は詰める）。
+    assert rs.official_full_name("佐藤", "はると") == "佐藤　はると"
+    assert rs.official_full_name("", "はると") == "はると"
+    assert rs.official_full_name("", "") == ""
+
+
+def test_upsert_child_stores_real_name_and_gender(db):
+    r = rs.upsert_child(
+        "はるとくん", family_name="佐藤", given_name="はると", gender="male", now=_NOW
+    )
+    assert r["status"] == "created"
+    assert r["family_name"] == "佐藤" and r["given_name"] == "はると" and r["gender"] == "male"
+    assert r["official_name"] == "佐藤　はると"  # 氏名欄用の本名（姓＋名）
+    # get_child でも本名/性別を引ける（帳票PDF の氏名欄解決に使う）。
+    got = rs.get_child("はるとくん")
+    assert got["official_name"] == "佐藤　はると" and got["gender"] == "male"
+    # list_children にも新フィールドが乗る（UI の選択肢＋年齢帯判定）。
+    row = next(c for c in rs.list_children() if c["display_name"] == "はるとくん")
+    assert row["given_name"] == "はると" and row["official_name"] == "佐藤　はると"
+
+
+def test_upsert_child_fills_missing_name_fields_only(db):
+    # auto-create（書類登場）で display_name だけの行に、後から本名/性別を補完できる。
+    rs.upsert_child("ゆいちゃん", now=_NOW)
+    r = rs.upsert_child(
+        "ゆいちゃん", family_name="鈴木", given_name="ゆい", gender="female", now=_NOW
+    )
+    assert r["status"] == "exists" and r["official_name"] == "鈴木　ゆい"
+    # 既存の非空フィールドは上書きしない（保育士が整えた値を壊さない＝birthdate と同じ流儀）。
+    r2 = rs.upsert_child("ゆいちゃん", family_name="別姓", now=_NOW)
+    assert r2["family_name"] == "鈴木"
+
+
+def test_get_child_absent_and_degraded(monkeypatch, db):
+    assert rs.get_child("いないくん") is None  # 不在
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.get_child("はるとくん") is None  # 未接続降格
+
+
 # ──────────────────────────── 期間パース（seed の範囲解決・純関数） ────────────────────────────
 
 

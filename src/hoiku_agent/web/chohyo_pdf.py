@@ -422,7 +422,9 @@ def _entry_cells(entry: dict, row_labels: list[str]) -> dict[str, list[str]]:
     return cells
 
 
-def _child_record_story(entry: dict, past_entries: list[dict] | None = None) -> list:
+def _child_record_story(
+    entry: dict, past_entries: list[dict] | None = None, official_name: str | None = None
+) -> list:
     """児童票＝年間マトリクス（行＝領域×列＝4期）。各列に該当期の development_notes をタグで振り分けて描く。
 
     行ラベルは告示準拠（0–2＝3つの視点／3–5＝5領域）＋「その他」（枠組みタグの無い叙述と配慮・特記を集約）。
@@ -445,7 +447,8 @@ def _child_record_story(entry: dict, past_entries: list[dict] | None = None) -> 
     col_cells = {qi: _entry_cells(e, row_labels) for qi, e in columns.items()}
 
     # ── ヘッダ（年度・クラス・タイトル／担任印。児童名・生年月日欄は実様式どおり＝生年月日は手書き） ──
-    subject = entry.get("child_id") or "（対象児）"
+    # 児童名欄は本名（姓＋名）を優先＝official_name（児童マスタ由来・AI 非生成）。未登録は呼び名へ降格。
+    subject = official_name or entry.get("child_id") or "（対象児）"
     months = str(entry.get("age_months") or "").strip()
     head = Table(
         [
@@ -544,9 +547,10 @@ def _child_record_story(entry: dict, past_entries: list[dict] | None = None) -> 
 # →最終年度に至るまでの育ち）＝現場でそのまま綴じられる体裁にする。描画のみ（型の保証は harness＝§5）。
 
 
-def _nursery_record_story(entry: dict) -> list:
+def _nursery_record_story(entry: dict, official_name: str | None = None) -> list:
     age = entry.get("age_band") or "3-5"
-    subject = entry.get("child_id") or "（対象児）"
+    # 氏名欄は本名（姓＋名）を優先＝就学先引継ぎの公式様式。未登録は呼び名（child_id）へ降格。
+    subject = official_name or entry.get("child_id") or "（対象児）"
     months = str(entry.get("age_months") or "").strip()
     if months:
         subject = f"{subject}（{months}）"
@@ -583,12 +587,19 @@ _BUILDERS = {
 }
 
 
-def render_pdf(kind: str, entry: dict, past_entries: list[dict] | None = None) -> bytes:
+def render_pdf(
+    kind: str,
+    entry: dict,
+    past_entries: list[dict] | None = None,
+    official_name: str | None = None,
+) -> bytes:
     """確定 entry（dict）を帳票PDF（bytes）へ描画する。
     kind = "diary" | "monthly" | "child_record" | "nursery_record"。
 
     past_entries は児童票のみ有効＝同じ子の保存済み児童票（アーカイブ由来）。同じ年度のものだけ
     年間マトリクスの他の期の列に埋める（割当は assign_period_columns・今回の entry が常に優先）。
+    official_name は児童票/保育要録の**氏名欄**に描く本名（姓＋名・児童マスタ由来・AI 非生成）＝
+    未指定は呼び名（child_id）へ降格。日誌/月案は使わない（呼び名のまま）。
     描画のみ（型検査はしない＝空欄は空セルで出す）。entry が dict でない・kind 不正は ValueError。
     """
     if kind not in _BUILDERS:
@@ -614,7 +625,9 @@ def render_pdf(kind: str, entry: dict, past_entries: list[dict] | None = None) -
         }[kind],
     )
     if kind == "child_record":
-        doc.build(_child_record_story(entry, past_entries))
+        doc.build(_child_record_story(entry, past_entries, official_name))
+    elif kind == "nursery_record":
+        doc.build(_nursery_record_story(entry, official_name))
     else:
         doc.build(_BUILDERS[kind](entry))
     return buf.getvalue()
