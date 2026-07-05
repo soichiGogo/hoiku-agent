@@ -23,7 +23,7 @@ import os
 from pathlib import Path
 
 import sqlalchemy as sa
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ..schemas.template import DocTemplate, TemplateBook
@@ -74,11 +74,23 @@ def load_book_meta(path: Path | None = None) -> tuple[TemplateBook, int | None]:
 
     DB（DATABASE_URL 設定・path 未指定）で行不在なら 0＝create-only＋ローカルシードを返す。
     ローカルは None（precondition なし）。壊れ JSON は例外（読み手が降格して握る）。
+
+    **DB 到達不能／テーブル未整備（migration 0005 未適用）等の DB 障害は、常に同梱の
+    ローカルシード（git＋Docker COPY で必ず存在）へ降格して読む**（version=None＝precondition 不明）。
+    テンプレは全書類種別の write_*／帳票PDF／編集フォームが確定処理で必ず読むため、ここで送出すると
+    書類生成そのものが落ちる（本番で observed＝template_books 未作成で全 doc_type がクラッシュ）。
+    レイアウトのデータは常にシードで代替可能なので、DB 障害は fail-loud でなく降格が正しい
+    （notation_store.load_rules_or_empty と同じ「降格safe」哲学＝§5）。書込側は _db_active を独立に
+    見て DB へ書くため、この降格で偽の書込は起きない。
     """
     if _db_active(path):
-        eng = db.engine()
-        with Session(eng) as session:
-            row = session.get(TemplateBookRecord, _BOOK_ROW_ID)
+        try:
+            eng = db.engine()
+            with Session(eng) as session:
+                row = session.get(TemplateBookRecord, _BOOK_ROW_ID)
+        except SQLAlchemyError:
+            # DB 到達不能／テーブル未整備（migration 未適用）＝同梱シードへ降格し生成を止めない。
+            return _load_local(_TEMPLATE_PATH), None
         if row is None:
             return _load_local(_TEMPLATE_PATH), 0
         return TemplateBook.model_validate(row.book), row.version
@@ -166,11 +178,17 @@ def book_view(book: TemplateBook) -> dict:
 
 
 def store_status(path: Path | None = None) -> str:
-    """ストアの永続性を正直に表す（notation_store と対称）。"""
+    """ストアの永続性を正直に表す（notation_store と対称）。
+
+    DB 設定時は **DB を直接叩いて** 到達性を測る（`load_book` はシード降格するため偽の
+    "persistent" を出さない＝§5「偽の緑を出さない」）。テーブル未整備／到達不能は "unavailable"。
+    """
     if _db_active(path):
         try:
-            load_book()
-        except Exception:  # noqa: BLE001
+            eng = db.engine()
+            with Session(eng) as session:
+                session.get(TemplateBookRecord, _BOOK_ROW_ID)
+        except Exception:  # noqa: BLE001  到達不能/テーブル未整備＝シード降格で読めても永続ではない
             return "unavailable"
         return "persistent"
     path = path or _TEMPLATE_PATH

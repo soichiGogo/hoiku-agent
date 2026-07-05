@@ -119,3 +119,42 @@ def test_db_optimistic_lock_conflict(template_db):
 
 def test_db_store_status_persistent(template_db):
     assert ts.store_status() == "persistent"
+
+
+# ──────────────────────────── DB 障害＝同梱シードへ降格（本番の template_books 未整備の再現） ────────────────────────────
+
+
+@pytest.fixture()
+def template_db_missing_table(tmp_path, monkeypatch):
+    """DATABASE_URL は生きているが `template_books` テーブルが無い状態を作る（migration 0005 未適用の再現）。
+
+    `_TEMPLATE_PATH` は差し替えない＝**リポ同梱シード**（4種別入り）へ降格することを検証したいため。
+    """
+    import sqlalchemy as sa
+
+    from hoiku_agent.config import settings
+    from hoiku_agent.harness import db
+
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/broken.db")
+    db.reset_engine_cache()
+    with db.engine().begin() as conn:  # 接続はできるが template_books は作らない
+        conn.execute(sa.text("CREATE TABLE dummy (id INTEGER)"))
+    yield
+    db.reset_engine_cache()
+
+
+def test_load_template_degrades_to_seed_when_table_missing(template_db_missing_table):
+    """テーブル未整備（DB 障害）でも全 doc_type が同梱シードから引ける＝確定処理を落とさない（§5）。
+
+    本番で observed した致命バグの回帰防止：template_books 未作成で load_template が UndefinedTable を
+    送出し、write_*→finalize→FinalizeAgent 経由で全書類の生成がクラッシュ（フロントは「原因不明」表示）。
+    レイアウトは常にシードで代替可能なので DB 障害は fail-loud でなく降格が正しい。
+    """
+    for doc_type in ("diary", "monthly", "child_record", "nursery_record"):
+        tmpl = ts.load_template(doc_type)  # 送出せず同梱シードへ降格
+        assert tmpl.doc_type == doc_type and tmpl.sections
+
+
+def test_store_status_unavailable_when_table_missing(template_db_missing_table):
+    """DB 障害時はシード降格で読めても "persistent" と偽らない（正直な降格・偽の緑を出さない）。"""
+    assert ts.store_status() == "unavailable"
