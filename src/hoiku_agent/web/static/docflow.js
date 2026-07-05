@@ -190,10 +190,17 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   // 1 invocation を回し、ask_caregiver で止まったら質問カードを出して再開する。
   async function drive(sessionId, message, invocationId) {
     let pending = null;
+    let streamError = null;
     await adk.runSSE(
       sessionId,
       message,
       (ev) => {
+        // ADK はサーバ側で例外が起きると `{error: "..."}` を SSE で1本流す（content なし）。
+        // これを握らず捨てると finalize 不成立が「原因不明」に化けて診断できない（本番で observed）。
+        if (ev.error) {
+          streamError = ev.error;
+          return;
+        }
         const invId = ev.invocationId || ev.invocation_id;
         for (const it of adk.adkParts(ev)) {
           if (it.kind === "text" && it.text.trim()) {
@@ -235,6 +242,14 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       stepper.advanceTo(maxStep < 0 ? 0 : maxStep, "wait");
       phase("あなたの確認を待っています", "waiting");
       askCard(sessionId, pending);
+      return;
+    }
+    if (streamError) {
+      // サーバ側エラーは正直に見せる（偽の緑を出さない・実エラー文で診断可能に）。
+      procStop("生成に失敗しました");
+      const msg = streamError.length > 400 ? streamError.slice(0, 400) + " …" : streamError;
+      banner(area, "err", "生成中にサーバでエラーが発生しました: " + msg);
+      phase("生成に失敗しました", "waiting");
       return;
     }
     await finalizeView(sessionId);
