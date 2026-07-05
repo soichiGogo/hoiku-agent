@@ -27,6 +27,7 @@ from datetime import date
 from pydantic import BaseModel, ValidationError
 
 from ..schemas import ChildRecord, DiaryEntry, MonthlyPlan
+from . import notation_store
 from .draft import write_child_record_draft, write_draft, write_monthly_draft
 from .schema_check import (
     validate_child_record_fields,
@@ -43,11 +44,37 @@ class FinalizedDocument:
     problems: list[str] = field(default_factory=list)  # validate_* 違反（空＝充足）
     formatted: str | None = None  # write_* の整形済み出力
     parse_error: str | None = None  # JSON 抽出/検証失敗の理由（None＝成功）
+    # ひらがな表記DX：確定時に harness が決定的に整えた表記の変更点（§5）。UI 提示は現状しないが
+    # テスト・ログ・将来の「こう整えました」表示のために保持する（空＝変更なし/ストア未整備で降格）。
+    notation_changes: list[dict] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         """型として成立（パース成功かつ違反0）か。最終OK（確定）は別途 保育士＝HITL。"""
         return self.parse_error is None and not self.problems
+
+
+# 書類モデル型 → 正規化フィールド仕様のキー（notation_store.NARRATIVE_FIELDS）。
+_NOTATION_KIND = {DiaryEntry: "diary", MonthlyPlan: "monthly", ChildRecord: "child_record"}
+
+
+def _apply_notation(entry: BaseModel) -> tuple[BaseModel, list[dict]]:
+    """確定前のエントリに表記正規化を決定的に適用する（叙述系フィールド限定・降格safe）。
+
+    表記ストアが未整備/壊れ/到達不能なら no-op（正規化なしで返す）＝確定を落とさない（§5）。
+    仮名（child_id）・タグ・日付など変換してはいけない欄には触れない（notation_store が保証）。
+    """
+    kind = _NOTATION_KIND.get(type(entry))
+    if kind is None:
+        return entry, []
+    rules = notation_store.load_rules_or_empty()
+    if not rules:
+        return entry, []
+    data = entry.model_dump(mode="json")
+    new_data, changes = notation_store.normalize_entry_dict(data, kind, rules)
+    if not changes:
+        return entry, []
+    return type(entry).model_validate(new_data), changes
 
 
 def extract_json_block(text: str) -> str | None:
@@ -169,14 +196,21 @@ def parse_draft_to_child_record(text: str) -> ChildRecord:
 
 
 def _finalize(text, *, parse, validate, write, template_ref) -> FinalizedDocument:
-    """確定処理の汎用本体（復元→検査→整形）。日誌/月案で parse/validate/write を差し替える。"""
+    """確定処理の汎用本体（復元→表記正規化→検査→整形）。日誌/月案で parse/validate/write を差し替える。
+
+    表記正規化（ひらがな表記DX＝§5）は検査・整形より前に決定的に適用する＝以降の validate/write は
+    整えた本文に対して走る（未整備なら no-op で降格）。
+    """
     try:
         entry = parse(text)
     except ValueError as e:
         return FinalizedDocument(parse_error=str(e))
+    entry, notation_changes = _apply_notation(entry)
     problems = validate(entry)
     formatted = write(entry, template_ref=template_ref)
-    return FinalizedDocument(entry=entry, problems=problems, formatted=formatted)
+    return FinalizedDocument(
+        entry=entry, problems=problems, formatted=formatted, notation_changes=notation_changes
+    )
 
 
 def finalize_document(
@@ -287,6 +321,9 @@ def finalize_entry(
         entry = model_cls.model_validate(data)
     except ValidationError as e:
         return FinalizedDocument(parse_error=f"{label} のスキーマ検証に失敗: {e}")
+    entry, notation_changes = _apply_notation(entry)  # 表記正規化（編集後も有効・§5）
     problems = validate(entry)  # type: ignore[arg-type]
     formatted = write(entry, template_ref=template_ref)  # type: ignore[arg-type]
-    return FinalizedDocument(entry=entry, problems=problems, formatted=formatted)
+    return FinalizedDocument(
+        entry=entry, problems=problems, formatted=formatted, notation_changes=notation_changes
+    )

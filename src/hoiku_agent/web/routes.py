@@ -24,9 +24,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from ..config import settings
-from ..harness import policy_store, record_store
+from ..harness import notation_store, policy_store, record_store
 from ..harness.finalize import finalize_entry
-from ..schemas import FiveDomains, TenNoSugata, ThreeViewpoint
+from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, ThreeViewpoint
 from .chohyo_pdf import render_pdf
 from .iap import verified_iap_email
 
@@ -43,13 +43,32 @@ _COOKIE_NAME = "hoiku_demo"
 # LLM を回す（＝課金が発生する）口だけをパスコードで守る。読み取り・セッション作成は素通し。
 _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
 _GATED_PREFIX = ("/api/improve",)
-# 書類アーカイブの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡の防止＝濫用対策の同枠）。
-# 読み取り（GET /api/records・/api/children）は従来どおり素通し（コスト・改変リスクなし）。
-_GATED_WRITE_PREFIX = ("/api/records",)
+# 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
+# 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
+_GATED_WRITE_PREFIX = ("/api/records", "/api/notation")
 
 
 class GateRequest(BaseModel):
     passcode: str
+
+
+class NotationAddRequest(BaseModel):
+    """表記ルールの追加（保育士が育てる編集辞書・§5 ひらがな表記DX）。now は route 境界で注入。"""
+
+    pattern: str  # 変換元（例: 子供）
+    replacement: str = ""  # 変換先（例: 子ども）
+    kind: str = "ひらがな化"  # NotationKind の値
+    note: str = ""  # なぜこの表記か
+
+
+class NotationUpdateRequest(BaseModel):
+    """表記ルールの編集（None は据え置き。enabled で暴発ルールを止められる＝§5）。"""
+
+    pattern: str | None = None
+    replacement: str | None = None
+    kind: str | None = None
+    note: str | None = None
+    enabled: bool | None = None
 
 
 class FinalizeEditRequest(BaseModel):
@@ -175,6 +194,95 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return view
         except Exception:  # noqa: BLE001  未配線/壊れは閲覧降格（偽の中身を出さない）
             return {"cards": [], "history": [], "store": "unavailable"}
+
+    # ── 表記ルール辞書（ひらがな表記DX＝harness/notation_store の中継・§5）─────────────────
+    # 決定的実体は harness に1つ（CRUD＋正規化）。ここは now 注入＋楽観ロックの read-modify-write を
+    # 中継するだけ。LLM 非課金だが書込は公開デモの辞書荒らし防止でパスコードゲート（読取は素通し）。
+    _NOTATION_KINDS = {k.value: k for k in NotationKind}
+
+    def _notation_view() -> dict:
+        view = notation_store.book_view(notation_store.load_book())
+        view["store"] = notation_store.store_status()
+        return view
+
+    def _commit_notation(mutate):
+        """load→mutate(book)→save（version 楽観ロック）。ValueError は呼び出し側が 409 に変換。"""
+        book, version = notation_store.load_book_meta()
+        notation_store.save_book(mutate(book), if_version=version)
+
+    @app.get("/api/notation")
+    def web_notation() -> dict:
+        """表記ルール一覧＋ストア永続性（未配線/壊れは空＋unavailable に降格＝偽の中身を出さない）。"""
+        try:
+            return _notation_view()
+        except Exception:  # noqa: BLE001
+            return {"rules": [], "store": "unavailable"}
+
+    @app.post("/api/notation")
+    def web_notation_add(req: NotationAddRequest):
+        """表記ルールを追加する（保育士の追加。空/重複は 409 で正直に返す）。"""
+        kind = _NOTATION_KINDS.get((req.kind or "").strip())
+        if kind is None:
+            return JSONResponse(
+                {"status": "error", "detail": f"種別が不正です: {req.kind!r}"}, status_code=400
+            )
+        now = datetime.now()
+
+        def _mutate(book):
+            rule = NotationRule(
+                id=notation_store.next_rule_id(book),
+                pattern=req.pattern.strip(),
+                replacement=req.replacement,
+                kind=kind,
+                note=req.note,
+                source="保育士の追加",
+                created_at=now,
+                updated_at=now,
+            )
+            return notation_store.add_rule(book, rule)
+
+        try:
+            _commit_notation(_mutate)
+        except ValueError as e:
+            return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
+        return {"status": "ok", **_notation_view()}
+
+    @app.patch("/api/notation/{rule_id}")
+    def web_notation_update(rule_id: str, req: NotationUpdateRequest):
+        """表記ルールを編集する（pattern/replacement/種別/理由/有効の変更・None は据え置き）。"""
+        kind = None
+        if req.kind is not None:
+            kind = _NOTATION_KINDS.get(req.kind.strip())
+            if kind is None:
+                return JSONResponse(
+                    {"status": "error", "detail": f"種別が不正です: {req.kind!r}"}, status_code=400
+                )
+        now = datetime.now()
+        try:
+            _commit_notation(
+                lambda book: notation_store.update_rule(
+                    book,
+                    rule_id=rule_id,
+                    when=now,
+                    pattern=req.pattern,
+                    replacement=req.replacement,
+                    kind=kind,
+                    note=req.note,
+                    enabled=req.enabled,
+                )
+            )
+        except ValueError as e:
+            return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
+        return {"status": "ok", **_notation_view()}
+
+    @app.delete("/api/notation/{rule_id}")
+    def web_notation_delete(rule_id: str):
+        """表記ルールを削除する（対象不在/競合は 409）。"""
+        try:
+            _commit_notation(lambda book: notation_store.remove_rule(book, rule_id=rule_id))
+        except ValueError as e:
+            return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
+        return {"status": "ok", **_notation_view()}
 
     @app.get("/api/form-meta")
     async def web_form_meta() -> dict:

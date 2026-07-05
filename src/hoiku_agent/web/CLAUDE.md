@@ -85,7 +85,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `chohyo_pdf.render_pdf` で園の帳票PDFに描いて返す＝描画のみ・非ゲート。児童票は同じ子の保存済み児童票を
   アーカイブから引いて past_entries で渡す＝年間マトリクスの過去期埋め込み・未接続は降格）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/children`**（書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
-  **書込＝POST のみパスコードゲート**・読み取りは素通し）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
+  **書込＝POST のみパスコードゲート**・読み取りは素通し）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
+  CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
+  辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/月案＝A4 縦・児童票＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み児童票で自動埋め＝`assign_period_columns`））。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
@@ -97,7 +99,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
 - `static/` … 保育士 SPA。`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得）／`docflow.js`（日誌・月案・児童票 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
   確定エリアに「帳票PDFをダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
-  欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`ui.js`・`app.js`・`styles.css`・`index.html`。
+  欄ごと入力・タグ多選択・collect()→entry）／`policy.js`（指針を育てる＝カード閲覧＋履歴＋即反映フロー）／`notation.js`（表記ルール＝
+  `/api/notation` の CRUD UI・変換元→変換先の一覧・有効/無効トグル・インライン編集・保存先の永続性を正直表示）／`ui.js`・`app.js`・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
 
 ## 入口

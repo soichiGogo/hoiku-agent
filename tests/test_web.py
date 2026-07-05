@@ -483,3 +483,65 @@ def test_iap_verification_failure_falls_back_to_declared_actor(records_db, monke
     }
     assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
     assert record_store.list_audit_events()[0]["actor"] == "保育士A"
+
+
+# ──────────────────── 表記ルール辞書（ひらがな表記DX＝/api/notation の中継） ────────────────────
+
+
+def test_notation_get_returns_rules_and_store() -> None:
+    """GET /api/notation は表記ルール一覧＋store を返す（読み取りは素通し）。"""
+    body = _client().get("/api/notation").json()
+    assert "rules" in body and "store" in body
+    assert all({"id", "pattern", "replacement", "kind", "enabled"} <= r.keys() for r in body["rules"])
+
+
+def test_notation_crud_roundtrip(tmp_path, monkeypatch) -> None:
+    """追加→編集→削除が harness 経由で回り、更新後の一覧を返す（repo シードは汚さない）。"""
+    from hoiku_agent.harness import notation_store as ns
+
+    monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
+    c = _client()
+    # 追加
+    r = c.post("/api/notation", json={"pattern": "出来た", "replacement": "できた", "note": "補助動詞"})
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    rules = r.json()["rules"]
+    added = next(x for x in rules if x["pattern"] == "出来た")
+    assert added["replacement"] == "できた" and added["enabled"] is True
+    rid = added["id"]
+    # 編集（無効化）
+    r = c.patch(f"/api/notation/{rid}", json={"enabled": False, "replacement": "でけた"})
+    assert r.json()["status"] == "ok"
+    edited = next(x for x in r.json()["rules"] if x["id"] == rid)
+    assert edited["enabled"] is False and edited["replacement"] == "でけた"
+    # 削除
+    r = c.delete(f"/api/notation/{rid}")
+    assert r.json()["status"] == "ok"
+    assert all(x["id"] != rid for x in r.json()["rules"])
+
+
+def test_notation_add_duplicate_pattern_rejected(tmp_path, monkeypatch) -> None:
+    from hoiku_agent.harness import notation_store as ns
+
+    monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
+    c = _client()
+    assert c.post("/api/notation", json={"pattern": "子供", "replacement": "子ども"}).status_code == 200
+    dup = c.post("/api/notation", json={"pattern": "子供", "replacement": "こども"})
+    assert dup.status_code == 409 and dup.json()["status"] == "rejected"
+
+
+def test_notation_invalid_kind_400(tmp_path, monkeypatch) -> None:
+    from hoiku_agent.harness import notation_store as ns
+
+    monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
+    r = _client().post("/api/notation", json={"pattern": "x", "replacement": "y", "kind": "怪しい種別"})
+    assert r.status_code == 400 and r.json()["status"] == "error"
+
+
+def test_notation_writes_are_passcode_gated(monkeypatch) -> None:
+    """書込（POST/PATCH/DELETE）は公開デモの辞書荒らし防止でゲート、読取（GET）は素通し。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert c.get("/api/notation").status_code == 200
+    assert c.post("/api/notation", json={"pattern": "x", "replacement": "y"}).status_code == 401
+    assert c.patch("/api/notation/rule-0001", json={"enabled": False}).status_code == 401
+    assert c.delete("/api/notation/rule-0001").status_code == 401

@@ -80,6 +80,22 @@ def test_commit_add_reflects_immediately(store):
     assert any(c.body.startswith("感触遊び") for c in ps.active_cards(ps.load_book()))
 
 
+def test_commit_child_record_scope(store):
+    """児童票 scope も既存機構に相乗りして propose→commit できる（§19・二重実装しない）。"""
+    assert (
+        propose_policy_card("児童票", "身体測定値は創作しない（原簿系＝保育士が記入）")["status"]
+        == "ok"
+    )
+    r = commit_policy_card(
+        "児童票", "身体測定値は創作しない（原簿系＝保育士が記入）", source="保育士C"
+    )
+    assert r["status"] == "committed"
+    assert r["card"]["doc_type"] == "child_record" and r["card"]["doc_label"] == "児童票"
+    assert any(
+        c.body.startswith("身体測定値") for c in ps.active_cards(ps.load_book(), PolicyScope.児童票)
+    )
+
+
 def test_commit_records_decided_by_in_history(store):
     """「回した証拠」＝カード内蔵履歴に即反映の決定者（decided_by）が残る。"""
     r = commit_policy_card("保育日誌", "感触遊びは感触語と表情を併記する", decided_by="保育士B")

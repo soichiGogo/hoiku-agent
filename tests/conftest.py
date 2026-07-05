@@ -33,3 +33,21 @@ def policy_db(tmp_path, monkeypatch):
     db.Base.metadata.create_all(db.engine())
     yield url
     db.reset_engine_cache()
+
+
+@pytest.fixture()
+def notation_db(tmp_path, monkeypatch):
+    """表記ルールブックを sqlite の一時 DB へ向ける（creds 不要・決定的。policy_db と対称）。
+
+    ローカルシード（`_NOTATION_PATH`）も一時ファイルへ差し替える＝「DB 行不在→ローカルシード」の
+    フォールバックが repo の実シードに依存しないようにする（既定は空 book）。
+    """
+    from hoiku_agent.harness import db, notation_store as ns
+
+    url = f"sqlite:///{tmp_path}/notation.db"
+    monkeypatch.setattr(settings, "database_url", url)
+    monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "seed.json")
+    db.reset_engine_cache()
+    db.Base.metadata.create_all(db.engine())
+    yield url
+    db.reset_engine_cache()
