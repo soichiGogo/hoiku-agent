@@ -53,7 +53,6 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   // 過程ログ（作成/レビュー/ツール/前月集計）は既定で畳む <details>。状態はステッパー＋ステータスライン。
   let proc = null,
     procBody = null,
-    procLabel = null,
     procSpin = null;
 
   // ステップは前進のみ（遅れて来る収集イベント等で後退させない）。
@@ -66,7 +65,6 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   // ステータスライン更新に合わせて、畳んだ過程ログの見出しも稼働中だけ追従させる。
   function phase(text, state) {
     status.setPhase(text, state);
-    if (procLabel && procSpin) procLabel.textContent = text;
   }
 
   // 過程ログ（畳み）を用意する。actor turn・ツールバッジ・前月集計はこの中に積む。
@@ -74,20 +72,18 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     proc = el("details", "proc");
     const sum = el("summary", "proc-sum");
     procSpin = el("span", "spinner");
-    procLabel = el("span", "proc-label", "AI が作業しています…");
-    sum.append(procSpin, procLabel, el("span", "proc-hint", "経過を見る"));
+    sum.append(el("span", "proc-hint", "経過を見る"), procSpin);
     proc.appendChild(sum);
     procBody = el("div", "proc-body");
     proc.appendChild(procBody);
     area.appendChild(proc);
   }
   // 過程が一段落したらスピナーを止める（偽の稼働を残さない＝降格/完了を正直に示す）。
-  function procStop(text) {
+  function procStop() {
     if (procSpin) {
       procSpin.remove();
       procSpin = null;
     }
-    if (procLabel) procLabel.textContent = text || "AI のやりとり（経過）";
   }
 
   // 連続する同一 actor のイベントを1枚の turn に束ねる。
@@ -171,7 +167,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     cur = null;
     toolBadges = {};
     maxStep = -1;
-    proc = procBody = procLabel = procSpin = null;
+    proc = procBody = procSpin = null;
     buildProc();
     stepperEl.classList.remove("hidden");
     stepper = makeStepper(stepperEl, steps);
@@ -197,7 +193,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       } else {
         banner(area, "err", "エラー: " + e.message);
       }
-      procStop("中断しました");
+      procStop();
       status.clearPhase();
     } finally {
       button.disabled = false;
@@ -264,7 +260,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     }
     if (streamError) {
       // サーバ側エラーは正直に見せる（偽の緑を出さない・実エラー文で診断可能に）。
-      procStop("生成に失敗しました");
+      procStop();
       const msg = streamError.length > 400 ? streamError.slice(0, 400) + " …" : streamError;
       banner(area, "err", "生成中にサーバでエラーが発生しました: " + msg);
       phase("生成に失敗しました", "waiting");
@@ -331,7 +327,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const entry = st.final_entry;
     if (!doc || !entry) {
       // parse 失敗等＝構造化エントリが無い。編集フォームは出せないので正直に失敗表示（偽の緑を出さない）。
-      procStop("生成に失敗しました");
+      procStop();
       banner(area, "err", "下書きを生成できませんでした（" + (st.finalize_parse_error || "原因不明") + "）。");
       phase("生成に失敗しました", "waiting");
       return;
@@ -364,7 +360,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     editor.panel._body.appendChild(archNote);
     area.appendChild(editor.panel);
 
-    procStop("AI のやりとり（経過）");
+    procStop();
     stepper.allDone();
     phase("保育士の確認・編集をお待ちしています", "waiting");
 
@@ -488,7 +484,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   function editBar(sessionId, st, editor, vNode, preview, docKind) {
     const bar = el("div", "approve-bar");
     const mem = adk.config().memory_connected;
-    const note = el("span", "persist-note", "編集して「保存して再チェック」または「確定・承認」を押せます");
+    const note = el("span", "persist-note", "");
 
     // 編集後 entry を harness で再検査・再整形し、結果を state へ反映する（型成立ゲートを編集後も効かせる）。
     async function save() {
