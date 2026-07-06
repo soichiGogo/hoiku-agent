@@ -59,6 +59,8 @@ def test_static_ui_served() -> None:
         "policy.js",
         "notation.js",
         "records.js",
+        "classes.js",
+        "diaryform.js",
         "ui.js",
         "styles.css",
     ):
@@ -571,6 +573,136 @@ def test_add_child_is_passcode_gated(records_db, monkeypatch) -> None:
         headers={"X-Demo-Passcode": "secret"},
     )
     assert ok.status_code == 200 and ok.json()["display_name"] == "はるとくん"
+
+
+# ──────────────────── クラス（組）マスタ（/api/classes＝record_store 中継・名簿管理） ────────────────────
+
+
+def test_classes_crud_and_roster_flow(records_db) -> None:
+    """クラス作成→児童をクラスへ割当→roster/一覧に反映（園の名簿管理・日誌 roster の素）。"""
+    c = _client()
+    # クラス作成
+    r = c.post(
+        "/api/classes", json={"name": "ひまわり組", "age_band": "3-5", "fiscal_year": "2026"}
+    ).json()
+    assert r["status"] == "created" and r["name"] == "ひまわり組" and r["age_band"] == "3-5"
+    cid = r["id"]
+    # 児童登録（クラス指定つき＝1操作で割当まで完結）
+    reg = c.post(
+        "/api/children",
+        json={"given_name": "はると", "gender": "male", "class_id": cid},
+    ).json()
+    assert reg["status"] == "created" and reg.get("assign") == "ok"
+    # 児童登録（後から assign）
+    c.post("/api/children", json={"given_name": "ゆい", "gender": "female"})
+    asg = c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": cid}).json()
+    assert asg["status"] == "ok" and asg["class_name"] == "ひまわり組"
+    # roster＝クラスの在籍児（日誌フォームの素）
+    roster = c.get("/api/classes/roster", params={"class_id": cid}).json()["children"]
+    assert [x["display_name"] for x in roster] == ["はるとくん", "ゆいちゃん"]
+    assert roster[0]["class_age_band"] == "3-5"
+    # 一覧＋在籍児数
+    lst = c.get("/api/classes").json()
+    assert lst["store"] == "ok"
+    assert next(x for x in lst["classes"] if x["id"] == cid)["child_count"] == 2
+    # 未所属へ戻す
+    assert (
+        c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": ""}).json()["status"]
+        == "ok"
+    )
+    assert [
+        x["display_name"]
+        for x in c.get("/api/classes/roster", params={"class_id": cid}).json()["children"]
+    ] == ["はるとくん"]
+
+
+def test_classes_validate_input(records_db) -> None:
+    c = _client()
+    assert c.post("/api/classes", json={"name": "", "age_band": "3-5"}).status_code == 400
+    assert c.post("/api/classes", json={"name": "ばら組", "age_band": "9-9"}).status_code == 400
+    assert c.post("/api/classes/assign", json={"child": "", "class_id": "x"}).status_code == 400
+
+
+def test_classes_degrade_when_db_unset(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "database_url", "")
+    record_store.reset_engine_cache()
+    c = _client()
+    assert c.get("/api/classes").json() == {"classes": [], "store": "disabled"}
+    assert c.get("/api/classes/roster", params={"class_id": "x"}).json()["children"] == []
+    assert (
+        c.post("/api/classes", json={"name": "ひまわり組", "age_band": "0-2"}).json()["status"]
+        == "skipped"
+    )
+
+
+def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:
+    """クラスの書込（POST）は辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert c.post("/api/classes", json={"name": "ひまわり組", "age_band": "3-5"}).status_code == 401
+    assert (
+        c.post("/api/classes/assign", json={"child": "はるとくん", "class_id": "x"}).status_code
+        == 401
+    )
+    assert c.get("/api/classes").status_code == 200
+    assert c.get("/api/classes/roster", params={"class_id": "x"}).status_code == 200
+    ok = c.post(
+        "/api/classes",
+        json={"name": "ひまわり組", "age_band": "3-5"},
+        headers={"X-Demo-Passcode": "secret"},
+    )
+    assert ok.status_code == 200 and ok.json()["status"] == "created"
+
+
+# ──────────────────── 校正AI（/api/proofread＝日本語チェック・言い換え提案・LLM 口） ────────────────────
+
+
+def test_proofread_collect_items_extracts_prose_only() -> None:
+    """校正対象は叙述文（プロース）に限る＝数量的な生活記録・タグ・日付・仮名は渡さない（§14）。"""
+    from hoiku_agent.web import proofread
+
+    entry = _edit_diary_entry()  # 架空児A・observed_state/evaluation/practice_record を持つ
+    items = proofread.collect_items("diary", entry)
+    paths = {it["path"] for it in items}
+    assert "practice_record" in paths
+    assert "individual_notes[0].observed_state" in paths
+    assert "evaluation.child_focus" in paths and "evaluation.self_review" in paths
+    # 生活記録（食事/睡眠…）・日付・タグ・child_id は校正対象にしない（AI に事実を触らせない）。
+    assert not any("life_record" in p for p in paths)
+    assert not any(p == "date" or "tags" in p or "child_id" in p for p in paths)
+    # ラベルには子どもの呼び名が文脈として付く（個別記録）。
+    note_item = next(it for it in items if it["path"] == "individual_notes[0].observed_state")
+    assert "架空児A" in note_item["label"]
+
+
+def test_proofread_empty_narrative_returns_no_suggestions_without_llm() -> None:
+    """叙述文が空なら LLM を呼ばず suggestions 空を返す（正常・非課金の早期リターン）。"""
+    c = _client()
+    entry = {
+        "date": "2026-07-06",
+        "age_band": "0-2",
+        "attendance": [],
+        "individual_notes": [],
+        "evaluation": {},
+    }
+    r = c.post("/api/proofread", json={"kind": "diary", "entry": entry})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["suggestions"] == [] and body["checked"] == 0 and body["error"] is None
+
+
+def test_proofread_is_passcode_gated(monkeypatch) -> None:
+    """校正AI は LLM を回す口なのでパスコードゲート（/api/improve・/api/parse-upload と同枠）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert c.post("/api/proofread", json={"kind": "diary", "entry": {}}).status_code == 401
+    # パスコードを与えれば通る（空 entry＝叙述文なしで suggestions 空・200）。
+    ok = c.post(
+        "/api/proofread",
+        json={"kind": "diary", "entry": {}},
+        headers={"X-Demo-Passcode": "secret"},
+    )
+    assert ok.status_code == 200 and ok.json()["suggestions"] == []
 
 
 def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:

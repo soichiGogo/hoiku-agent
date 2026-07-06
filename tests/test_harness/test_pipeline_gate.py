@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from hoiku_agent.harness.pipeline import build_document_pipeline, is_approved
+from hoiku_agent.harness.child_record import build_child_record_pipeline
+from hoiku_agent.harness.pipeline import is_approved
 
 
 def test_is_approved_first_line_verdict():
@@ -32,13 +33,17 @@ def test_is_approved_handles_non_string():
 
 
 def test_pipeline_structure():
-    """段構成（authoring_loop→finalize、loop 内は author→reviewer→approval_gate）。
+    """共用の段構成（…→authoring_loop→finalize、loop 内は author→reviewer→approval_gate）。
 
-    文書作成指針は author/reviewer の InstructionProvider が prompt 冒頭へ前置注入するので pipeline に
-    prep 段は無い（§5）。NEEDS_REVISION で作成AIが再作成できるよう、author をレビュー巡回に**含める**
-    （旧構成は author をループ外に置き再作成が起きなかった＝本変更の回帰防止）。
+    保育日誌の AI 生成パイプラインは退役したので、共用機構は保育経過記録パイプラインで検証する。
+    NEEDS_REVISION で作成AIが再作成できるよう author をレビュー巡回に**含める**（旧構成は author を
+    ループ外に置き再作成が起きなかった＝本変更の回帰防止）。finalize は末尾・prep 段が先頭（§5/§19）。
     """
-    pipeline = build_document_pipeline()
-    assert [a.name for a in pipeline.sub_agents] == ["authoring_loop", "finalize"]
-    loop = pipeline.sub_agents[0]
-    assert [a.name for a in loop.sub_agents] == ["author", "reviewer", "approval_gate"]
+    pipeline = build_child_record_pipeline()
+    names = [a.name for a in pipeline.sub_agents]
+    assert names[-1] == "finalize" and "authoring_loop" in names
+    loop = next(a for a in pipeline.sub_agents if a.name == "authoring_loop")
+    # loop 内は [作成AI, reviewer, approval_gate]（作成AI を巡回に含める＝再作成保証）
+    loop_names = [a.name for a in loop.sub_agents]
+    assert loop_names[-2:] == ["reviewer", "approval_gate"]
+    assert loop_names[0].endswith("author")

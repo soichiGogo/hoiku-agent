@@ -57,9 +57,9 @@ from .schema_check import (
 
 # pipeline は agents → tools を芋づる式に読み込むため最後に import する
 # （tools 側の薄いラッパは上記の実体を submodule 直参照しており、循環は回避済み）。
-# router は全パイプライン（日誌＝pipeline / 月案＝monthly / クラス月案＝class_monthly / 保育経過記録 / 要録）を
-# 束ねるため各パイプラインの後に置く。
-from .pipeline import CAREGIVER_APPROVAL_KEY, build_document_pipeline, mark_caregiver_approved
+# router は各パイプライン（月案＝monthly / クラス月案＝class_monthly / 保育経過記録 / 要録）を束ねるため
+# 各パイプラインの後に置く（保育日誌は AI 生成を退役＝ルータに載せない。pipeline.py は共用機構のみ）。
+from .pipeline import CAREGIVER_APPROVAL_KEY, mark_caregiver_approved
 from .monthly import build_monthly_pipeline
 from .class_monthly import build_class_monthly_pipeline
 from .child_record import build_child_record_pipeline
@@ -67,7 +67,6 @@ from .youroku import build_nursery_record_pipeline
 from .router import build_root_agent
 
 __all__ = [
-    "build_document_pipeline",
     "build_monthly_pipeline",
     "build_class_monthly_pipeline",
     "build_child_record_pipeline",

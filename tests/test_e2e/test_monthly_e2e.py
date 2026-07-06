@@ -1,8 +1,8 @@
 """決定論E2E（結合テスト）：月案パイプライン＋doc_type 分岐ルータ＋L2 還流を LLM 非依存に通す。
 
-設計コンテキスト §3/§4（L2 月次PDCA）/ §10（月⇄日集積）/ §16。日誌の test_pipeline_e2e と対称に、
+設計コンテキスト §3/§4（L2 月次PDCA）/ §10（月⇄日集積）/ §16。共用機構の test_pipeline_e2e と対称に、
 月案パスを実 ADK ランタイムで end-to-end に回す（creds 不要・無料・決定的）。担保する結合経路:
-  1. ルータ分岐   doc_type=="月案" → monthly_plan_pipeline / 未設定 → document_pipeline（既定 日誌）
+  1. ルータ分岐   doc_type=="月案" → monthly_plan_pipeline / 未設定 → 既定クラス月案（保育日誌は AI 退役）
   2. L2 還流      前月日誌（state["prev_month_entries"]）→ monthly_prep が child_id 別集計
                   → state["prev_month_digest"]（要約は author・集計は harness）
   3. 確定         monthly finalize が MonthlyPlan を復元→検査→整形（final_document）
@@ -158,33 +158,52 @@ def test_monthly_prep_degrades_without_prev_entries():
     assert final_state.get("final_document")  # 初月でも月案は確定下書きまで作る
 
 
-def test_router_defaults_to_diary_when_doc_type_unset():
-    """doc_type 未設定なら既定で日誌パイプライン（既存デモ挙動が不変＝§3 日誌先行）。"""
-    diary_entry = {
-        "date": "2026-07-01",
-        "age_band": "0-2",
-        "weather": "晴れ",
-        "attendance": [{"child_id": "架空児A", "present": True, "reason": None}],
-        "practice_record": "散歩に出かけた。",
-        "individual_notes": [
-            {
-                "child_id": "架空児A",
-                "observed_state": "花を見つめた",
-                "tags": ["健やかに伸び伸びと育つ"],
-                "life_record": {"meal": "完食", "sleep": "午睡2時間"},
-            }
-        ],
-        "evaluation": {"child_focus": "興味を示した", "self_review": "環境は適切だった"},
+def test_router_defaults_to_class_monthly_when_doc_type_unset():
+    """doc_type 未設定なら既定でクラス月案パイプライン（保育日誌は AI 生成を退役＝手入力・§18）。
+
+    保育日誌は web の手入力フォームで作る（AI を通さない）ため、ルータの既定はクラス月案。dev の
+    adk run/web が doc_type を seed しない最頻ケースでも root_agent が壊れない（StopIteration しない）
+    ことを固定する。
+    """
+    # 3–5 のクラス月案（個人目標は 0–2 のみ必須＝ここでは不要）。grid 7 行は各行にねらいを入れて型成立させる。
+    grid = [
+        {
+            "category": cat,
+            "domain": dom,
+            "aim": f"{dom}のねらい",
+            "environment": "",
+            "child_state": "",
+            "support": "",
+        }
+        for cat, dom in [
+            ("養護", "生命の保持"),
+            ("養護", "情緒の安定"),
+            ("教育", "健康"),
+            ("教育", "人間関係"),
+            ("教育", "環境"),
+            ("教育", "言葉"),
+            ("教育", "表現"),
+        ]
+    ]
+    plan = {
+        "month": "2026-07",
+        "age_band": "3-5",
+        "class_name": "うさぎ組",
+        "monthly_goal": "梅雨期も元気に過ごす",
+        "prev_month_state": "戸外遊びを楽しむ姿が増えた",
+        "grid": grid,
+        "individual_goals": [],
     }
     author = FakeLlm(
         responses=[
-            "日誌の下書きです。\n```json\n" + json.dumps(diary_entry, ensure_ascii=False) + "\n```"
+            "クラス月案の下書きです。\n```json\n" + json.dumps(plan, ensure_ascii=False) + "\n```"
         ]
     )
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
 
-    final_state, _ = _run(author, reviewer, {})  # doc_type 未設定
+    final_state, _ = _run(author, reviewer, {})  # doc_type 未設定＝既定クラス月案
 
-    # 日誌パスを通った（月案集積は走らない・日誌様式で確定）
-    assert final_state.get("prev_month_digest") is None
-    assert "保育日誌" in (final_state.get("final_document") or "")
+    # クラス月案パスを通った（doc_kind=class_monthly で確定）
+    assert final_state.get("finalize_parse_error") is None
+    assert final_state.get("final_doc_kind") == "class_monthly"
+    assert final_state.get("final_document")

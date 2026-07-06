@@ -35,6 +35,7 @@ const ICONS = {
   review: '<circle cx="11" cy="11" r="7"/><path d="M20.5 20.5L16.5 16.5"/>',
   chart: '<path d="M4 4v16h16"/><path d="M8 17v-4M12.5 17V8.5M17 17v-7"/>',
   caregiver: '<circle cx="12" cy="8.2" r="3.2"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',
+  users: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 5.5a3 3 0 0 1 0 5.8"/><path d="M17.5 13.3a5.5 5.5 0 0 1 3 5.2"/>',
   robot: '<rect x="5" y="8" width="14" height="11" rx="2.5"/><path d="M12 8V4.5M8.5 5h7"/><path d="M9.5 13h.01M14.5 13h.01"/><path d="M5 13H3M21 13h-2"/>',
   memory: '<path d="M3.5 12a8.5 8.5 0 1 0 2.8-6.3M3.5 4.5V8H7"/><path d="M12 8v4l3 2"/>',
   book: '<path d="M5 5.5A2.5 2.5 0 0 1 7.5 3H18a1 1 0 0 1 1 1v15.5H7.5A2.5 2.5 0 0 0 5 22z"/><path d="M9 8h6M9 11.5h5"/>',

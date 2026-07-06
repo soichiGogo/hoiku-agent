@@ -32,7 +32,9 @@ if TYPE_CHECKING:
 _Formatter = Callable[[dict, str], str]
 
 # state["doc_type"] → (指針 scope, 集積の state キー, 集積の見出しラベル, 集積 formatter)。
-# 集積を持たない日誌は digest_key=None。router の doc_type 値（保育日誌/月案/保育経過記録/保育要録）に一致させる。
+# router の doc_type 値（月案/クラス月案/保育経過記録/保育要録）に一致させる。**保育日誌は AI 生成を退役**
+# したため作成/レビューAI では routed されないが、PolicyScope.保育日誌 は指針カード（policy_store）で有効な
+# scope なので語彙として残す（保育士が日誌向けの勘所を育て、将来の校正AI が参照できる）。
 _DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter]] = {
     "保育日誌": (PolicyScope.保育日誌, None, "", format_digest_for_prompt),
     "月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt),
@@ -46,8 +48,8 @@ _DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter]] = 
         format_record_digest_for_prompt,
     ),
 }
-# doc_type 未設定時の既定（router の既定＝保育日誌＝§3）。
-_DEFAULT_ROUTING = _DOC_TYPE_ROUTING["保育日誌"]
+# doc_type 未設定時の既定（router の既定＝クラス月案＝§18。保育日誌は AI 生成を退役したため既定にしない）。
+_DEFAULT_ROUTING = _DOC_TYPE_ROUTING["クラス月案"]
 
 
 def _policy_text(scope: PolicyScope) -> str:

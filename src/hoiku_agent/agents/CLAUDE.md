@@ -30,9 +30,16 @@
   対象キー・age_band・child は与件（保育士入力）を prompt に前置し、システムが最終的に上書きする（LLM の取り違えを封じる）。
   **output_schema は使わず作成AI と同じ ```json フェンス出力**（タグ欄の union で responseSchema が不安定なため・harness の
   `extract_json_block`→`finalize_entry` で復元・検査・整形＝決定的実体は harness）。確認・修正は保育士が編集フォームで行う。
-- **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_class_monthly_author_agent` /
+- **校正AI（`proofreader_agent.py`＝`build_proofreader_agent`）も別エントリの単一 LlmAgent**（root_agent に載せない・
+  upload_parser/improver と同型）。保育日誌の手入力後、「日本語をチェック」（`web/proofread`）から起こし、保育士が
+  手入力した叙述文へ**校正の提案**（誤り・不自然さ・言い換え・開示前提の表現）を返す＝**AI は著者でなく校正者**
+  （ヒアリング 2026-07）。tools なし・巡回なし・1パス。**提案のみ**（採否は保育士・自動書換しない）・**事実は変えない**
+  （数値/仮名/日付/タグは触らない）・表記の機械的統一（子供→子ども）は finalize の notation が別途担う＝校正AI は notation で
+  機械化できない観点に集中（役割分担・§5）。```json フェンス出力（web が復元し id→entry のパスへ写像）。開示前提の観点は
+  kind で出し分け（保育経過記録/要録・§19）＝doc_type 非依存に設計（diary 先行）。
+- **factory で返す。** `build_monthly_author_agent` / `build_class_monthly_author_agent` /
   `build_child_record_author_agent` / `build_nursery_record_author_agent` / `build_review_agent` /
-  `build_upload_parser_agent`。
+  `build_upload_parser_agent` / `build_proofreader_agent`（**保育日誌の作成AI＝旧 `build_author_agent` は退役**＝日誌は手入力・ヒアリング 2026-07）。
   トップレベルでインスタンス化しない（例外は `agent.py` の root_agent のみ）。任意引数 `model`（既定
   None＝`models.build_model()`＝`gemini_model` を `model_location`＝global に固定した Gemini。Gemini 3.x は
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の
