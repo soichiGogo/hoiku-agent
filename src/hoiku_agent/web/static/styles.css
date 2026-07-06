@@ -183,11 +183,8 @@ a{color:var(--primary-d)}
 .subtab .ic{width:16px;height:16px;align-self:center}
 .subtab:hover{color:var(--ink-soft)}
 .subtab.is-active{color:var(--primary-d);border-bottom-color:var(--primary);background:color-mix(in srgb,var(--primary-soft) 40%,transparent)}
-.subtab-hint{font-weight:400;font-size:var(--fs-caption);color:var(--muted)}
-.subtab.is-active .subtab-hint{color:var(--primary-d)}
 .subpanel{display:none}
 .subpanel.is-active{display:block;animation:fade .2s ease}
-@media (max-width:560px){.subtab-hint{display:none}}
 @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--sh-sm);
   padding:var(--sp-4) var(--sp-5);margin-bottom:var(--sp-3)}
@@ -377,6 +374,10 @@ a{color:var(--primary-d)}
 .stp.now .n{background:var(--state-working);color:#fff}
 .stp.wait{border-color:color-mix(in srgb,var(--state-waiting) 50%,var(--line));color:var(--state-waiting-ink);font-weight:700}
 .stp.wait .n{background:var(--state-waiting);color:#fff}
+/* レビュー巡回の周回バッジ（例「2/3」）。差し戻しで再作成に入ったときだけ付く（round>1）。 */
+.stp-badge{display:inline-flex;align-items:center;justify-content:center;margin-left:1px;padding:0 6px;height:15px;
+  border-radius:var(--r-pill);background:var(--accent-soft);color:var(--accent-d);
+  font-size:10px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
 
 /* ============================================================
    HITL 質問カード
@@ -506,12 +507,12 @@ select.de-input{appearance:auto;min-height:38px}
   font-size:var(--fs-h2);color:var(--ink);margin:0 0 var(--sp-3)}
 .card-title .ic{width:18px;height:18px;color:var(--primary)}
 
-/* 指針カードのグリッド（auto-fill で自動レスポンシブ） */
-.policy-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--sp-3)}
+/* 指針カード：1行1カードのリスト（横並びグリッドから変更）。本文は左、タグ・日付は右の整列カラムに。 */
+.policy-grid{display:flex;flex-direction:column;gap:var(--sp-2)}
 .policy-grid:empty::after{content:"まだ指針カードがありません。下の提案フローから育て始められます。";
   color:var(--muted);font-size:var(--fs-sm)}
 
-/* 指針カード（左ライン＝対象書類で色分け） */
+/* 指針カード（左ライン＝対象書類で色分け・提案／比較カードでも共用＝従来の縦積み） */
 .pcard{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--line-strong);
   border-radius:var(--r-md);padding:var(--sp-3) var(--sp-4);box-shadow:var(--sh-sm)}
 .pcard.dt-diary{border-left-color:var(--actor-author)}
@@ -520,13 +521,25 @@ select.de-input{appearance:auto;min-height:38px}
 .pcard.dt-common{border-left-color:var(--actor-caregiver)}
 .pcard-body{font-size:var(--fs-sm);color:var(--ink);line-height:1.8}
 .pcard-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:var(--sp-2)}
-.pcard-tag{font-size:11px;font-weight:700;border-radius:var(--r-pill);padding:2px 10px;
+.pcard-tag{font-size:11px;font-weight:700;border-radius:var(--r-pill);padding:2px 10px;white-space:nowrap;
   background:var(--surface-2);border:1px solid var(--line-strong);color:var(--ink-soft)}
 .pcard-src{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border-radius:var(--r-pill);
   padding:2px 10px;background:color-mix(in srgb,var(--actor-caregiver) 13%,var(--surface));
   border:1px solid color-mix(in srgb,var(--actor-caregiver) 36%,var(--line));color:var(--actor-caregiver)}
 .pcard-src .ic{width:12px;height:12px}
-.pcard-date{font-size:var(--fs-caption);color:var(--muted);font-variant-numeric:tabular-nums;margin-left:auto}
+.pcard-date{font-size:var(--fs-caption);color:var(--muted);font-variant-numeric:tabular-nums;margin-left:auto;white-space:nowrap}
+
+/* デッキ（いまの指針カード）だけ行レイアウト＝本文（1fr）｜タグ・由来｜日付を横一列に。
+   日付は固定幅で右そろえ＝行をまたいで列がそろう（提案・比較カードは上の縦積みのまま）。 */
+.policy-grid > .pcard{display:flex;align-items:center;gap:var(--sp-4)}
+.policy-grid > .pcard > .pcard-body{flex:1;min-width:0;margin:0;line-height:1.7}
+.policy-grid > .pcard > .pcard-meta{flex:0 0 auto;flex-wrap:nowrap;margin:0;gap:var(--sp-2)}
+.policy-grid > .pcard .pcard-date{min-width:88px;text-align:right}
+@media (max-width:560px){
+  .policy-grid > .pcard{flex-direction:column;align-items:stretch;gap:var(--sp-2)}
+  .policy-grid > .pcard > .pcard-meta{margin-top:var(--sp-1)}
+  .policy-grid > .pcard .pcard-date{min-width:0}
+}
 .pcard.is-new{animation:cardin .5s ease;border-color:color-mix(in srgb,var(--primary) 45%,var(--line))}
 @keyframes cardin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 

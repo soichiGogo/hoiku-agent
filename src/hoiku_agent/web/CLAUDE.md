@@ -78,6 +78,11 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   色だけに依存させず語＋アイコン併記・モーダルは dialog セマンティクス＋背後 inert。
 - **エージェントの可視化**＝actor lane（作成AI/レビューAI/前月の集計/保育士/改善）・計画ステッパー・
   ツールバッジ（call→response で完了表示）・書類パネル（AI下書き→**標準様式の編集フォームで保育士が欄ごとに編集**→承認で公式記録）。
+  **レビュー巡回（authoring_loop）の差し戻しはステッパーで可視化する**＝reviewer が NEEDS_REVISION を返し作成AIが再作成へ
+  戻ったとき（review 直後に draft が来たら差し戻しと判定・`docflow.js` の `phaseKindOf`／`stepper.rewindTo`）、ステッパーを
+  「下書き」へ巻き戻して再点灯し「レビュー」に周回バッジ（`N/最大M`＝`stepper.badge`・M は `/api/config` の
+  `max_review_iterations`＝harness `MAX_REVIEW_ITERATIONS` の SSOT）を添える。承認一発（round=1）では出さない
+  （gate/finalize は draft と誤分類せず偽の差し戻しを起こさない）。
   **指針を育てる**は 指針カード閲覧＋変更履歴／提案カード（確認前→反映済み）→意味的競合の比較相談（`.compare` で既存↔新）→
   保育士決定で即反映（ステッパー＝修正メモ→競合を精査→整合→反映）。**降格/非成功は偽の緑を出さない**
   （スピナーを止める・store の永続性は `store`＝persistent/ephemeral/unavailable で正直表示）。

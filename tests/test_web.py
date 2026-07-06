@@ -31,6 +31,10 @@ def test_config_shape() -> None:
     # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（保育経過記録・クラス月案は配線済み）。
     assert "child_record" in body["docx_kinds"]
     assert "class_monthly" in body["docx_kinds"]
+    # レビュー巡回の上限＝harness の SSOT を露出（UI が差し戻し時「N巡目/最大M」の M に使う）。
+    from hoiku_agent.harness.pipeline import MAX_REVIEW_ITERATIONS
+
+    assert body["max_review_iterations"] == MAX_REVIEW_ITERATIONS
 
 
 def test_doc_template_shape() -> None:
@@ -966,6 +970,79 @@ def test_parse_upload_overrides_keys_and_relays_finalize(monkeypatch) -> None:
     # harness の整形・検査結果が中継されている。
     assert body["ok"] is True and body["parse_error"] is None
     assert "発達の経過" in body["formatted"]
+
+
+def test_parse_upload_class_monthly_overrides_and_relays(monkeypatch) -> None:
+    """クラス月案の取込（§18）：クラス単位＝主対象児なしで、対象月＝与件を権威的に上書きし、
+    grid が正準7行に整えられた harness 確定結果を中継する（kind=class_monthly・class_monthly も取込対応）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "")
+    import json as _json
+
+    from hoiku_agent.web import upload_parse
+
+    parsed = {
+        "month": "WRONG",  # LLM の取り違え → 与件で上書きされることを確かめる
+        "age_band": "0-2",
+        "class_name": "ひよこ組",
+        "monthly_goal": "梅雨期も健康に過ごす",
+        "prev_month_state": "感触遊びに集中していた",
+        "grid": [
+            {
+                "category": c,
+                "domain": d,
+                "aim": f"{d}のねらい",
+                "environment": "環境",
+                "child_state": "姿",
+                "support": "配慮",
+            }
+            for c, d in (
+                ("養護", "生命の保持"),
+                ("養護", "情緒の安定"),
+                ("教育", "健康"),
+                ("教育", "人間関係"),
+                ("教育", "環境"),
+                ("教育", "言葉"),
+                ("教育", "表現"),
+            )
+        ],
+        "individual_goals": [
+            {
+                "child_id": "はるとくん",
+                "age_months": "1歳3か月",
+                "child_state": "歩行が安定",
+                "aim_support": "探索を見守る",
+            }
+        ],
+    }
+    fence = "読み取りました。\n```json\n" + _json.dumps(parsed, ensure_ascii=False) + "\n```"
+
+    async def _fake(agent, parts):
+        return fence
+
+    monkeypatch.setattr(upload_parse, "_run_parser", _fake)
+    r = _client().post(
+        "/api/parse-upload",
+        data={"kind": "class_monthly", "target": "2026-07", "child": "", "age_band": "0-2"},
+        files={
+            "file": (
+                "m.docx",
+                _docx_bytes("月間指導計画 7月 0歳児クラス"),
+                "application/octet-stream",
+            )
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    # 対象月は与件で権威的に上書き。クラス単位なので top-level child_id は付かない。
+    assert body["entry"]["month"] == "2026-07"
+    assert body["entry"]["age_band"] == "0-2"
+    assert "child_id" not in body["entry"]
+    # grid は正準7行にそろい、0–2 の個人目標は原本のまま残る。
+    assert len(body["entry"]["grid"]) == 7
+    assert body["entry"]["individual_goals"][0]["child_id"] == "はるとくん"
+    # harness の整形・検査結果が中継され、型が成立している。
+    assert body["ok"] is True and body["parse_error"] is None
+    assert body["formatted"]
 
 
 def test_parse_upload_degrades_on_llm_failure(monkeypatch) -> None:

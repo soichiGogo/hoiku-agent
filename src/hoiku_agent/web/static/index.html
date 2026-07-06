@@ -151,17 +151,15 @@
          「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。 -->
     <section id="tab-grow" class="panel" role="tabpanel" aria-labelledby="tabbtn-grow" tabindex="0">
       <nav class="subtabs" role="tablist" aria-label="育てる対象">
-        <button class="subtab is-active" data-subtab="policy" role="tab" id="subtabbtn-policy" aria-controls="subtab-policy" aria-selected="true"><span data-ic="sprout"></span><span class="tab-label">指針を育てる</span><span class="subtab-hint">AI が参考にする勘所</span></button>
-        <button class="subtab" data-subtab="notation" role="tab" id="subtabbtn-notation" aria-controls="subtab-notation" aria-selected="false"><span data-ic="hash"></span><span class="tab-label">表記ルール</span><span class="subtab-hint">仕上げで必ず統一</span></button>
+        <button class="subtab is-active" data-subtab="policy" role="tab" id="subtabbtn-policy" aria-controls="subtab-policy" aria-selected="true"><span data-ic="sprout"></span><span class="tab-label">指針を育てる</span></button>
+        <button class="subtab" data-subtab="notation" role="tab" id="subtabbtn-notation" aria-controls="subtab-notation" aria-selected="false"><span data-ic="hash"></span><span class="tab-label">表記ルール</span></button>
       </nav>
 
       <!-- ── サブ：指針を育てる（改善エージェント） ── -->
       <div id="subtab-policy" class="subpanel is-active" role="tabpanel" aria-labelledby="subtabbtn-policy" tabindex="0">
-        <!-- 対象書類セレクタ：どの書類のための気づきか＝提案 scope の既定＋下のカードの絞り込み。 -->
+        <!-- 対象書類セレクタ：提案 scope の既定＋下のカードの絞り込み（文書を選ぶボタンのみ）。 -->
         <div class="card">
-          <label class="field-label" id="policy-target-label">どの書類のための気づき？</label>
-          <div id="policy-target" class="chips seg" role="group" aria-labelledby="policy-target-label"></div>
-          <p id="policy-target-hint" class="doc-desc"></p>
+          <div id="policy-target" class="chips seg" role="group" aria-label="対象書類"></div>
         </div>
 
         <!-- 上：閲覧（現在の指針） -->

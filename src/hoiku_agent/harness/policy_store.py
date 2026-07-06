@@ -443,7 +443,7 @@ _SCOPE_DOC_TYPE: dict[PolicyScope, str] = {
 _SCOPE_DOC_LABEL: dict[PolicyScope, str] = {
     PolicyScope.共通: "共通",
     PolicyScope.保育日誌: "保育日誌",
-    PolicyScope.月案: "個別月案",
+    PolicyScope.月案: "クラス月案",
     PolicyScope.保育経過記録: "保育経過記録",
     PolicyScope.保育要録: "保育要録",
 }
