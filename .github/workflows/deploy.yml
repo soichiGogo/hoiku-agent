@@ -2,10 +2,17 @@
 # 設計の「層A は前提点・こなれた普通で十分」に沿い、`gcloud run deploy --source .`（Cloud Build から
 # ビルド→AR push→デプロイ）の単段構成にする。scale-to-zero は Cloud Run 既定。
 #
+# DB スキーマは deploy の前に自動適用する：CLOUDSQL_INSTANCE 設定時、deploy 直前に Cloud SQL Auth Proxy
+# 経由で `alembic upgrade head` を当て、コードとスキーマを同じ deploy で前進させる（migration drift の
+# 再発防止＝§ prod-db-migration-drift。additive/expand 前提・失敗時は deploy を止める）。従来の手動
+# `alembic upgrade head` は初回セットアップ／破壊的変更時の fallback として docs/ライブ実行手順.md に残す。
+#
 # 前提（各自の GCP で1度だけ設定＝この workflow の外）:
 #   1. Workload Identity 連携（WIF）：GitHub OIDC を信頼する Provider と、Cloud Run/AR/Cloud Build 権限を
 #      持つデプロイ用サービスアカウント。鍵 JSON は作らない（鍵レス）。Provider には自リポ限定の
 #      attribute condition を付ける（他リポが pool へ入れない＝WIF ベストプラクティス。手順は docs/ライブ実行手順.md）。
+#      DB 自動 migration を使う（CLOUDSQL_INSTANCE 設定）なら DEPLOY_SA に追加で
+#      `roles/cloudsql.client`（proxy 接続）＋ DB URL secret への `roles/secretmanager.secretAccessor` を付与する。
 #   2. リポジトリ変数（Settings > Secrets and variables > Actions > Variables）:
 #        GCP_PROJECT_ID / GCP_REGION / CLOUD_RUN_SERVICE / WIF_PROVIDER / DEPLOY_SA
 #      推奨: RUNTIME_SA（Cloud Run の実行 SA＝最小権限。未設定だと既定 Compute SA=過剰権限に降格・警告を出す）
@@ -56,6 +63,56 @@ jobs:
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
+
+      # DB スキーマを deploy の前に code head まで前進させ、migration drift を構造的に無くす
+      # （§ prod-db-migration-drift＝手動忘れで本番 DB がコードから遅延しテーブル欠落→record_store が
+      # fail-loud で 500 になる再発トラップ）。additive/expand 前提（新テーブル・nullable 列は旧コードに
+      # 無害）。破壊的変更は expand→contract の規律で別 deploy に分ける。CLOUDSQL_INSTANCE 未設定の環境は
+      # DB 非配線＝skip（既存の降格思想と一貫）。失敗時は job が止まり、壊れたスキーマで新コードを出さない。
+      - name: Set up uv (Alembic 実行用)
+        if: ${{ vars.CLOUDSQL_INSTANCE != '' }}
+        uses: astral-sh/setup-uv@v5
+
+      - name: Apply DB migrations to Cloud SQL (deploy の前に upgrade head)
+        # 前提: DEPLOY_SA に roles/cloudsql.client（proxy 接続）＋ 対象 secret への
+        # roles/secretmanager.secretAccessor（DB URL 取得）。DB URL は Secret Manager（推奨）優先／
+        # GH secret フォールバック（deploy と同じ2経路）。alembic は main 依存＝uv の venv で走る。
+        if: ${{ vars.CLOUDSQL_INSTANCE != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+
+          # 1) DB 接続 URL を解決（Secret Manager 優先／GH secret フォールバック）。ログには出さない。
+          if [ -n "${{ vars.DATABASE_URL_SECRET }}" ]; then
+            RAW_URL="$(gcloud secrets versions access latest \
+              --secret="${{ vars.DATABASE_URL_SECRET }}" --project "${{ vars.GCP_PROJECT_ID }}")"
+          elif [ -n "${DATABASE_URL:-}" ]; then
+            RAW_URL="$DATABASE_URL"
+          else
+            echo "::warning::DB URL 未解決（DATABASE_URL_SECRET / secrets.DATABASE_URL いずれも無し）＝migration skip。"
+            exit 0
+          fi
+          echo "::add-mask::$RAW_URL"
+
+          # 2) Cloud SQL Auth Proxy を起動（WIF の ADC で認証・TCP 127.0.0.1:5433）。
+          curl -sSL -o cloud-sql-proxy \
+            "https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.23.0/cloud-sql-proxy.linux.amd64"
+          chmod +x cloud-sql-proxy
+          ./cloud-sql-proxy "${{ vars.CLOUDSQL_INSTANCE }}" --port 5433 &
+          PROXY_PID=$!
+          trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            (exec 3<>/dev/tcp/127.0.0.1/5433) 2>/dev/null && break
+            sleep 0.5
+          done
+
+          # 3) Cloud Run 向けの socket 形式 URL を TCP(127.0.0.1:5433) へ付け替え（password 表記は保持）。
+          TCP_URL="$(python3 -c 'import sys; u=sys.argv[1].strip(); s,r=u.split("://",1); ui,hp=r.split("@",1); d=hp.split("?",1)[0].lstrip("/") or "hoiku"; print(f"{s}://{ui}@127.0.0.1:5433/{d}")' "$RAW_URL")"
+          echo "::add-mask::$TCP_URL"
+
+          # 4) code head まで適用（未適用ぶんだけ・additive・トランザクショナル）。
+          DATABASE_URL="$TCP_URL" uv run alembic upgrade head
 
       - name: Deploy to Cloud Run (build from source, scale-to-zero)
         # 書類アーカイブ＋育つ指針（Cloud SQL・Phase 1/2）は任意配線：
