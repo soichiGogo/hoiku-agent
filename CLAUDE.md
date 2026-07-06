@@ -56,9 +56,12 @@
   var・既定4）/`--service-account`（`RUNTIME_SA` var＝最小権限・未設定は既定 SA 降格＋警告）/`DATABASE_URL` は
   Secret Manager 優先（`DATABASE_URL_SECRET` var・無ければ GH secret 平文降格）/**認証ポリシー再現**（`IAP_AUDIENCE`
   var 設定時は `--iap`＋`--no-allow-unauthenticated`＝IAP 維持・公開しない／未設定は `--allow-unauthenticated`）/
-  **env 保全**（`--set-env-vars` は全置換ゆえ `DEMO_PASSCODE`＝GH secret・`MODEL_LOCATION` を明示管理し再デプロイで落とさない）。
-  GCP 側の一度きり設定は `docs/ライブ実行手順.md`「本番運用ハードニング」。**dev は WIF 有効化済み＝main push で自動デプロイ**）
-  / eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
+  **env 保全**（`--set-env-vars` は全置換ゆえ `DEMO_PASSCODE`＝GH secret・`MODEL_LOCATION` を明示管理し再デプロイで落とさない）/
+  **DB migration 自動適用**（`CLOUDSQL_INSTANCE` var 設定時、deploy の**前**に Cloud SQL Auth Proxy 経由で `alembic upgrade head`
+  を当てコードとスキーマを同じ deploy で前進させる＝migration drift の再発防止。additive/expand 前提・失敗時は deploy 中止。
+  前提＝`DEPLOY_SA` に `roles/cloudsql.client`＋DB URL secret への `roles/secretmanager.secretAccessor`。手動 `alembic upgrade head`
+  は初回セットアップ／破壊的変更時の fallback）。GCP 側の一度きり設定は `docs/ライブ実行手順.md`「本番運用ハードニング」。
+  **dev は WIF 有効化済み＝main push で自動デプロイ**）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
 - 可観測性: `src/hoiku_agent/logging_config.py`＝Cloud Run 向け構造化 JSON ログ（stdout 1行 JSON・severity・
   `X-Cloud-Trace-Context` 相関）。`server.py` 入口で `configure_logging()`＋`install_trace_middleware()`。
   Cloud Logging クライアントは手組みしない（マネージド昇格に委ねる）。ローカルは `K_SERVICE` 無しでテキスト降格（`LOG_FORMAT`/`LOG_LEVEL`）。

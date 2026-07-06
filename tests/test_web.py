@@ -471,6 +471,26 @@ def records_db(tmp_path, monkeypatch):
     record_store.reset_engine_cache()
 
 
+def test_archive_write_maps_missing_schema_to_friendly_error(tmp_path, monkeypatch) -> None:
+    """migration 未適用（テーブル欠落）は生の psycopg 文字列でなく db_schema_unready コード＋対処を返す（D-1）。
+
+    ユーザー実障害の再現：DATABASE_URL 接続済みだが `classes`(migration 0007) が未整備でクラスを作ると
+    record_store は fail-loud（no such table）。それを保育士に意味の通る文言（alembic upgrade head）へ翻訳する。
+    """
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/empty.db")
+    record_store.reset_engine_cache()  # スキーマは作らない（create_all を呼ばない）
+    r = _client().post(
+        "/api/classes", json={"name": "ひまわり", "age_band": "3-5", "fiscal_year": ""}
+    )
+    record_store.reset_engine_cache()
+    assert r.status_code == 200  # 既存の {status:error} 契約は維持（HTTP は 200・本文で伝える）
+    body = r.json()
+    assert body["status"] == "error"
+    assert body["code"] == "db_schema_unready"
+    assert "alembic upgrade head" in body["detail"]
+    assert "no such table" not in body["detail"]  # 生の SQL エラーは露出しない
+
+
 def test_records_degrade_when_db_unset(monkeypatch) -> None:
     """DATABASE_URL 未設定＝降格（保存 skipped・一覧/児童は空・config は未接続を正直に返す）。"""
     monkeypatch.setattr(settings, "database_url", "")

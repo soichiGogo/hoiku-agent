@@ -29,9 +29,12 @@ scale-to-zero でメモリ揮発）だと作成したセッションが別イン
 
 from __future__ import annotations
 
+import logging
+
 from google.adk.cli.fast_api import get_fast_api_app
 
 from hoiku_agent.config import settings
+from hoiku_agent.harness import db
 from hoiku_agent.logging_config import configure_logging, install_trace_middleware
 from hoiku_agent.web import register_web_ui
 
@@ -52,3 +55,13 @@ register_web_ui(app)
 
 # リクエストの X-Cloud-Trace-Context をログに相関させる（同一リクエストのログを Logs Explorer で束ねる）。
 install_trace_middleware(app)
+
+# 起動時に DB スキーマの drift（未適用 migration＝欠落テーブル）を観測してログに残す。CD が deploy 前に
+# `alembic upgrade head` を当てるので通常は空だが、手動 gcloud 等で経路が外れた場合の早期検知（§ drift）。
+# 未接続（DATABASE_URL 未設定）や到達不能は空リスト＝起動は止めない（best-effort な可観測性）。
+_missing_tables = db.schema_drift()
+if _missing_tables:
+    logging.getLogger("hoiku_agent.startup").warning(
+        "DB schema drift を検知: 未整備テーブル %s（本番 DB に alembic upgrade head 未適用の可能性）",
+        _missing_tables,
+    )
