@@ -43,10 +43,11 @@ def build_upload_parser_agent(
     """アップロード取込の抽出AI（単一 LlmAgent）を構築して返す。
 
     Args:
-        kind: "diary" / "monthly" / "child_record" / "nursery_record"（保育士が選択済み＝1スキーマに固定）。
+        kind: "diary" / "monthly" / "class_monthly" / "child_record" / "nursery_record"
+            （保育士が選択済み＝1スキーマに固定）。
         age_band: 年齢帯（"0-2"/"3-5"）。タグ語彙の枠組みを決める与件（要録は "3-5" 固定）。
         target: 対象キー（日誌=対象日 / 月案=対象月 / 保育経過記録=対象期間 / 要録=対象年度）＝与件。
-        child: 対象児の呼び名（月案/保育経過記録/要録の与件・日誌は空＝クラス単位）。
+        child: 対象児の呼び名（個別月案/保育経過記録/要録の与件・日誌/クラス月案は空＝クラス単位）。
         model: 使用モデル。既定（None）は build_model()（§11）。決定論テストで FakeLlm 等を注入する差込口。
     """
     return LlmAgent(
