@@ -22,6 +22,7 @@ from fastapi import FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
 from ..harness import notation_store, policy_store, record_store, template_store
@@ -133,6 +134,15 @@ class ChildAddRequest(BaseModel):
     actor: str = ""
 
 
+class UserProfileRequest(BaseModel):
+    """自分の表示名（display_name）の登録/編集（Phase 3・IAP サインイン前提）。
+
+    email は body で受けない＝サーバが IAP の検証済み値で解決する（偽装不可）。ここは表示名だけ。
+    """
+
+    display_name: str = ""
+
+
 def _doc_filename(kind: str, entry: dict, ext: str) -> str:
     """書類のダウンロード名（日本語。RFC5987 で Content-Disposition に載せる）。ext は "pdf"/"docx"。"""
     if kind == "monthly":
@@ -193,8 +203,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     async def web_config(request: Request) -> dict:
         """フロントの起動時設定。接続状況は env から導出（未接続は降格表示に使う）。
 
-        user_email は IAP（Phase 3）の検証済み identity（IAP 未配線/未認証は None＝従来表示）。
+        user_email / user_display_name は IAP（Phase 3）の検証済み identity。IAP 未配線/未認証は
+        None/空＝従来の自己申告表示へ降格。サインイン時は users へ auto-provision（登録画面を待たせない）。
         """
+        email = verified_iap_email(request)
+        display_name = ""
+        if email:
+            # サインイン済み＝users へ auto-provision し、設定済みなら表示名を返す（DB I/O は threadpool へ）。
+            user = await run_in_threadpool(record_store.touch_user, email, now=datetime.now())
+            display_name = str(user.get("display_name") or "")
         return {
             "app_name": APP_NAME,
             "default_user_id": DEFAULT_USER_ID,
@@ -203,7 +220,8 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "records_connected": bool(settings.database_url),
             "passcode_required": bool(settings.demo_passcode),
             "model": settings.gemini_model,
-            "user_email": verified_iap_email(request),
+            "user_email": email,
+            "user_display_name": display_name,
             # 園の実 Word 様式（.docx）流し込みに対応済みの kind＝UI が Word ダウンロードの出し分けに使う。
             "docx_kinds": docx_supported_kinds(),
             # レビュー巡回の上限（harness の SSOT）。UI は差し戻し時に「N巡目/最大M」を出す際の M に使う
@@ -463,6 +481,22 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         user = record_store.touch_user(email, now=now)
         display = str(user.get("display_name") or "").strip()
         return f"{display}（{email}）" if display else email
+
+    @app.post("/api/user")
+    def web_set_user_profile(req: UserProfileRequest, request: Request):
+        """自分の表示名を登録/編集する（IAP の検証済み email に紐づけて users.display_name を設定）。
+
+        email は body でなく IAP 検証済み値で解決＝偽装不可。未サインイン（検証済み email なし）は
+        403（fail-closed）。IAP が認証する自己書込なのでパスコードゲートには載せない（_GATED_WRITE_PREFIX 外）。
+        決定的実体は harness/record_store（web は now 注入の中継のみ・§5）。DB 未接続は status:skipped で正直に。
+        """
+        email = verified_iap_email(request)
+        if not email:
+            return JSONResponse(
+                {"error": "サインインが必要です", "code": "auth_required"}, status_code=403
+            )
+        result = record_store.set_user_display_name(email, req.display_name, now=datetime.now())
+        return JSONResponse(result)
 
     @app.post("/api/records")
     def web_save_record(req: RecordSaveRequest, request: Request) -> dict:

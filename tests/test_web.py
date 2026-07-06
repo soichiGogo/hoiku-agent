@@ -808,6 +808,52 @@ def test_iap_verification_failure_falls_back_to_declared_actor(records_db, monke
     assert record_store.list_audit_events()[0]["actor"] == "保育士A"
 
 
+def test_set_user_display_name_updates_config_and_actor(records_db, monkeypatch) -> None:
+    """POST /api/user＝IAP の検証済み email に表示名を紐づけ、config と証跡に反映される。"""
+    from hoiku_agent.web import iap
+
+    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
+    monkeypatch.setattr(iap, "_verify_assertion", lambda a, aud: {"email": "sensei@example.com"})
+    c = _client()
+    headers = {"x-goog-iap-jwt-assertion": "signed-jwt"}
+    r = c.post("/api/user", json={"display_name": "そうた先生"}, headers=headers)
+    assert r.status_code == 200 and r.json()["display_name"] == "そうた先生"
+    # config に user_display_name として乗る（フロントが名前を表示できる）。
+    cfg = c.get("/api/config", headers=headers).json()
+    assert cfg["user_email"] == "sensei@example.com"
+    assert cfg["user_display_name"] == "そうた先生"
+    # 以後の保存の証跡 actor は「表示名（email）」＝自己申告の名義は無視される。
+    payload = {"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai", "actor": "無視名義"}
+    assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
+    assert {e["actor"] for e in record_store.list_audit_events()} == {"そうた先生（sensei@example.com）"}
+
+
+def test_set_user_display_name_requires_signin(monkeypatch) -> None:
+    """未サインイン（検証済み email なし）は 403＝偽装ヘッダで他人の表示名を書けない（fail-closed）。"""
+    monkeypatch.setattr(settings, "iap_audience", "")  # IAP 未配線＝ヘッダを信用しない
+    r = _client().post(
+        "/api/user",
+        json={"display_name": "なりすまし"},
+        headers={"x-goog-iap-jwt-assertion": "spoofed"},
+    )
+    assert r.status_code == 403 and r.json()["code"] == "auth_required"
+
+
+def test_set_user_display_name_not_passcode_gated(records_db, monkeypatch) -> None:
+    """/api/user はパスコードゲート外＝サインイン済みならパスコード無しで自分の表示名を保存できる。"""
+    from hoiku_agent.web import iap
+
+    monkeypatch.setattr(settings, "demo_passcode", "secret")  # ゲート有効でも…
+    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
+    monkeypatch.setattr(iap, "_verify_assertion", lambda a, aud: {"email": "sensei@example.com"})
+    r = _client().post(
+        "/api/user",
+        json={"display_name": "そうた先生"},
+        headers={"x-goog-iap-jwt-assertion": "signed-jwt"},
+    )
+    assert r.status_code == 200 and r.json()["status"] == "ok"  # パスコードで 401 にならない
+
+
 # ──────────────────── 表記ルール辞書（ひらがな表記DX＝/api/notation の中継） ────────────────────
 
 
