@@ -351,7 +351,9 @@ def test_set_user_display_name_degrades(monkeypatch, db):
     assert rs.set_user_display_name("", "名前", now=_NOW)["status"] == "skipped"  # 空 email
     monkeypatch.setattr(settings, "database_url", "")
     rs.reset_engine_cache()
-    assert rs.set_user_display_name("s@example.com", "名前", now=_NOW)["status"] == "skipped"  # DB 未設定
+    assert (
+        rs.set_user_display_name("s@example.com", "名前", now=_NOW)["status"] == "skipped"
+    )  # DB 未設定
 
 
 def test_upsert_child_creates_fills_birthdate_and_is_idempotent(db):

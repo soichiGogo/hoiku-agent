@@ -823,9 +823,16 @@ def test_set_user_display_name_updates_config_and_actor(records_db, monkeypatch)
     assert cfg["user_email"] == "sensei@example.com"
     assert cfg["user_display_name"] == "そうた先生"
     # 以後の保存の証跡 actor は「表示名（email）」＝自己申告の名義は無視される。
-    payload = {"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai", "actor": "無視名義"}
+    payload = {
+        "kind": "diary",
+        "entry": _edit_diary_entry(),
+        "author_kind": "ai",
+        "actor": "無視名義",
+    }
     assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
-    assert {e["actor"] for e in record_store.list_audit_events()} == {"そうた先生（sensei@example.com）"}
+    assert {e["actor"] for e in record_store.list_audit_events()} == {
+        "そうた先生（sensei@example.com）"
+    }
 
 
 def test_set_user_display_name_requires_signin(monkeypatch) -> None:
