@@ -257,7 +257,9 @@ class ChildRecord(BaseModel):
     period: str = Field(description="対象期間（例: 2026-04〜2026-06。期制は園差＝自由記述）")
     age_band: AgeBand
     child_id: str  # 架空児のみ。実名は書かない（§14）
-    # 月齢/年齢（◯歳◯か月・任意）。架空児は生年月日が無く自動導出できないため保育士編集の自由記述。
+    # 月齢/年齢（◯歳◯か月・任意）。児童マスタに生年月日が登録済みなら finalize/帳票の web 境界が
+    # 期末（記入時点）の満年齢を決定的に充填する（`record_store.age_months_label`）。未登録（架空児・
+    # デモ含む）は従来どおり保育士編集の自由記述にフォールバックする（§14）。
     age_months: _BlankableStr = ""
     development_notes: list[DevelopmentNote] = Field(
         description="発達の経過（領域別叙述・年齢分岐タグ必須＝0–2は3つの視点/3–5は5領域・§19）"

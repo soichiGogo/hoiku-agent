@@ -72,6 +72,26 @@ def official_full_name(family_name: str | None, given_name: str | None) -> str:
     return "　".join(p for p in parts if p)
 
 
+def age_months_label(birthdate: date, as_of: date) -> str:
+    """生年月日と基準日から満年齢を「○歳○か月」で返す純関数（決定的＝月齢表示の実体はここに1つ）。
+
+    保育経過記録などの「歳児」欄を粗い年齢帯（0-2/3-5）でなく子ども一人ひとりの満年齢で出すための計算。
+    月は基準日の「日」が誕生日の「日」に満たなければ1つ繰り下げる（暦どおりの満年齢）。
+    書式は既存の下書き/シード（例 "4歳0か月"・"1歳3か月"）に合わせ「歳」「か月」を用いる。
+    基準日が生年月日より前（＝まだ生まれていない）のときは空文字を返す（誤表示より無表示）。
+    """
+    years = as_of.year - birthdate.year
+    months = as_of.month - birthdate.month
+    if as_of.day < birthdate.day:
+        months -= 1
+    if months < 0:
+        years -= 1
+        months += 12
+    if years < 0:
+        return ""
+    return f"{years}歳{months}か月"
+
+
 class Child(Base):
     """児童マスタ。本名（姓名）は DB のみに置き repo/eval へ持ち込まない（§14）。
 
