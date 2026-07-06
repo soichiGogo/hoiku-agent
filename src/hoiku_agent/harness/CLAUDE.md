@@ -100,8 +100,8 @@
   列割当・年度の同定は描画側 web/chohyo_pdf の責務＝ここは引くだけ）／`get_document`（単一書類の現行版全文＝本文 entry・
   整形テキスト・確定/編集の区別＝「書類を見る」タブの閲覧・不在/不正 id/未接続は None）。**LLM もパイプラインも呼ばない**
   （永続化はフロント→web API→ここの明示フロー）。`DATABASE_URL` 未設定は降格（書込 skipped・読取 空）。
-  表示名→children.id（UUID）の解決はここに1つ。`users`＋`touch_user`（Phase 3）＝IAP の検証済み email を
-  初回アクセスで auto-provision（children と同じ流儀・display_name は後から DB で設定・認可は持たない）。
+  表示名→children.id（UUID）の解決はここに1つ。`users`＋`touch_user`／`set_user_display_name`（Phase 3）＝IAP の検証済み email を
+  初回アクセスで auto-provision（children と同じ流儀）・`set_user_display_name` で display_name を後から設定（自分の表示名・認可は持たない）。
   スキーマ適用は repo root の Alembic（`migrations/`）。clock は外部注入。
 
 ## スタブを埋めるとき
