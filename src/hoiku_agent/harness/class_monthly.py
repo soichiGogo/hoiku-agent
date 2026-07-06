@@ -52,7 +52,8 @@ def build_class_monthly_pipeline(
     return SequentialAgent(
         name="class_monthly_pipeline",
         sub_agents=[
-            DigestPrepAgent(name="class_month_prep"),
+            # reflections_key＝前月日誌の評価・反省も日付順に集める（クラス月案のみ＝§10 決定B）。
+            DigestPrepAgent(name="class_month_prep", reflections_key="prev_month_reflections"),
             build_authoring_loop(build_class_monthly_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="class_monthly"),
         ],

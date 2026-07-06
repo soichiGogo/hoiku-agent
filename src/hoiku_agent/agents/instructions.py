@@ -19,7 +19,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from ..harness.aggregate import format_digest_for_prompt, format_record_digest_for_prompt
+from ..harness.aggregate import (
+    format_digest_for_prompt,
+    format_record_digest_for_prompt,
+    format_reflections_for_prompt,
+)
 from ..harness.policy_store import load_book, render_for_doc
 from ..schemas.policy import PolicyScope
 
@@ -31,21 +35,36 @@ if TYPE_CHECKING:
 # format_record_digest_for_prompt を使う（集積の実体は harness/aggregate・ここは組み立てのみ）。
 _Formatter = Callable[[dict, str], str]
 
-# state["doc_type"] → (指針 scope, 集積の state キー, 集積の見出しラベル, 集積 formatter)。
-# router の doc_type 値（月案/クラス月案/保育経過記録/保育要録）に一致させる。**保育日誌は AI 生成を退役**
-# したため作成/レビューAI では routed されないが、PolicyScope.保育日誌 は指針カード（policy_store）で有効な
-# scope なので語彙として残す（保育士が日誌向けの勘所を育て、将来の校正AI が参照できる）。
-_DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter]] = {
-    "保育日誌": (PolicyScope.保育日誌, None, "", format_digest_for_prompt),
-    "月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt),
-    # クラス月案（園の実様式・§18）は個別月案と同じ scope（月案）・前月集積（L2）を流用する。
-    "クラス月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt),
-    "保育経過記録": (PolicyScope.保育経過記録, "period_digest", "期間", format_digest_for_prompt),
+# state["doc_type"] → (指針 scope, 集積の state キー, 集積の見出しラベル, 集積 formatter, 振り返りの state キー)。
+# reflections_key は前月の評価・反省（クラス月案のみ＝決定B・他は None）。router の doc_type 値
+# （月案/クラス月案/保育経過記録/保育要録）に一致させる。**保育日誌は AI 生成を退役**したため作成/レビューAI
+# では routed されないが、PolicyScope.保育日誌 は指針カード（policy_store）で有効な scope なので語彙として残す
+# （保育士が日誌向けの勘所を育て、将来の校正AI が参照できる）。
+_DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter, str | None]] = {
+    "保育日誌": (PolicyScope.保育日誌, None, "", format_digest_for_prompt, None),
+    "月案": (PolicyScope.月案, "prev_month_digest", "前月", format_digest_for_prompt, None),
+    # クラス月案（園の実様式・§18）は個別月案と同じ scope（月案）・前月集積（L2）を流用しつつ、前月の
+    # 評価・反省（prev_month_reflections）も前置する（決定B＝日誌の振り返りをクラス月案に効かせる）。
+    "クラス月案": (
+        PolicyScope.月案,
+        "prev_month_digest",
+        "前月",
+        format_digest_for_prompt,
+        "prev_month_reflections",
+    ),
+    "保育経過記録": (
+        PolicyScope.保育経過記録,
+        "period_digest",
+        "期間",
+        format_digest_for_prompt,
+        None,
+    ),
     "保育要録": (
         PolicyScope.保育要録,
         "record_digest",
         "最終年度",
         format_record_digest_for_prompt,
+        None,
     ),
 }
 # doc_type 未設定時の既定（router の既定＝クラス月案＝§18。保育日誌は AI 生成を退役したため既定にしない）。
@@ -67,8 +86,9 @@ def _compose(
     digest_key: str | None,
     label: str,
     formatter: _Formatter,
+    reflections_key: str | None = None,
 ) -> str:
-    """指針（＋集積）を prompt 冒頭に前置し、base instruction を続ける（与件→手順の順）。"""
+    """指針（＋集積＋前月の振り返り）を prompt 冒頭に前置し、base instruction を続ける（与件→手順の順）。"""
     parts: list[str] = []
     policy = _policy_text(scope)
     if policy:
@@ -77,6 +97,10 @@ def _compose(
         digest = state.get(digest_key)
         if digest:  # 空 digest（初回）は前置しない
             parts.append(formatter(digest, label))
+    if reflections_key:
+        reflections = state.get(reflections_key)
+        if reflections:  # 記入済みの振り返りが無ければ前置しない（クラス月案・決定B）
+            parts.append(format_reflections_for_prompt(reflections, label))
     parts.append(base)
     return "\n\n".join(parts)
 
@@ -87,15 +111,19 @@ def build_author_instruction(
     digest_key: str | None = None,
     digest_label: str = "",
     digest_formatter: _Formatter = format_digest_for_prompt,
+    reflections_key: str | None = None,
 ) -> Callable[[ReadonlyContext], str]:
     """作成AI の InstructionProvider を作る（scope は書類ごとに確定＝factory 時に固定）。
 
     diary は digest_key=None（集積なし）／月案・保育経過記録は日誌集積（前月／期間）を前置する。要録は
     最終年度の保育経過記録集積（record_digest）を `format_record_digest_for_prompt` で前置する（formatter 差替）。
+    reflections_key を与えるとクラス月案のみ前月の評価・反省（state[reflections_key]）も前置する（決定B）。
     """
 
     def provider(ctx: ReadonlyContext) -> str:
-        return _compose(base, scope, ctx.state, digest_key, digest_label, digest_formatter)
+        return _compose(
+            base, scope, ctx.state, digest_key, digest_label, digest_formatter, reflections_key
+        )
 
     return provider
 
@@ -108,9 +136,9 @@ def build_review_instruction(base: str) -> Callable[[ReadonlyContext], str]:
     """
 
     def provider(ctx: ReadonlyContext) -> str:
-        scope, digest_key, label, formatter = _DOC_TYPE_ROUTING.get(
+        scope, digest_key, label, formatter, reflections_key = _DOC_TYPE_ROUTING.get(
             ctx.state.get("doc_type"), _DEFAULT_ROUTING
         )
-        return _compose(base, scope, ctx.state, digest_key, label, formatter)
+        return _compose(base, scope, ctx.state, digest_key, label, formatter, reflections_key)
 
     return provider

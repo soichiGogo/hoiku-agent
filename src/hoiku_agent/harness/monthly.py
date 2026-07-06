@@ -27,7 +27,7 @@ from pydantic import ValidationError
 
 from ..agents import build_monthly_author_agent
 from ..schemas import DiaryEntry
-from .aggregate import prev_month_digest
+from .aggregate import collect_reflections, prev_month_digest
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
@@ -63,6 +63,10 @@ class DigestPrepAgent(BaseAgent):
     素通り（降格）。月案（L2 還流＝前月日誌・既定キー）と保育経過記録（L3 還流＝期間日誌）で共用する
     （集計の決定的実体は aggregate.py に1つ・ここは配線のみ）。旧名 MonthlyPrepAgent を一般化した。
 
+    `reflections_key` を与えると（クラス月案のみ）、前月日誌の評価・反省を日次のクラス全体所見として
+    `collect_reflections` で日付順に集め、同じ state-only イベントで state[reflections_key] にも載せる
+    （個別月案・保育経過記録は None＝従来どおり digest のみ・挙動不変・§10 決定B）。
+
     **content を持たせない理由（§12）**：ADK eval の rubric judge は invocation の先頭イベント著者の
     developer instructions を引く（LLM 段のみ登録）。prep が content 付きイベントを先頭に置くと judge が
     非LLM段を引いて採点不能になる。state-only イベントは eval の invocation_events から除外されるため
@@ -71,15 +75,18 @@ class DigestPrepAgent(BaseAgent):
 
     input_key: str = "prev_month_entries"
     output_key: str = "prev_month_digest"
+    reflections_key: str | None = None  # 設定時のみ前月の評価・反省も集める（クラス月案・決定B）
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         entries = _parse_prev_entries(ctx.session.state.get(self.input_key))
-        digest = prev_month_digest(entries)
+        state_delta: dict = {self.output_key: prev_month_digest(entries)}
+        if self.reflections_key:
+            state_delta[self.reflections_key] = collect_reflections(entries)
         # content を付けない（state_delta のみ）＝eval の invocation_events に載らず judge を壊さない。
         yield Event(
             invocation_id=ctx.invocation_id,
             author=self.name,
-            actions=EventActions(state_delta={self.output_key: digest}),
+            actions=EventActions(state_delta=state_delta),
         )
 
 

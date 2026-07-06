@@ -41,12 +41,14 @@ def build_class_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmA
     return LlmAgent(
         name="class_monthly_author",
         model=model if model is not None else build_model(),
-        # 文書作成指針（共通＋月案）＋前月集積（state["prev_month_digest"]）を prompt 冒頭へ前置注入（§5）。
+        # 文書作成指針（共通＋月案）＋前月集積（prev_month_digest）＋前月の振り返り（prev_month_reflections
+        # ＝評価・反省・決定B）を prompt 冒頭へ前置注入（§5/§10）。
         instruction=build_author_instruction(
             CLASS_MONTHLY_AUTHOR_INSTRUCTION,
             PolicyScope.月案,
             digest_key="prev_month_digest",
             digest_label="前月",
+            reflections_key="prev_month_reflections",
         ),
         tools=[
             recall_child_history,

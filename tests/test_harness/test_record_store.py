@@ -110,8 +110,12 @@ def test_approve_unsaved_document_errors(db):
     assert r["status"] == "error"
 
 
-def test_edit_after_approve_keeps_versions(db):
-    """承認後の編集も版として積める（証跡が残る・黙って上書きしない）。"""
+def test_edit_after_approve_keeps_versions_and_revokes_approval(db):
+    """承認後の編集も版として積める（証跡が残る）。ただし承認は失効し finalized へ戻る（偽の緑を出さない）。
+
+    書類管理タブでの編集（caregiver・decision A）は編集→再承認の流れに乗る＝編集後の現行内容を
+    「承認済み」と偽らない。旧内容への承認証跡（audit）は残る。
+    """
     entry = _diary_entry("2026-07-01")
     rs.save_document("diary", entry, author_kind="ai", now=_NOW)
     rs.approve_document("diary", entry, actor="園長", now=_NOW)
@@ -119,7 +123,11 @@ def test_edit_after_approve_keeps_versions(db):
         "diary", dict(entry, daily_aim="追記"), author_kind="caregiver", actor="保育士A", now=_NOW
     )
     assert r["version_seq"] == 2
-    assert r["doc_status"] == "approved"
+    assert r["doc_status"] == "finalized"  # 承認失効＝現行版は未承認へ（再承認が要る）
+    assert rs.list_documents()[0]["status"] == "finalized"
+    # 旧内容への承認証跡は audit に残る（黙って消さない）。
+    actions = [e["action"] for e in rs.list_audit_events()]
+    assert "approve" in actions and actions.count("edit") == 1
 
 
 # ──────────────────────────── 単一書類の全文取得（書類を見る＝アーカイブ閲覧） ────────────────────────────
@@ -231,6 +239,37 @@ def test_list_diary_entries_filters_by_range(db):
         rs.save_document("diary", _diary_entry(day), author_kind="ai", now=_NOW)
     entries = rs.list_diary_entries(date(2026, 7, 1), date(2026, 7, 31))
     assert [e["date"] for e in entries] == ["2026-07-01", "2026-07-15"]
+
+
+def test_list_diary_meta_flags_evaluation_completeness(db):
+    """日誌メタ（id/日付/状態/評価充足）を日付順に返す＝クラス月案の未記入検出用。
+
+    評価・反省は2視点とも記入で complete。片方でも空なら未記入（validate_fields と同じ判定）。
+    """
+    # 6/10=両視点あり（complete）、6/11=(b)空（未記入）、6/20=(a)空（未記入）
+    e_full = _diary_entry("2026-06-10")
+    e_no_b = dict(_diary_entry("2026-06-11"), evaluation={"child_focus": "あり", "self_review": ""})
+    e_no_a = dict(_diary_entry("2026-06-20"), evaluation={"child_focus": "", "self_review": "あり"})
+    for e in (e_full, e_no_b, e_no_a):
+        rs.save_document("diary", e, author_kind="ai", now=_NOW)
+
+    meta = rs.list_diary_meta(date(2026, 6, 1), date(2026, 6, 30))
+    assert [m["date"] for m in meta] == ["2026-06-10", "2026-06-11", "2026-06-20"]  # 日付順
+    by_date = {m["date"]: m for m in meta}
+    assert by_date["2026-06-10"]["evaluation_complete"] is True
+    assert by_date["2026-06-11"]["evaluation_complete"] is False  # (b) 空＝未記入
+    assert by_date["2026-06-20"]["evaluation_complete"] is False  # (a) 空＝未記入
+    # id はフロントが「その日誌へ飛んで編集」する導線に使う＝存在すること。
+    assert all(m["id"] for m in meta)
+    # age_band＝クラス月案がクラス（年齢帯）の日誌だけに絞るために返す。
+    assert by_date["2026-06-10"]["age_band"] == "0-2"
+
+
+def test_list_diary_meta_empty_when_disabled(monkeypatch):
+    """DATABASE_URL 未設定は降格＝空（読取は落とさない）。"""
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.list_diary_meta(date(2026, 6, 1), date(2026, 6, 30)) == []
 
 
 def test_list_child_record_entries_returns_latest_per_period_for_child(db):

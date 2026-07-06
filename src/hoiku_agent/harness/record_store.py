@@ -422,6 +422,11 @@ def save_document(
             session.flush()
             doc.current_version_id = version.id
             doc.updated_at = now
+            # 承認後に新しい版が積まれたら承認は失効させる（現行版＝未承認の finalized へ戻す）。旧内容への
+            # 承認証跡は audit に残るが、編集後の現行内容を「承認済み」と偽らない（§偽の緑を出さない）。
+            # 書類管理タブでの編集（caregiver）は編集→再承認の流れに乗る（decision A）。
+            if doc.status == "approved":
+                doc.status = "finalized"
             session.add(
                 AuditEvent(
                     document_id=doc.id,
@@ -777,6 +782,61 @@ def list_diary_entries(
                 if version is not None:
                     entries.append(version.entry)
             return entries
+    except SQLAlchemyError:
+        return []
+
+
+def _diary_evaluation_complete(entry: dict) -> bool:
+    """日誌 entry の評価・反省（2視点）が両方記入済みか（validate_fields の「2視点必須」と同じ判定）。
+
+    (a)子どもに焦点／(b)自分の保育の適否のどちらかでも空なら未完＝未記入とみなす（クラス月案作成時に
+    「前月日誌の評価が未記入なら記入を促す」動線の判定に使う）。entry は現行版の本文 JSON。壊れ/欠落は
+    未記入扱い（安全側）。判定ルールはここに1つ（frontend で再実装しない＝ドリフト防止）。
+    """
+    ev = (entry or {}).get("evaluation") or {}
+    return bool(str(ev.get("child_focus") or "").strip()) and bool(
+        str(ev.get("self_review") or "").strip()
+    )
+
+
+def list_diary_meta(date_from: date, date_to: date) -> list[dict]:
+    """期間内の日誌メタ（id・対象日・状態・評価充足）を日付順に返す＝クラス月案作成時の未記入検出用。
+
+    本文（entry）は載せない軽量メタ（充足判定だけ済ませて返す＝ワイヤは軽い）。seed 取得
+    （list_diary_entries＝本文が要る）とは役割が別。id はフロントが「その日誌へ飛んで編集」する導線に使う。
+    降格・障害は空（読取は落とさない＝list_diary_entries と同じ）。
+    """
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        with Session(eng) as session:
+            q = (
+                sa.select(DocumentRecord)
+                .where(
+                    DocumentRecord.doc_type == "diary",
+                    DocumentRecord.target_date >= date_from,
+                    DocumentRecord.target_date <= date_to,
+                )
+                .order_by(DocumentRecord.target_date)
+            )
+            rows: list[dict] = []
+            for doc in session.scalars(q):
+                version = session.scalar(
+                    sa.select(DocumentVersion).where(DocumentVersion.id == doc.current_version_id)
+                )
+                entry = version.entry if version is not None else {}
+                rows.append(
+                    {
+                        "id": str(doc.id),
+                        "date": doc.target_date.isoformat() if doc.target_date else "",
+                        "status": doc.status,
+                        # クラス月案は年齢帯（クラス）単位なので、フロントが当該クラスの日誌だけに絞れるよう返す。
+                        "age_band": (entry or {}).get("age_band") or "",
+                        "evaluation_complete": _diary_evaluation_complete(entry),
+                    }
+                )
+            return rows
     except SQLAlchemyError:
         return []
 

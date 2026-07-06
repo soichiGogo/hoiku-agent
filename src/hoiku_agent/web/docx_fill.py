@@ -22,6 +22,7 @@ AI 非生成で空欄温存。**個別月案（monthly）**＝旧経路として
 
 from __future__ import annotations
 
+import copy
 import io
 import re
 from pathlib import Path
@@ -115,6 +116,32 @@ def _write_label_value_rows(tbl: Table, rows: list[tuple[str, str]]) -> None:
     # 余ったテンプレ行を削除（先に list 化してから remove）。
     for extra in list(tbl.rows[1 + len(rows) :]):
         tbl._tbl.remove(extra._tr)
+
+
+def _resize_table_data_rows(tbl: Table, data_start: int, count: int) -> None:
+    """表の記入行（data_start 以降）をちょうど count 行にそろえる（人数分の枠を過不足なく用意する）。
+
+    足りなければ**テンプレの記入行 `<w:tr>` を丸ごと複製**して末尾に足す。`add_row` はセル毎の罫線・
+    列幅・フォント指定（tcBorders/tcW/rPr）を引き継がず**枠線の無い崩れた行**になるため、雛形行を
+    deepcopy して様式どおりの空枠を生やす。余れば末尾の記入行を削除して空枠を残さない（`_write_label_
+    value_rows` と同じ remove 手順）。テンプレに記入行が1行も無い異形（複製元/削除対象が無い）や count<0
+    は触らない（描画のみ・型の保証は harness＝§5）。
+    """
+    if count < 0:
+        return
+    current = len(tbl.rows) - data_start
+    if current <= 0:
+        return  # 複製元/削除対象の記入行が無い（異形テンプレは触らない）
+    if count > current:
+        template_tr = tbl.rows[data_start]._tr  # 先頭の記入行を雛形に
+        anchor = tbl.rows[-1]._tr
+        for _ in range(count - current):
+            new_tr = copy.deepcopy(template_tr)
+            anchor.addnext(new_tr)  # 既存の最終記入行の直後へ順に足す
+            anchor = new_tr
+    elif count < current:
+        for extra in list(tbl.rows[data_start + count :]):
+            tbl._tbl.remove(extra._tr)
 
 
 def _fill_domain_matrix(matrix: Table, entry: dict) -> None:
@@ -262,10 +289,11 @@ def _fill_monthly(entry: dict) -> Document:
         if len(header.rows) > 1:
             _set_cell(header.rows[1].cells[1], f"{_AGE_LABEL.get(age, age)}歳児（　　名）")
 
-    # ── 個人目標小表（0-2 のみ）：個別月案の中身を1行へ写像 ──
+    # ── 個人目標小表（0-2 のみ）：個別月案の中身を1行へ写像（余った記入枠は削る＝1名分に合わせる） ──
     goals_tbl = _find_table(doc, header_contains=("個人目標",))
     if goals_tbl is not None:
         # r0=見出し「個人目標…」、r1=列見出し（氏名/子どもの姿/ねらい・配慮/評価・反省）、r2 以降=記入行。
+        _resize_table_data_rows(goals_tbl, 2, 1)  # 個別月案は1名＝記入1行にそろえる
         row = goals_tbl.rows[2] if len(goals_tbl.rows) > 2 else None
         if row is not None and len(row.cells) >= 4:
             name = str(entry.get("child_id") or "")
@@ -356,16 +384,18 @@ def _fill_class_monthly(entry: dict) -> Document:
         _set_after_label(liaison, "家庭との連携", str(entry.get("family_liaison") or ""))
         _set_after_label(liaison, "職員間の連携", str(entry.get("staff_liaison") or ""))
 
-    # ── 個人目標小表（0–2 フォームのみ）：登場児ぶんを行に埋める（不足行は add_row） ──
+    # ── 個人目標小表（0–2 フォームのみ）：登場児ぶんの記入行を過不足なく用意して埋める ──
     goals = entry.get("individual_goals") or []
     goals_tbl = _find_table(doc, header_contains=("個人目標",))
     if goals_tbl is not None and goals:
         # r0=見出し「個人目標…」、r1=列見出し（氏名/子どもの姿/ねらい・配慮/評価・反省）、r2 以降=記入行。
         data_start = 2
+        _resize_table_data_rows(goals_tbl, data_start, len(goals))  # 人数分の枠を生成/削除
         for i, goal in enumerate(goals):
+            if data_start + i >= len(goals_tbl.rows):
+                break  # 記入行を用意できない異形テンプレ（resize が no-op）＝安全に打ち切る
             goal = goal or {}
-            ri = data_start + i
-            row = goals_tbl.rows[ri] if ri < len(goals_tbl.rows) else goals_tbl.add_row()
+            row = goals_tbl.rows[data_start + i]
             if len(row.cells) < 4:
                 continue
             name = str(goal.get("child_id") or "")
@@ -373,7 +403,9 @@ def _fill_class_monthly(entry: dict) -> Document:
             _set_cell(row.cells[0], f"{name}（{months}）" if months else name)
             _set_cell(row.cells[1], str(goal.get("child_state") or ""))
             _set_cell(row.cells[2], str(goal.get("aim_support") or ""))
-            # 評価・反省（col3）は月末記入＝空欄温存。
+            # 評価・反省（col3）は月末に保育士が記入する運用欄＝AI 非生成なので通常は空。ただし編集フォームで
+            # 記入済みなら反映する（空なら空欄温存＝帳票PDF と同じ挙動。記入値を黙って落とさない）。
+            _set_cell(row.cells[3], str(goal.get("evaluation") or ""))
 
     return doc
 

@@ -7,7 +7,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from hoiku_agent.harness import aggregate_by_child, format_digest_for_prompt, prev_month_digest
+from hoiku_agent.harness import (
+    aggregate_by_child,
+    collect_reflections,
+    format_digest_for_prompt,
+    format_reflections_for_prompt,
+    prev_month_digest,
+)
 from hoiku_agent.schemas import (
     AgeBand,
     DiaryEntry,
@@ -17,7 +23,13 @@ from hoiku_agent.schemas import (
 )
 
 
-def _entry(day: int, child_id: str) -> DiaryEntry:
+def _entry(
+    day: int,
+    child_id: str,
+    *,
+    child_focus: str = "x",
+    self_review: str = "y",
+) -> DiaryEntry:
     return DiaryEntry(
         date=date(2026, 6, day),
         age_band=AgeBand.零から二歳,
@@ -31,7 +43,7 @@ def _entry(day: int, child_id: str) -> DiaryEntry:
                 tags=[ThreeViewpoint.身近な人と気持ちが通じ合う],
             )
         ],
-        evaluation=DiaryEvaluation(child_focus="x", self_review="y"),
+        evaluation=DiaryEvaluation(child_focus=child_focus, self_review=self_review),
     )
 
 
@@ -67,3 +79,43 @@ def test_format_digest_empty_degrades():
     """前月データ無し（初月/未提供）でも空 digest で降格メッセージを返す（落ちない）。"""
     text = format_digest_for_prompt(prev_month_digest([]))
     assert "前月の日誌データがありません" in text
+
+
+# ──────────────── 前月の振り返り（評価・反省）＝クラス月案の L2 還流の一部（決定B） ────────────────
+
+
+def test_collect_reflections_gathers_nonblank_in_date_order():
+    """記入済み（(a)/(b) いずれか非空）の日誌の評価・反省を日付昇順で集める。"""
+    entries = [
+        _entry(3, "c001", child_focus="3日は水遊びに夢中", self_review=""),
+        _entry(1, "c001", child_focus="", self_review="1日は導線を見直したい"),
+    ]
+    rows = collect_reflections(entries)
+    assert [r["date"] for r in rows] == ["2026-06-01", "2026-06-03"]  # 日付昇順
+    assert rows[0]["self_review"] == "1日は導線を見直したい"
+    assert rows[1]["child_focus"] == "3日は水遊びに夢中"
+
+
+def test_collect_reflections_skips_blank_both_viewpoints():
+    """(a)/(b) とも空（未記入）の日は集めない（プロンプトを膨らませない）。"""
+    rows = collect_reflections(
+        [
+            _entry(1, "c001", child_focus="", self_review=""),  # 未記入＝除外
+            _entry(2, "c001", child_focus="姿あり", self_review=""),  # 片方記入＝含む
+        ]
+    )
+    assert len(rows) == 1
+    assert rows[0]["date"] == "2026-06-02"
+
+
+def test_format_reflections_lists_by_date():
+    """整形テキストは日付ごとに (a)/(b) を列挙する（要約は author の責務）。"""
+    text = format_reflections_for_prompt(
+        collect_reflections([_entry(5, "c001", child_focus="姿A", self_review="適否B")])
+    )
+    assert "2026-06-05" in text and "姿A" in text and "適否B" in text
+
+
+def test_format_reflections_empty_degrades():
+    """記入済みの振り返りが無ければ降格メッセージを返す（落ちない）。"""
+    assert "評価・反省がありません" in format_reflections_for_prompt([])

@@ -11,18 +11,25 @@ import io
 
 import docx
 import pytest
+from docx.oxml.ns import qn
 
 from hoiku_agent.schemas import (
     AgeBand,
     ChildRecord,
+    ClassMonthlyPlan,
     DevelopmentNote,
     FiveDomains,
+    IndividualGoal,
     MonthlyEducationNote,
     MonthlyPlan,
     NurseryRecord,
     ThreeViewpoint,
 )
-from hoiku_agent.web.docx_fill import fill_docx, supported_kinds
+from hoiku_agent.web.docx_fill import (
+    _resize_table_data_rows,
+    fill_docx,
+    supported_kinds,
+)
 
 
 def _nursery() -> dict:
@@ -59,6 +66,26 @@ def _monthly(age_band: AgeBand = AgeBand.零から二歳) -> dict:
         monthly_goals="感触遊びで探索意欲を満たす",
         environment_support="水遊びの動線を整える",
         evaluation_reflection="感触遊びの幅を広げられた",
+    ).model_dump(mode="json")
+
+
+def _class_monthly(n_goals: int, age_band: AgeBand = AgeBand.零から二歳) -> dict:
+    """0–2 クラス月案（園フォーム）＝個人目標を n_goals 名ぶん持つ確定 entry。"""
+    return ClassMonthlyPlan(
+        month="2026-07",
+        age_band=age_band,
+        class_name="ひよこ組",
+        monthly_goal="梅雨期も健康に過ごす",
+        prev_month_state="感触遊びに集中していた",
+        individual_goals=[
+            IndividualGoal(
+                child_id=f"こども{i}くん",
+                age_months=f"1歳{i}か月",
+                child_state=f"子どもの姿{i}",
+                aim_support=f"ねらい・配慮{i}",
+            )
+            for i in range(1, n_goals + 1)
+        ],
     ).model_dump(mode="json")
 
 
@@ -144,6 +171,97 @@ def test_fill_monthly_3_5_has_no_goals_table_but_renders():
     assert not any("個人目標" in t.rows[0].cells[0].text for t in tables)
     header = next(t for t in tables if "年度・月" in "".join(c.text for c in t.rows[0].cells))
     assert "3〜5歳児" in "".join(c.text for c in header.rows[1].cells)
+
+
+def _goals_table(tables: list):
+    """テンプレの「個人目標」小表を返す（r0=見出し/r1=列見出し/r2 以降=記入行）。"""
+    return next(t for t in tables if "個人目標" in t.rows[0].cells[0].text)
+
+
+def _row_has_full_borders(row) -> bool:
+    """行の全セルが per-cell の罫線（tcBorders）を持つ＝様式どおりの枠か（add_row の崩れ検出）。"""
+    return all(
+        c._tc.tcPr is not None and c._tc.tcPr.find(qn("w:tcBorders")) is not None for c in row.cells
+    )
+
+
+def _make_table(n_rows: int, n_cols: int = 4):
+    """title/header/data… を模した合成表（data_start=2 前提の記入行検証用）。"""
+    doc = docx.Document()
+    return doc.add_table(rows=n_rows, cols=n_cols)
+
+
+def test_resize_grows_shrinks_and_matches_exact_count():
+    """記入行（data_start=2 以降）をちょうど count 行にそろえる（増減・一致）。"""
+    grow = _make_table(4)  # title+header+2 data
+    _resize_table_data_rows(grow, 2, 5)
+    assert len(grow.rows) == 2 + 5
+
+    shrink = _make_table(4)
+    _resize_table_data_rows(shrink, 2, 1)
+    assert len(shrink.rows) == 2 + 1
+
+    same = _make_table(4)
+    _resize_table_data_rows(same, 2, 2)  # count==current＝no-op
+    assert len(same.rows) == 2 + 2
+
+
+def test_resize_no_ops_on_header_only_table():
+    """記入行が1つも無い異形（title+header のみ）は複製元が無いので触らない（IndexError も出さない）。"""
+    header_only = _make_table(2)  # title+header, 0 data rows
+    _resize_table_data_rows(header_only, 2, 3)  # current<=0 → 早期 return
+    assert len(header_only.rows) == 2
+
+
+def test_supported_kinds_has_class_monthly():
+    assert "class_monthly" in supported_kinds()
+
+
+def test_fill_class_monthly_generates_one_row_per_child():
+    """個人目標がテンプレ既定（2行）を超えても人数分の記入行を生成し、様式（罫線・4列）を保つ。"""
+    tables = _tables(fill_docx("class_monthly", _class_monthly(4)))
+    goals = _goals_table(tables)
+    data_rows = goals.rows[2:]  # r2 以降＝記入行
+    assert len(data_rows) == 4  # 4名ぶんちょうど（テンプレ2行→複製で4行）
+    for i, row in enumerate(data_rows, start=1):
+        assert f"こども{i}くん" in row.cells[0].text
+        assert f"1歳{i}か月" in row.cells[0].text
+        assert f"子どもの姿{i}" in row.cells[1].text
+        assert f"ねらい・配慮{i}" in row.cells[2].text
+        assert row.cells[3].text.strip() == ""  # 評価・反省は月末記入＝空欄温存
+        assert len(row.cells) == 4
+        assert _row_has_full_borders(row)  # 複製行も罫線を引き継ぐ（add_row の崩れを防ぐ）
+
+
+def test_fill_class_monthly_renders_filled_evaluation():
+    """評価・反省は通常 AI 非生成で空だが、編集フォームで記入済みなら docx にも反映する（帳票PDF と同じ）。"""
+    entry = _class_monthly(1)
+    entry["individual_goals"][0]["evaluation"] = "水遊びを十分に楽しめた。次月は素材を増やす"
+    tables = _tables(fill_docx("class_monthly", entry))
+    goals = _goals_table(tables)
+    assert "水遊びを十分に楽しめた" in goals.rows[2].cells[3].text  # col3=評価・反省
+
+
+def test_fill_class_monthly_removes_extra_template_rows():
+    """個人目標がテンプレ既定（2行）より少なければ余った空枠を削る（人数分ちょうど）。"""
+    tables = _tables(fill_docx("class_monthly", _class_monthly(1)))
+    goals = _goals_table(tables)
+    assert len(goals.rows) == 3  # 見出し＋列見出し＋記入1行のみ（空枠を残さない）
+    assert "こども1くん" in goals.rows[2].cells[0].text
+
+
+def test_fill_class_monthly_3_5_has_no_goals_table_but_renders():
+    """3-5 クラス月案フォームは個人目標小表が無い＝落ちずヘッダ・グリッドのみ流し込む。"""
+    tables = _tables(fill_docx("class_monthly", _class_monthly(0, AgeBand.三から五歳)))
+    assert not any("個人目標" in t.rows[0].cells[0].text for t in tables)
+
+
+def test_fill_monthly_shrinks_goals_table_to_single_row():
+    """個別月案（1名）は記入行を1行にそろえ、テンプレの余分な空枠を残さない。"""
+    tables = _tables(fill_docx("monthly", _monthly(AgeBand.零から二歳)))
+    goals = _goals_table(tables)
+    assert len(goals.rows) == 3  # 見出し＋列見出し＋記入1行
+    assert "はるとくん" in goals.rows[2].cells[0].text
 
 
 def test_supported_kinds_has_nursery_record():

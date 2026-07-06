@@ -165,6 +165,10 @@ def test_class_monthly_path_aggregates_prev_month_and_finalizes():
     digest = final_state.get("prev_month_digest") or {}
     assert set(digest) == {"はるとくん", "ゆいちゃん"}
     assert digest["はるとくん"]["note_count"] == 2
+    # ②' 前月の振り返り（評価・反省）も日付順に別チャネルで state に乗る（決定B・クラス月案のみ）
+    reflections = final_state.get("prev_month_reflections") or []
+    assert [r["date"] for r in reflections] == ["2026-06-12", "2026-06-13", "2026-06-26"]
+    assert reflections[0]["self_review"] == "素材を十分用意できた"
     # ③ 確定：ClassMonthlyPlan が復元・検査通過・園様式で整形される
     assert final_state.get("finalize_parse_error") is None
     assert final_state.get("validation") == []

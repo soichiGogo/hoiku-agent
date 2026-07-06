@@ -362,20 +362,29 @@ const status = {
 /* ============================================================
    タブ・チップ・ゲート
    ============================================================ */
+function activateTab(tab) {
+  document.querySelectorAll(".tab").forEach((t) => {
+    t.classList.remove("is-active");
+    t.setAttribute("aria-selected", "false");
+  });
+  document.querySelectorAll(".panel").forEach((p) => p.classList.remove("is-active"));
+  tab.classList.add("is-active");
+  tab.setAttribute("aria-selected", "true");
+  $("tab-" + tab.dataset.tab).classList.add("is-active");
+  status.clearPhase();
+}
+
 function setupTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.onclick = () => {
-      document.querySelectorAll(".tab").forEach((t) => {
-        t.classList.remove("is-active");
-        t.setAttribute("aria-selected", "false");
-      });
-      document.querySelectorAll(".panel").forEach((p) => p.classList.remove("is-active"));
-      tab.classList.add("is-active");
-      tab.setAttribute("aria-selected", "true");
-      $("tab-" + tab.dataset.tab).classList.add("is-active");
-      status.clearPhase();
-    };
+    tab.onclick = () => activateTab(tab);
   });
+}
+
+// 上位タブを名前（data-tab）で切り替える（プログラム用＝クリックの副作用〔records.refresh 等〕を起こさない。
+// 「未記入の日誌へ飛んで記入」導線が使う＝視覚切替のみ。呼び出し側が openDoc で自前に読み込む）。
+function switchTab(name) {
+  const tab = document.querySelector(`.tab[data-tab="${name}"]`);
+  if (tab) activateTab(tab);
 }
 
 // サブタブ（「育てる」タブ内の 指針を育てる／表記ルール）。上位タブと同じ流儀で、押した親パネル内の
@@ -978,12 +987,55 @@ async function main() {
       else ({ entries, source } = { entries: fallback, source: "サンプル" });
     }
     $("monthly-seed-count").textContent = `${entries.length} 件（${source}）`;
+    // 前月日誌で評価・反省が未記入のものを検出して記入導線を出す（生成はブロックしない＝並行）。
+    checkPrevMonthEvaluations(pm, ageBand);
     const seed = { doc_type: "クラス月案", prev_month_entries: entries };
     monthlyFlow.run(
       seed,
       `${month} の ${ageBandLabel}（年齢帯 ${ageBand}）のクラス月案（月間指導計画）を作成してください。` +
         `month には「${month}」、age_band には「${ageBand}」をそのまま書いてください。`,
     );
+  }
+
+  // 対象月（前月・当該クラス）の日誌のうち評価・反省が未記入のものを検出し、記入導線カードを描く。
+  // クラス月案は前月の振り返りをふまえて作られる（決定B）ので、月末に前月日誌を締めるこの地点で促す。
+  // 未接続（アーカイブ無し）は検出できないので黙って何もしない（サンプル seed のときは対象外）。
+  async function checkPrevMonthEvaluations(pm, ageBand) {
+    const notice = $("monthly-eval-notice");
+    notice.classList.add("hidden");
+    notice.innerHTML = "";
+    if (!cfg.records_connected) return;
+    const metas = (await adk.getDiaryMeta(monthFirst(pm), monthLast(pm))).filter(
+      (m) => (m.age_band || "0-2") === ageBand, // このクラス（年齢帯）の日誌だけ
+    );
+    const unfilled = metas.filter((m) => m.evaluation_complete === false);
+    if (!unfilled.length) return; // 全部記入済み／該当なし＝出さない（うるさくしない）。
+
+    const head = el("div", "eval-notice-head");
+    head.innerHTML =
+      `<span class="eval-notice-title">${iconHTML("alert")}前月の日誌で評価・反省が未記入のものがあります（${unfilled.length}件）</span>` +
+      `<p class="eval-notice-sub">クラス月案は前月の振り返り（評価・反省）をふまえて作られます。記入すると反映されます（未記入でも作成はできます）。</p>`;
+    notice.appendChild(head);
+
+    const chips = el("div", "eval-notice-chips");
+    for (const m of unfilled) {
+      const b = el("button", "eval-chip", `${iconHTML("edit")}${esc(mdLabel(m.date))} を記入`);
+      b.type = "button";
+      // 書類管理タブへ切替＋当該日誌を編集モード（評価欄へフォーカス）で開く。
+      b.onclick = () => {
+        switchTab("records");
+        records.openDoc(m.id, { edit: true, focus: "evaluation" });
+      };
+      chips.appendChild(b);
+    }
+    notice.appendChild(chips);
+    notice.classList.remove("hidden");
+  }
+
+  // "2026-06-03" → "6/3"（未記入チップの短いラベル）。読めなければ原文。
+  function mdLabel(iso) {
+    const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(iso || "");
+    return m ? `${Number(m[1])}/${Number(m[2])}` : iso || "";
   }
   async function runRecord() {
     const child = docChild();

@@ -175,6 +175,18 @@ export async function getDiaryEntries(dateFrom, dateTo) {
   }
 }
 
+// 期間内の日誌メタ（id・対象日・状態・評価充足）＝クラス月案作成時の「評価未記入」検出用。
+// entries の要素は {id, date, status, evaluation_complete}。未接続/障害は空＝検出をスキップ（黙って進む）。
+export async function getDiaryMeta(dateFrom, dateTo) {
+  try {
+    const r = await fetch(`/api/records/diary-meta?date_from=${dateFrom}&date_to=${dateTo}`);
+    if (!r.ok) return [];
+    return (await r.json()).entries || [];
+  } catch {
+    return [];
+  }
+}
+
 // 指定児の保育経過記録（最新版）＝保育要録（L4）の seed 取得口。未接続/障害/該当なしは空＝
 // 呼び出し側がサンプルへ降格する（黙って誤解釈しない）。
 export async function getChildRecordEntries(child) {

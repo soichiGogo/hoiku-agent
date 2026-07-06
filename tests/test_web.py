@@ -781,6 +781,32 @@ def test_records_diary_entries_returns_seed(records_db) -> None:
     assert bad.status_code == 400
 
 
+def test_records_diary_meta_flags_unfilled_evaluation(records_db) -> None:
+    """diary-meta＝クラス月案作成時の未記入検出用（id/日付/評価充足）。2視点とも記入で complete。"""
+    c = _client()
+    full = _edit_diary_entry()  # 2026-06-25・評価2視点あり
+    unfilled = dict(
+        _edit_diary_entry(), date="2026-06-26", evaluation={"child_focus": "x", "self_review": ""}
+    )
+    for e in (full, unfilled):
+        c.post("/api/records", json={"kind": "diary", "entry": e, "author_kind": "ai"})
+    body = c.get(
+        "/api/records/diary-meta", params={"date_from": "2026-06-01", "date_to": "2026-06-30"}
+    ).json()
+    assert body["store"] == "ok"
+    by_date = {m["date"]: m for m in body["entries"]}
+    assert by_date["2026-06-25"]["evaluation_complete"] is True
+    assert by_date["2026-06-26"]["evaluation_complete"] is False  # (b) 空＝未記入
+    assert all(m["id"] for m in body["entries"])  # id＝飛んで編集する導線に使う
+    # 不正日付は 400（黙って全件を返さない）
+    assert (
+        c.get(
+            "/api/records/diary-meta", params={"date_from": "x", "date_to": "2026-06-30"}
+        ).status_code
+        == 400
+    )
+
+
 def test_get_record_returns_full_document(records_db) -> None:
     """GET /api/records/{id}＝「書類を見る」タブの詳細（現行版の整形テキスト＋本文 entry）。"""
     c = _client()
