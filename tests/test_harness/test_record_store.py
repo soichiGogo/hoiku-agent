@@ -297,9 +297,147 @@ def test_list_child_record_entries_returns_latest_per_period_for_child(db):
     entries = rs.list_child_record_entries("はるとくん")
     assert [e["period"] for e in entries] == ["2026-04〜2026-06", "2026-07〜2026-09"]
     assert entries[0]["overall_note"] == "1期の所見（保育士修正）"  # 最新版が出る
+    # exclude_period＝作成対象の期を「前回まで」に混ぜない（保育経過記録の自己履歴 seed 用）。
+    past = rs.list_child_record_entries("はるとくん", exclude_period="2026-07〜2026-09")
+    assert [e["period"] for e in past] == ["2026-04〜2026-06"]
     # 未登録の子・空文字・降格は空
     assert rs.list_child_record_entries("未登録ちゃん") == []
     assert rs.list_child_record_entries("") == []
+
+
+def test_covered_until_takes_max_end_and_skips_unparseable():
+    """covered_until＝経過記録に反映済みの最終日（期間終了日の最大・解釈不能は寄与しない＝安全側）。"""
+    assert rs.covered_until([]) is None
+    assert rs.covered_until(["でたらめ", ""]) is None  # 全部解釈不能＝全日誌が未反映
+    assert rs.covered_until(["2026-04〜2026-06"]) == date(2026, 6, 30)
+    # 順不同でも最大端。年度跨ぎ（2026-12〜2027-02）も日付比較で自然に扱う。
+    assert rs.covered_until(["2026-07〜2026-09", "2026-04〜2026-06"]) == date(2026, 9, 30)
+    assert rs.covered_until(["2026-12〜2027-02", "自由記述の期"]) == date(2027, 2, 28)
+
+
+def test_list_class_child_record_entries_prefers_roster(db):
+    """クラス児童の保育経過記録＝名簿（Class）優先で全期（年度跨ぎ・別帯で書かれた過去記録も）を引く。"""
+    cid = rs.upsert_class("ひよこ組", "0-2", "2026", now=_NOW)["id"]
+    rs.upsert_child("はるとくん", given_name="はると", gender="male", now=_NOW)
+    rs.assign_child_to_class("はるとくん", cid, now=_NOW)
+    # はるとくんの記録2件（うち1件は前年度・別の年齢帯で書かれた記録＝名簿経由なら拾える）
+    rs.save_document(
+        "child_record",
+        {"period": "2025-10〜2025-12", "child_id": "はるとくん", "age_band": "3-5"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "はるとくん", "age_band": "0-2"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    # クラス外の子の記録（同じ年齢帯でも名簿優先なら混ざらない）
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "よそのこちゃん", "age_band": "0-2"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    entries = rs.list_class_child_record_entries("0-2")
+    assert [(e["child_id"], e["period"]) for e in entries] == [
+        ("はるとくん", "2025-10〜2025-12"),
+        ("はるとくん", "2026-04〜2026-06"),
+    ]
+
+
+def test_list_class_child_record_entries_falls_back_to_age_band(db):
+    """名簿未整備（クラス未定義）は entry の age_band 一致で降格フィルタ（v0＝年齢帯≒クラス）。"""
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "はるとくん", "age_band": "0-2"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "さくらちゃん", "age_band": "3-5"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    entries = rs.list_class_child_record_entries("0-2")
+    assert [e["child_id"] for e in entries] == ["はるとくん"]
+
+
+def test_list_class_monthly_entries_orders_and_bounds_by_month(db):
+    """過去クラス月案＝当該年齢帯・対象月より前・月順（年度跨ぎ含む全期）。最新版が出る。"""
+    for month in ("2026-05", "2026-04", "2026-07"):
+        rs.save_document(
+            "class_monthly",
+            {"month": month, "age_band": "0-2", "monthly_goal": f"{month} の目標"},
+            author_kind="ai",
+            now=_NOW,
+        )
+    rs.save_document(  # 別の年齢帯は混ざらない
+        "class_monthly",
+        {"month": "2026-05", "age_band": "3-5", "monthly_goal": "別クラス"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    rs.save_document(  # 版が積まれたら最新版
+        "class_monthly",
+        {"month": "2026-04", "age_band": "0-2", "monthly_goal": "2026-04 の目標（修正）"},
+        author_kind="caregiver",
+        now=_NOW,
+    )
+    plans = rs.list_class_monthly_entries("0-2", before_month="2026-07")
+    assert [p["month"] for p in plans] == ["2026-04", "2026-05"]
+    assert plans[0]["monthly_goal"] == "2026-04 の目標（修正）"
+    # before_month なしは全部（月順）。
+    assert [p["month"] for p in rs.list_class_monthly_entries("0-2")] == [
+        "2026-04",
+        "2026-05",
+        "2026-07",
+    ]
+
+
+def test_class_monthly_seed_inputs_composes_uncovered_diaries_records_and_plans(db):
+    """クラス月案 seed 合成＝①クラス児童の全経過記録 ②過去クラス月案 ③経過記録に未反映の期間の日誌。"""
+    # 経過記録：4〜6月をカバー（境界＝6/30）
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "はるとくん", "age_band": "0-2"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    # 日誌：6月（反映済み）と7月（未反映）
+    rs.save_document("diary", _diary_entry("2026-06-20"), author_kind="caregiver", now=_NOW)
+    rs.save_document("diary", _diary_entry("2026-07-10"), author_kind="caregiver", now=_NOW)
+    # 過去クラス月案：7月分（対象月8月より前）
+    rs.save_document(
+        "class_monthly",
+        {"month": "2026-07", "age_band": "0-2", "monthly_goal": "7月の目標"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
+    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-07-10"]  # 未反映だけ
+    assert [r["period"] for r in seed["class_record_entries"]] == ["2026-04〜2026-06"]
+    assert [p["month"] for p in seed["past_class_plans"]] == ["2026-07"]
+
+
+def test_class_monthly_seed_inputs_without_records_includes_all_diaries(db):
+    """経過記録が1件も無ければ全日誌が未反映（前月末まで）＝境界 None の安全側。"""
+    rs.save_document("diary", _diary_entry("2026-06-20"), author_kind="caregiver", now=_NOW)
+    rs.save_document("diary", _diary_entry("2026-07-10"), author_kind="caregiver", now=_NOW)
+    rs.save_document("diary", _diary_entry("2026-08-01"), author_kind="caregiver", now=_NOW)
+    seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
+    # 対象月（8月）の日誌は seed に含めない（前月末カット）。
+    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-06-20", "2026-07-10"]
+    assert seed["class_record_entries"] == []
+    assert seed["past_class_plans"] == []
+
+
+def test_class_monthly_seed_inputs_invalid_month_fails_loud(db):
+    """month 不正は ValueError（黙って誤解釈しない＝呼び出し側が降格/400 を決める）。"""
+    with pytest.raises(ValueError):
+        rs.class_monthly_seed_inputs("0-2", "でたらめ")
 
 
 def test_missing_target_is_error(db):

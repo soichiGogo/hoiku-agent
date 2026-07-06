@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime, timedelta
+from typing import Iterable
 
 import sqlalchemy as sa
 from sqlalchemy.exc import SQLAlchemyError
@@ -288,6 +289,23 @@ def period_date_range(period: str) -> tuple[date, date] | None:
     return None
 
 
+def covered_until(periods: Iterable[str]) -> date | None:
+    """保育経過記録の期間群から「経過記録に反映済みの最終日」を決定的に求める（クラス月案の未反映判定用）。
+
+    各期間を `period_date_range` で解釈し、その終了日の最大値を返す。解釈不能な期間（自由記述で
+    月〜月の形でない）は境界に寄与しない＝その分の日誌は「未反映」として安全側に残る（情報を落とさない）。
+    期間が1つも解釈できなければ None（＝全日誌が未反映）。年度は日付比較なので自然に跨ぐ。
+    """
+    latest: date | None = None
+    for period in periods:
+        span = period_date_range(period)
+        if span is None:
+            continue
+        if latest is None or span[1] > latest:
+            latest = span[1]
+    return latest
+
+
 def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, str | None]:
     """entry から対象期間キー（target_date / target_month / target_period）を決定的に取り出す。
 
@@ -351,7 +369,12 @@ def _mentioned_children(kind: str, entry: dict) -> list[str]:
 def _dedupe_key(kind: str, child_display: str, entry: dict) -> str:
     d, m, p = _extract_target(kind, entry)
     target = d.isoformat() if d else (m or p or "")
-    return f"{kind}|{child_display}|{target}"
+    key = f"{kind}|{child_display}|{target}"
+    # クラス単位の書類（主対象児なし＝日誌/クラス月案）はクラス（v0＝年齢帯）も同一性に含める。
+    # 含めないと同日・別クラスの日誌／同月・別クラスのクラス月案が同一書類に潰れて版が混線する。
+    if kind in ("diary", "class_monthly"):
+        key += f"|{str(entry.get('age_band') or '')}"
+    return key
 
 
 def _resolve_child(session: Session, display_name: str, now: datetime) -> Child:
@@ -861,11 +884,18 @@ def list_diary_meta(date_from: date, date_to: date) -> list[dict]:
         return []
 
 
-def list_child_record_entries(child_display_name: str) -> list[dict]:
-    """指定児の保育経過記録の最新版 entry（JSON）を期間順に返す＝年間マトリクス帳票の過去期埋め込み用。
+def list_child_record_entries(
+    child_display_name: str,
+    *,
+    exclude_period: str | None = None,
+) -> list[dict]:
+    """指定児の保育経過記録の最新版 entry（JSON）を期間順に返す＝要録 L4 seed・保育経過記録の
+    「前回まで」seed・年間マトリクス帳票の過去期埋め込みの取得元。
 
-    どの期をどの列に置くか（年度の同定・期→列の割当）は帳票描画側（web/chohyo_pdf）の責務で、
-    ここは「その子の保育経過記録を全部引く」だけ（責務を重ねない）。降格・障害・該当なしは空。
+    **全期（年度跨ぎ含む）を返す**（依存モデル＝「それまでの作成済み過去のものすべて」）。
+    `exclude_period` を与えると当該期間の記録を除く（＝今期の保育経過記録を作り直すとき、作成対象の
+    期そのものを「前回まで」に混ぜない）。どの期をどの列に置くか（年度の同定・期→列の割当）は
+    帳票描画側（web/chohyo_pdf）の責務で、ここは「引く」だけ（責務を重ねない）。降格・障害・該当なしは空。
     """
     name = child_display_name.strip()
     eng = _engine()
@@ -884,6 +914,8 @@ def list_child_record_entries(child_display_name: str) -> list[dict]:
                 )
                 .order_by(DocumentRecord.target_period)
             )
+            if exclude_period is not None and exclude_period.strip():
+                q = q.where(DocumentRecord.target_period != exclude_period.strip())
             entries: list[dict] = []
             for doc in session.scalars(q):
                 version = session.scalar(
@@ -894,6 +926,117 @@ def list_child_record_entries(child_display_name: str) -> list[dict]:
             return entries
     except SQLAlchemyError:
         return []
+
+
+def list_class_child_record_entries(age_band: str) -> list[dict]:
+    """クラス（年齢帯）の児童の保育経過記録の最新版 entry を（児童・期間順に）返す＝クラス月案 seed。
+
+    「クラスの児童」の同定は**名簿（Class＝組マスタ）優先**：当該年齢帯のクラスに現在在籍する児童の
+    保育経過記録を**全期（年度跨ぎ含む＝過去に別の年齢帯で書かれた記録も）**引く。名簿が未整備
+    （クラス未定義/在籍なし）なら entry の age_band 一致で降格フィルタ（v0＝年齢帯≒クラスの近似。
+    他年度に別帯で書かれた記録は拾えない＝名簿登録で解消）。降格・障害・該当なしは空。
+    """
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        with Session(eng) as session:
+            # 名簿優先：当該年齢帯のクラスの在籍児 → その子たちの保育経過記録を全期引く。
+            roster_ids = list(
+                session.scalars(
+                    sa.select(Child.id)
+                    .join(Class, Child.class_id == Class.id)
+                    .where(
+                        Class.age_band == age_band,
+                        Class.active.is_(True),
+                        Child.active.is_(True),
+                    )
+                )
+            )
+            q = (
+                sa.select(DocumentRecord)
+                .outerjoin(Child, DocumentRecord.child_id == Child.id)
+                .where(DocumentRecord.doc_type == "child_record")
+            )
+            if roster_ids:
+                q = q.where(DocumentRecord.child_id.in_(roster_ids))
+            q = q.order_by(Child.display_name, DocumentRecord.target_period)
+            entries: list[dict] = []
+            for doc in session.scalars(q):
+                version = session.scalar(
+                    sa.select(DocumentVersion).where(DocumentVersion.id == doc.current_version_id)
+                )
+                if version is None:
+                    continue
+                # 名簿なしの降格時のみ entry の年齢帯でフィルタ（名簿ありは在籍で確定済み＝全期を通す）。
+                if not roster_ids and (version.entry.get("age_band") or "0-2") != age_band:
+                    continue
+                entries.append(version.entry)
+            return entries
+    except SQLAlchemyError:
+        return []
+
+
+def list_class_monthly_entries(age_band: str, before_month: str | None = None) -> list[dict]:
+    """クラス（年齢帯）の作成済みクラス月案の最新版 entry を月順に返す＝クラス月案の「それまで」seed。
+
+    **全期（年度跨ぎ含む）**を対象に、`before_month`（"YYYY-MM"）より前の月だけ返す（＝作成対象の月
+    そのものは含めない。ゼロ埋め YYYY-MM は辞書順＝時系列）。クラス月案は主対象児なし・年齢帯は
+    entry 内のため Python 側でフィルタ。降格・障害・該当なしは空。
+    """
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        with Session(eng) as session:
+            q = (
+                sa.select(DocumentRecord)
+                .where(DocumentRecord.doc_type == "class_monthly")
+                .order_by(DocumentRecord.target_month)
+            )
+            if before_month is not None and before_month.strip():
+                q = q.where(DocumentRecord.target_month < before_month.strip())
+            entries: list[dict] = []
+            for doc in session.scalars(q):
+                version = session.scalar(
+                    sa.select(DocumentVersion).where(DocumentVersion.id == doc.current_version_id)
+                )
+                if version is None:
+                    continue
+                if (version.entry.get("age_band") or "0-2") != age_band:
+                    continue
+                entries.append(version.entry)
+            return entries
+    except SQLAlchemyError:
+        return []
+
+
+def class_monthly_seed_inputs(age_band: str, month: str) -> dict:
+    """クラス月案の seed 入力3点をアーカイブから決定的に合成する（依存モデル 2026-07）。
+
+    ① class_record_entries＝クラス児童の作成済み保育経過記録すべて（全期・年度跨ぎ含む）
+    ② past_class_plans＝当該クラスの作成済みクラス月案すべて（対象月より前・全期）
+    ③ class_diary_entries＝**保育経過記録にまだ反映されていない期間**の当該クラスの日誌
+       （境界＝`covered_until(①の期間)` の翌日〜前月末。①が無い/期間が解釈できない分は
+       全日誌が未反映として安全側に含める）
+    scripts（run_class_monthly）と web（/api/records/class-monthly-seed）が共用する合成で、
+    境界計算の実体は `covered_until` に1つ（呼び出し側で再実装しない）。month が不正なら ValueError
+    （呼び出し側がサンプル降格/400 にする）。未接続は全部空（呼び出し側がサンプル降格）。
+    """
+    _, prev_month_end = month_date_range(prev_month_of(month))  # 不正 month は ValueError
+    records = list_class_child_record_entries(age_band)
+    boundary = covered_until(str(r.get("period") or "") for r in records)
+    diary_from = boundary + timedelta(days=1) if boundary is not None else date.min
+    diaries = [
+        e
+        for e in list_diary_entries(diary_from, prev_month_end)
+        if (e.get("age_band") or "0-2") == age_band
+    ]
+    return {
+        "class_diary_entries": diaries,
+        "class_record_entries": records,
+        "past_class_plans": list_class_monthly_entries(age_band, before_month=month),
+    }
 
 
 def _child_view(c: Child, cls: Class | None = None) -> dict:
