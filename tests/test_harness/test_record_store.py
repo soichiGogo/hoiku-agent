@@ -328,6 +328,34 @@ def test_touch_user_degrades(monkeypatch, db):
     assert rs.touch_user("sensei@example.com", now=_NOW)["status"] == "skipped"  # DB 未設定
 
 
+def test_set_user_display_name_provisions_and_updates(db):
+    # 未登録 email でも auto-provision して表示名を設定できる（touch_user 前でも作る）。
+    r1 = rs.set_user_display_name("sensei@example.com", "そうた先生", now=_NOW)
+    assert r1["status"] == "ok"
+    assert r1["email"] == "sensei@example.com"
+    assert r1["display_name"] == "そうた先生"
+    # 以後 touch_user が設定済みの表示名を返す＝actor 証跡・/api/config に乗る。
+    assert rs.touch_user("sensei@example.com", now=_NOW)["display_name"] == "そうた先生"
+    # 空白のみはクリアを許す（表示名を消すと actor は email に戻る）。重複行は作らない。
+    r2 = rs.set_user_display_name("sensei@example.com", "  ", now=_NOW)
+    assert r2["display_name"] == ""
+    with rs.Session(rs._engine()) as session:
+        emails = [u.email for u in session.scalars(rs.sa.select(rs.User))]
+    assert emails == ["sensei@example.com"]
+    # 列上限（100）へ clamp。
+    long = rs.set_user_display_name("long@example.com", "あ" * 150, now=_NOW)
+    assert len(long["display_name"]) == 100
+
+
+def test_set_user_display_name_degrades(monkeypatch, db):
+    assert rs.set_user_display_name("", "名前", now=_NOW)["status"] == "skipped"  # 空 email
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert (
+        rs.set_user_display_name("s@example.com", "名前", now=_NOW)["status"] == "skipped"
+    )  # DB 未設定
+
+
 def test_upsert_child_creates_fills_birthdate_and_is_idempotent(db):
     r1 = rs.upsert_child("つむぎちゃん", birthdate=date(2021, 11, 18), now=_NOW)
     assert r1["status"] == "created"

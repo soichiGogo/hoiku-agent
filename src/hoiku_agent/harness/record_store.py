@@ -438,6 +438,39 @@ def touch_user(email: str, *, now: datetime) -> dict:
         return {"status": "error", "detail": str(e)}
 
 
+def set_user_display_name(email: str, display_name: str, *, now: datetime) -> dict:
+    """検証済みユーザー（IAP の email）の display_name を設定する（Phase 3＝自分の表示名の登録/編集）。
+
+    `touch_user` と同じ upsert（無ければ作成）で display_name を更新する。設定済みなら
+    `_resolve_actor` が監査証跡を「表示名（email）」で残す（表示名を消費する仕組みは既存）。
+    email は呼び出し元（web/routes）が **IAP の検証済み値**を渡す＝偽装不可（body 由来を使わない）。
+    空 email/未接続は {"status": "skipped"}、DB 障害は {"status": "error"}（本流を壊さない既存流儀）。
+    display_name は列上限（100）に clamp。空文字は表示名クリア（actor は email へ戻る）を許す。
+    """
+    email = email.strip()
+    name = display_name.strip()[:100]
+    eng = _engine()
+    if eng is None or not email:
+        return {"status": "skipped"}
+    try:
+        with Session(eng) as session, session.begin():
+            user = session.scalar(sa.select(User).where(User.email == email))
+            if user is None:
+                user = User(email=email, created_at=now, updated_at=now)
+                session.add(user)
+            user.display_name = name
+            user.updated_at = now
+            session.flush()
+            return {
+                "status": "ok",
+                "email": user.email,
+                "display_name": user.display_name,
+                "active": user.active,
+            }
+    except SQLAlchemyError as e:
+        return {"status": "error", "detail": str(e)}
+
+
 def upsert_child(
     display_name: str,
     *,

@@ -727,12 +727,58 @@ function setupGate(cfg) {
 /* ============================================================
    起動
    ============================================================ */
-// 担当者名（自己申告）を localStorage に永続化する（audit の actor＝認証導入までのつなぎ）。
-function setupActor() {
+// ヘッダの担当者欄。IAP サインイン時は「自分の表示名（users.display_name）」を DB に登録/編集する欄になり
+// （証跡の actor はサーバが検証済み email＋この表示名で残す＝§13）、未サインイン時は従来の自己申告
+// （localStorage・認証導入までのつなぎ）。config を見てモードを切り替える（config 読込後に呼ぶ）。
+function setupActor(cfg) {
   const inp = $("actor-name");
   if (!inp) return;
-  inp.value = localStorage.getItem("hoiku_actor") || "";
-  inp.addEventListener("change", () => localStorage.setItem("hoiku_actor", inp.value.trim()));
+  const field = inp.closest(".actor-field");
+  const email = cfg && cfg.user_email;
+  if (email) {
+    // サインイン済み＝表示名の登録/編集。値は DB（user_display_name）が正。未登録は email をプレースホルダに出して促す。
+    inp.value = cfg.user_display_name || "";
+    inp.placeholder = email;
+    const tip = `サインイン: ${email}（この名前が保存・承認の記録に残ります）`;
+    inp.title = tip;
+    inp.setAttribute("aria-label", `表示名（${email} として記録されます）`);
+    if (field) field.title = tip;
+    let saved = inp.value.trim();
+    inp.addEventListener("change", async () => {
+      const name = inp.value.trim();
+      if (name === saved) return;
+      const r = await adk.setUserProfile(name);
+      if (r.status === "ok") {
+        saved = name;
+        flashActor(field, name ? "表示名を保存しました" : "表示名をクリアしました");
+      } else if (r.status === "skipped") {
+        flashActor(field, "未接続のため保存できません", true);
+      } else {
+        flashActor(field, r.detail || "保存に失敗しました", true);
+      }
+    });
+  } else {
+    // 未サインイン（ローカル/デモ）＝自己申告を localStorage に永続（従来動作）。
+    inp.value = localStorage.getItem("hoiku_actor") || "";
+    inp.addEventListener("change", () => localStorage.setItem("hoiku_actor", inp.value.trim()));
+  }
+}
+
+// 表示名の保存結果をヘッダに一瞬だけ出す（絶対配置でレイアウトを動かさない小さな確認）。
+function flashActor(field, text, isErr = false) {
+  if (!field) return;
+  let note = field.querySelector(".actor-note");
+  if (!note) {
+    note = el("span", "actor-note");
+    field.appendChild(note);
+  }
+  note.textContent = text;
+  note.classList.toggle("is-err", isErr);
+  note.classList.remove("show");
+  void note.offsetWidth; // reflow を挟み連続保存でも再アニメーション
+  note.classList.add("show");
+  clearTimeout(note._t);
+  note._t = setTimeout(() => note.classList.remove("show"), 1800);
 }
 
 async function main() {
@@ -740,7 +786,6 @@ async function main() {
   setupTheme();
   setupTabs();
   setupSubTabs();
-  setupActor();
 
   let cfg;
   try {
@@ -751,16 +796,7 @@ async function main() {
   }
   buildStatusline();
   setupGate(cfg);
-
-  // IAP（Phase 3）でサインイン済みなら、証跡の actor はサーバ側で検証済み email が使われる
-  // （自己申告の担当者名より優先）。UI では担当者名欄にその旨を示す（偽の自由入力感を出さない）。
-  if (cfg.user_email) {
-    const inp = $("actor-name");
-    if (inp) {
-      inp.placeholder = cfg.user_email;
-      inp.title = `サインイン済み: ${cfg.user_email}（保存・承認の記録にはこのアカウントが残ります）`;
-    }
-  }
+  setupActor(cfg); // config 後＝IAP サインイン有無でモードを決める（表示名編集 / 自己申告）
 
   // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名ロスターに降格。
   // マスタの子が増えるとそのまま選択肢に出る（auto-create＝書類に登場した子・§14 実名はDBのみ）。

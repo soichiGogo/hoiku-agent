@@ -144,12 +144,20 @@ a{color:var(--primary-d)}
 
 .header-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto}
 /* 担当者名（自己申告・audit の actor）。ヘッダに常設＝どのタブの保存/承認にも証跡が付く */
-.actor-field{display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;border-radius:var(--r-md);
+.actor-field{position:relative;display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;border-radius:var(--r-md);
   border:1px solid var(--line);background:var(--surface);color:var(--muted)}
 .actor-field .ic{width:16px;height:16px;flex:0 0 auto}
 .actor-field input{border:0;background:transparent;color:var(--ink);width:7.5em;font:inherit;font-size:13px}
 .actor-field input:focus{outline:none}
 .actor-field:focus-within{border-color:var(--line-strong)}
+/* 表示名保存の一瞬の確認（サインイン時）。絶対配置＝ヘッダのレイアウトを動かさない。 */
+.actor-note{position:absolute;top:calc(100% + 6px);right:0;z-index:20;white-space:nowrap;pointer-events:none;
+  font-size:var(--fs-caption);font-weight:700;padding:3px 9px;border-radius:var(--r-pill);
+  color:var(--state-done-ink);background:var(--state-done-soft);border:1px solid var(--state-done);
+  box-shadow:var(--sh-sm);opacity:0;transform:translateY(-3px);transition:opacity .16s ease,transform .16s ease}
+.actor-note.show{opacity:1;transform:none}
+.actor-note.is-err{color:var(--state-fail-ink);background:var(--state-fail-soft);border-color:var(--state-fail)}
+@media (prefers-reduced-motion:reduce){.actor-note{transition:none}}
 .icon-btn{display:grid;place-items:center;width:38px;height:38px;border-radius:var(--r-md);border:1px solid var(--line);
   background:var(--surface);color:var(--muted);cursor:pointer;transition:.15s}
 .icon-btn:hover{color:var(--ink);border-color:var(--line-strong)}

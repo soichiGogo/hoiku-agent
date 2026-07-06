@@ -24,6 +24,25 @@ export async function gate(passcode) {
   return r.ok;
 }
 
+// 自分の表示名（display_name）を登録/編集する（IAP サインイン前提）。email はサーバが検証済み値で
+// 解決する（body に載せない＝偽装不可）。未サインインは 403（auth_required）で正直に降格。
+// 成功は {status:"ok", email, display_name}／DB 未接続は {status:"skipped"}。
+export async function setUserProfile(displayName) {
+  try {
+    const r = await fetch("/api/user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: displayName }),
+    });
+    if (r.status === 403) return { status: "error", detail: "サインインが必要です" };
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { status: j.status || "error", detail: j.detail || `失敗 (${r.status})` };
+    return j;
+  } catch (e) {
+    return { status: "error", detail: e.message || String(e) };
+  }
+}
+
 // 育つ指針＝構造化カード＋変更履歴を読む（「指針を育てる」タブの閲覧）。
 // 旧 backend（{markdown} だけ）や未配線でも壊れないよう空＋unavailable に降格する（偽の緑を出さない）。
 export async function getPolicy() {
