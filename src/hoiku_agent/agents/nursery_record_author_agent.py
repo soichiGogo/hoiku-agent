@@ -21,11 +21,10 @@ from typing import TYPE_CHECKING
 
 from google.adk.agents import LlmAgent
 
-from ..harness.aggregate import format_record_digest_for_prompt
 from ..models import build_model
 from ..schemas.policy import PolicyScope
 from ..tools import ask_caregiver, recall_child_history, search_guideline
-from .instructions import build_author_instruction
+from .instructions import NURSERY_RECORD_DIGESTS, build_author_instruction
 from .prompts import NURSERY_RECORD_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -40,22 +39,21 @@ def build_nursery_record_author_agent(model: str | BaseLlm | None = None) -> Llm
             model_location＝global に固定した Gemini。§11／models.py）。
             決定論E2E（tests/test_e2e/）では FakeLlm 等の BaseLlm を注入する差込口（§16）。
 
-    文書作成指針（共通＋保育要録）＋最終年度の保育経過記録集積（state["record_digest"]）は InstructionProvider が
-    prompt 冒頭へ前置注入する（read_policy ツールは撤去＝§5）。要録の digest は日誌でなく保育経過記録なので formatter に
-    `format_record_digest_for_prompt` を渡す。validate_fields ツール（DiaryEntry 用の自己点検）は配線せず、要録の
+    文書作成指針（共通＋保育要録）＋それまでの保育経過記録すべての集積（state["record_digest"]＝全期・
+    年度跨ぎ含む・依存モデル 2026-07）は InstructionProvider が prompt 冒頭へ前置注入する（read_policy
+    ツールは撤去＝§5）。要録の digest は日誌でなく保育経過記録（formatter は NURSERY_RECORD_DIGESTS の
+    spec が持つ）。validate_fields ツール（DiaryEntry 用の自己点検）は配線せず、要録の
     確定 validation は harness（validate_nursery_record_fields）が末尾で決定的に行う（§6・ツールを 4–8 個に絞る原則）。
     output_key は日誌・月案・保育経過記録と共通の "draft"（後段 finalize が kind="nursery_record" で復元する）。
     """
     return LlmAgent(
         name="nursery_record_author",
         model=model if model is not None else build_model(),
-        # 文書作成指針（共通＋保育要録）＋最終年度の保育経過記録集積（record_digest）を prompt 冒頭へ前置注入（§5）。
+        # 文書作成指針（共通＋保育要録）＋それまでの保育経過記録集積（record_digest）を prompt 冒頭へ前置注入（§5）。
         instruction=build_author_instruction(
             NURSERY_RECORD_AUTHOR_INSTRUCTION,
             PolicyScope.保育要録,
-            digest_key="record_digest",
-            digest_label="最終年度",
-            digest_formatter=format_record_digest_for_prompt,
+            digests=NURSERY_RECORD_DIGESTS,
         ),
         tools=[
             recall_child_history,  # その子の入所時からの像（要録は入所〜最終年度の連続性が要＝§9）

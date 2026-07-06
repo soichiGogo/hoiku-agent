@@ -28,6 +28,7 @@ from pydantic import ValidationError
 from ..agents import build_monthly_author_agent
 from ..schemas import DiaryEntry
 from .aggregate import collect_reflections, prev_month_digest
+from .record_store import covered_until
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
@@ -63,9 +64,14 @@ class DigestPrepAgent(BaseAgent):
     素通り（降格）。月案（L2 還流＝前月日誌・既定キー）と保育経過記録（L3 還流＝期間日誌）で共用する
     （集計の決定的実体は aggregate.py に1つ・ここは配線のみ）。旧名 MonthlyPrepAgent を一般化した。
 
-    `reflections_key` を与えると（クラス月案のみ）、前月日誌の評価・反省を日次のクラス全体所見として
+    `reflections_key` を与えると（クラス月案のみ）、日誌の評価・反省を日次のクラス全体所見として
     `collect_reflections` で日付順に集め、同じ state-only イベントで state[reflections_key] にも載せる
     （個別月案・保育経過記録は None＝従来どおり digest のみ・挙動不変・§10 決定B）。
+
+    `uncovered_by_key` を与えると（クラス月案のみ・依存モデル 2026-07）、state[uncovered_by_key] の
+    保育経過記録群から「反映済み最終日」（`record_store.covered_until`）を求め、**それより後の日誌だけ**
+    を集計する＝経過記録にまだ巻き取られていない日誌に限定する（seed 側の合成
+    `class_monthly_seed_inputs` と同じ境界規則を prep でも保証＝ファイル/サンプル seed でも一貫）。
 
     **content を持たせない理由（§12）**：ADK eval の rubric judge は invocation の先頭イベント著者の
     developer instructions を引く（LLM 段のみ登録）。prep が content 付きイベントを先頭に置くと judge が
@@ -75,10 +81,19 @@ class DigestPrepAgent(BaseAgent):
 
     input_key: str = "prev_month_entries"
     output_key: str = "prev_month_digest"
-    reflections_key: str | None = None  # 設定時のみ前月の評価・反省も集める（クラス月案・決定B）
+    reflections_key: str | None = None  # 設定時のみ日誌の評価・反省も集める（クラス月案・決定B）
+    uncovered_by_key: str | None = None  # 設定時のみ経過記録に未反映の日誌へ限定（クラス月案）
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         entries = _parse_prev_entries(ctx.session.state.get(self.input_key))
+        if self.uncovered_by_key:
+            records = ctx.session.state.get(self.uncovered_by_key)
+            boundary = covered_until(
+                str((r or {}).get("period") or "")
+                for r in (records if isinstance(records, list) else [])
+            )
+            if boundary is not None:
+                entries = [e for e in entries if e.date > boundary]
         state_delta: dict = {self.output_key: prev_month_digest(entries)}
         if self.reflections_key:
             state_delta[self.reflections_key] = collect_reflections(entries)
