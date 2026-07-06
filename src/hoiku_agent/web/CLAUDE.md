@@ -27,8 +27,8 @@
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
 - **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`・
-  **`/api/parse-upload`**＝アップロード取込のファイル解析）と
-  **書類アーカイブの書込（POST `/api/records*`＝DB へのゴミデータ・偽承認証跡の防止）**を
+  **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）と
+  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**を
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
 - **アップロード取込（「書類を見る」タブ）は中継のみ**：既存ファイル（PDF/Word/Excel）を既存スキーマへ
   取り込む。フォルダ（種別）から kind、（personal 種別なら）子どもフォルダから child が場所で決まる（別建ての
@@ -147,6 +147,11 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `upload_parse.py` … アップロード取込の実体（`parse_uploaded_file`）。extract →（`build_upload_parser_agent` を
   InMemoryRunner で1パス駆動＝improver_stream と同型・SSE 無しの一発）→ 対象キー/child/age_band を保育士入力で
   **権威的に上書き**→ `finalize.extract_json_block`→`finalize_entry` で検査・整形（決定的実体は harness）。creds 無/LLM 失敗は正直に error 降格。
+- `proofread.py` … 校正AI（日本語チェック・言い換え提案）の実体（`proofread_entry`／`collect_items`）。手入力 entry から
+  **叙述文（プロース系）だけ**を id/パス/ラベル付きで集め（数量的な生活記録・仮名・タグ・日付は渡さない＝AI に事実を
+  触らせない・§14）、`build_proofreader_agent` を InMemoryRunner で1パス駆動→```json フェンスの提案を復元→**id→entry の
+  パスへ写像**して返す（元と同一/空/対象外 id は落とす安全網）。中継のみ（採否・反映は front・提案の実体は agents）。
+  `/api/proofread`＝LLM 口＝`_GATED_PREFIX` でパスコードゲート・creds 無/LLM 失敗は 200＋error で正直に降格（そのまま保存できる）。
 - `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
   種別を切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
   クラス未登録/DB 未接続は年齢帯チップへ降格・記録日は既定=今日）／月案/経過記録/要録は共通の ADK フロー（`docflow.js`）。

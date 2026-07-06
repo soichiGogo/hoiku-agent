@@ -21,6 +21,17 @@ function blankNote(name) {
   };
 }
 
+// 校正提案をパス（例 "individual_notes[0].observed_state"）で entry の該当フィールドへ反映する。
+function setByPath(obj, path, value) {
+  const tokens = path.replace(/\[(\d+)\]/g, ".$1").split(".");
+  let node = obj;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (node == null) return;
+    node = node[tokens[i]];
+  }
+  if (node != null) node[tokens[tokens.length - 1]] = value;
+}
+
 // クラスの在籍児（roster）から空の日誌 entry を組む。共通欄は空・出欠と個別記録は在籍児ぶん並べる。
 function blankEntry({ className, ageBand, date, roster }) {
   const names = roster || [];
@@ -112,7 +123,12 @@ export function makeDiaryForm({ area, status }) {
       /* 取得失敗でも既定順で編集できる */
     }
     const template = (docTemplate.templates || {})[KIND] || null;
-    const entry = blankEntry(seed);
+    render(blankEntry(seed), formMeta, template, !(seed.roster || []).length);
+  }
+
+  // フォームを（再）マウントする。校正提案の反映時は patch した entry で呼び直す（1回の再描画）。
+  function render(entry, formMeta, template, rosterEmpty) {
+    area.innerHTML = "";
     const editor = renderEditableDoc({ kind: KIND, entry, formMeta, template });
 
     // 手入力であることを明示する見出し（AI 生成でない＝自分の言葉で書く一次情報）。
@@ -125,6 +141,83 @@ export function makeDiaryForm({ area, status }) {
     const vNode = el("div", "validation");
     setValidation(vNode, [], false);
     editor.panel._body.appendChild(vNode);
+
+    // 校正AI（日本語チェック・言い換え提案）＝提案のみ・採否は保育士（自動書換はしない・自分の言葉を尊重）。
+    const proof = el("div", "proofread");
+    const proofBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("spark")}日本語をチェック（AI）`);
+    proofBtn.type = "button";
+    proofBtn.title = "手入力した文章の誤り・不自然さ・言い換えをAIが提案します（採否はあなたが決めます）";
+    const proofList = el("div", "proof-list");
+    proofBtn.onclick = async () => {
+      proofBtn.disabled = true;
+      const orig = proofBtn.innerHTML;
+      proofBtn.innerHTML = `<span class="spinner"></span>チェック中…`;
+      try {
+        const res = await adk.proofread(KIND, editor.collect());
+        if (res.needsGate) {
+          window.__requireGate && window.__requireGate();
+          return;
+        }
+        renderSuggestions(res);
+      } finally {
+        proofBtn.disabled = false;
+        proofBtn.innerHTML = orig;
+      }
+    };
+    proof.append(proofBtn, proofList);
+    editor.panel._body.appendChild(proof);
+
+    // 提案を欄ごとに描く（元→提案＋理由・反映チェック）。反映は選んだ分だけ entry に当てて1回で再描画。
+    function renderSuggestions(res) {
+      proofList.innerHTML = "";
+      if (res.error) {
+        proofList.appendChild(el("p", "proof-note err", esc(res.error)));
+        return;
+      }
+      const sugs = res.suggestions || [];
+      if (!sugs.length) {
+        proofList.appendChild(
+          el(
+            "p",
+            "proof-note ok",
+            `${iconHTML("check")}気になる日本語は見つかりませんでした（${res.checked || 0}文をチェック）`,
+          ),
+        );
+        return;
+      }
+      const checks = [];
+      sugs.forEach((s) => {
+        const card = el("div", "proof-card");
+        card.innerHTML =
+          `<div class="proof-label">${esc(s.label)}</div>` +
+          `<div class="proof-diff"><span class="proof-orig">${esc(s.original)}</span>` +
+          `<span class="narr" aria-hidden="true">→</span><span class="proof-new">${esc(s.suggestion)}</span></div>` +
+          (s.reason ? `<div class="proof-reason">${esc(s.reason)}</div>` : "");
+        const cb = el("input");
+        cb.type = "checkbox";
+        cb.checked = true;
+        const lab = el("label", "proof-check", "");
+        lab.append(cb, el("span", "", "この提案を反映する"));
+        card.appendChild(lab);
+        checks.push({ s, cb });
+        proofList.appendChild(card);
+      });
+      const applyBtn = el("button", "btn btn-primary btn-sm", `${iconHTML("check")}選んだ提案を反映`);
+      applyBtn.type = "button";
+      applyBtn.onclick = () => {
+        const patched = editor.collect(); // 現在のフォーム値を丸ごと拾ってから提案を当てる（他欄を壊さない）
+        checks.forEach(({ s, cb }) => {
+          if (cb.checked) setByPath(patched, s.path, s.suggestion);
+        });
+        render(patched, formMeta, template, false); // patch した entry で1回だけ再描画
+      };
+      const closeBtn = el("button", "btn btn-ghost btn-sm", "閉じる");
+      closeBtn.type = "button";
+      closeBtn.onclick = () => (proofList.innerHTML = "");
+      const actionsRow = el("div", "proof-actions");
+      actionsRow.append(applyBtn, closeBtn);
+      proofList.appendChild(actionsRow);
+    }
 
     // 帳票PDF・Word（園の様式で綴じる/編集する最終形）。承認後も押せるよう独立行に置く。
     const actions = el("div", "doc-actions");
@@ -214,7 +307,7 @@ export function makeDiaryForm({ area, status }) {
     editor.panel._body.appendChild(bar);
 
     area.appendChild(editor.panel);
-    if (!(seed.roster || []).length) {
+    if (rosterEmpty) {
       banner(
         area,
         "info",

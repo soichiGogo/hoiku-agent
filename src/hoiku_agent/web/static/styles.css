@@ -696,6 +696,22 @@ select.de-input{appearance:auto;min-height:38px}
 .df-sub{font-size:var(--fs-sm);color:var(--muted)}
 #diary-class-wrap,#diary-ageband-wrap{margin-bottom:var(--sp-2)}
 
+/* 校正AI（日本語チェック・言い換え提案）＝提案のみ・採否は保育士 */
+.proofread{margin:var(--sp-3) 0}
+.proof-list{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-2)}
+.proof-note{font-size:var(--fs-sm);color:var(--muted);display:flex;align-items:center;gap:6px;margin:var(--sp-2) 0 0}
+.proof-note.ok{color:var(--state-done-ink)}
+.proof-note.err{color:var(--state-fail-ink)}
+.proof-card{border:1px solid var(--line);border-left:3px solid var(--primary);border-radius:var(--r-md);
+  background:var(--surface-2);padding:var(--sp-3)}
+.proof-label{font-size:var(--fs-caption);font-weight:700;color:var(--muted);margin-bottom:4px}
+.proof-diff{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-2);font-size:var(--fs-body)}
+.proof-orig{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line-strong)}
+.proof-new{font-weight:700;color:var(--primary-d)}
+.proof-reason{font-size:var(--fs-sm);color:var(--muted);margin-top:4px}
+.proof-check{display:inline-flex;align-items:center;gap:6px;margin-top:var(--sp-2);font-size:var(--fs-sm);cursor:pointer}
+.proof-actions{display:flex;gap:var(--sp-2);margin-top:var(--sp-2)}
+
 /* ============================================================
    書類を見る（アーカイブ閲覧＝ファイルシステム風ツリー：種別→子ども→書類）
    ============================================================ */

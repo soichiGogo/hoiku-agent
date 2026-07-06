@@ -320,6 +320,22 @@ export async function assignChild(child, classId) {
   }
 }
 
+// 校正AI（日本語チェック・言い換え提案）。手入力 entry の叙述文への提案（パス付き）を返す。
+// LLM 口＝401 は needsGate。creds 無/失敗は 200＋error（suggestions 空）で正直に降格。
+export async function proofread(kind, entry) {
+  try {
+    const r = await fetch("/api/proofread", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, entry }),
+    });
+    if (r.status === 401) return { suggestions: [], needsGate: true };
+    return await r.json();
+  } catch {
+    return { suggestions: [], error: "校正の呼び出しに失敗しました" };
+  }
+}
+
 // 確定 entry を園の帳票PDFに描いて受け取る（現場でそのまま綴じる最終形）。{ blob, filename } を返す。
 export async function exportPdf(kind, entry) {
   const r = await fetch("/api/export-pdf", {

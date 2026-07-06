@@ -654,6 +654,57 @@ def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> 
     assert ok.status_code == 200 and ok.json()["status"] == "created"
 
 
+# ──────────────────── 校正AI（/api/proofread＝日本語チェック・言い換え提案・LLM 口） ────────────────────
+
+
+def test_proofread_collect_items_extracts_prose_only() -> None:
+    """校正対象は叙述文（プロース）に限る＝数量的な生活記録・タグ・日付・仮名は渡さない（§14）。"""
+    from hoiku_agent.web import proofread
+
+    entry = _edit_diary_entry()  # 架空児A・observed_state/evaluation/practice_record を持つ
+    items = proofread.collect_items("diary", entry)
+    paths = {it["path"] for it in items}
+    assert "practice_record" in paths
+    assert "individual_notes[0].observed_state" in paths
+    assert "evaluation.child_focus" in paths and "evaluation.self_review" in paths
+    # 生活記録（食事/睡眠…）・日付・タグ・child_id は校正対象にしない（AI に事実を触らせない）。
+    assert not any("life_record" in p for p in paths)
+    assert not any(p == "date" or "tags" in p or "child_id" in p for p in paths)
+    # ラベルには子どもの呼び名が文脈として付く（個別記録）。
+    note_item = next(it for it in items if it["path"] == "individual_notes[0].observed_state")
+    assert "架空児A" in note_item["label"]
+
+
+def test_proofread_empty_narrative_returns_no_suggestions_without_llm() -> None:
+    """叙述文が空なら LLM を呼ばず suggestions 空を返す（正常・非課金の早期リターン）。"""
+    c = _client()
+    entry = {
+        "date": "2026-07-06",
+        "age_band": "0-2",
+        "attendance": [],
+        "individual_notes": [],
+        "evaluation": {},
+    }
+    r = c.post("/api/proofread", json={"kind": "diary", "entry": entry})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["suggestions"] == [] and body["checked"] == 0 and body["error"] is None
+
+
+def test_proofread_is_passcode_gated(monkeypatch) -> None:
+    """校正AI は LLM を回す口なのでパスコードゲート（/api/improve・/api/parse-upload と同枠）。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert c.post("/api/proofread", json={"kind": "diary", "entry": {}}).status_code == 401
+    # パスコードを与えれば通る（空 entry＝叙述文なしで suggestions 空・200）。
+    ok = c.post(
+        "/api/proofread",
+        json={"kind": "diary", "entry": {}},
+        headers={"X-Demo-Passcode": "secret"},
+    )
+    assert ok.status_code == 200 and ok.json()["suggestions"] == []
+
+
 def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:
     """要録の氏名欄は登録済みの本名で解決できる（get_child 経路が通り PDF を返す）。"""
     c = _client()

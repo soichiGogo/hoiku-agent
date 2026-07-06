@@ -33,6 +33,7 @@ from .chohyo_pdf import render_pdf
 from .docx_fill import fill_docx
 from .docx_fill import supported_kinds as docx_supported_kinds
 from .iap import verified_iap_email
+from .proofread import proofread_entry
 from .upload_parse import parse_uploaded_file
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
@@ -47,8 +48,9 @@ _COOKIE_NAME = "hoiku_demo"
 
 # LLM を回す（＝課金が発生する）口だけをパスコードで守る。読み取り・セッション作成は素通し。
 _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
-# /api/improve（改善エージェント）／/api/parse-upload（アップロード取込＝ファイル解析に LLM を回す）。
-_GATED_PREFIX = ("/api/improve", "/api/parse-upload")
+# /api/improve（改善エージェント）／/api/parse-upload（アップロード取込）／/api/proofread（校正AI＝
+# 日本語チェック・言い換え提案）＝いずれも LLM を回す口なのでゲートする。
+_GATED_PREFIX = ("/api/improve", "/api/parse-upload", "/api/proofread")
 # 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
 # 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
 _GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children", "/api/classes")
@@ -146,6 +148,16 @@ class ClassAddRequest(BaseModel):
     age_band: str  # 0-2 / 3-5（必須）
     fiscal_year: str = ""  # 年度（例: 2026・任意）
     actor: str = ""
+
+
+class ProofreadRequest(BaseModel):
+    """校正AI（日本語チェック・言い換え提案）のリクエスト（手入力フォームから・LLM 口＝ゲート）。
+
+    保育士が手入力した entry を渡すと、叙述文（プロース系）への提案を返す。提案のみ・採否はフロント。
+    """
+
+    kind: str = "diary"  # diary / monthly / class_monthly / child_record / nursery_record
+    entry: dict  # 校正対象の entry（DiaryEntry 等の dict）
 
 
 class ClassAssignRequest(BaseModel):
@@ -486,6 +498,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             )
         except ValueError as e:
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
+
+    @app.post("/api/proofread")
+    async def web_proofread(req: ProofreadRequest):
+        """手入力 entry の叙述文を校正AI に通し、採否用の提案（パス付き）を返す（LLM 口＝ゲート済み）。
+
+        提案のみ（採否はフロント）・事実は変えない。creds 無/LLM 失敗は 200＋error で正直に降格
+        （suggestions 空）＝そのまま保存できる（偽の緑を出さない）。
+        """
+        return await proofread_entry((req.kind or "diary").strip(), req.entry or {})
 
     # ── 書類アーカイブ（harness/record_store の中継・Phase 1）───────────────────────────
     # sync def＝FastAPI が threadpool で回す（同期 DB I/O でイベントループを塞がない）。
