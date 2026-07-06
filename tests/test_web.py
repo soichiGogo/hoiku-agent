@@ -559,6 +559,58 @@ def test_add_child_degrades_when_db_unset(monkeypatch) -> None:
     assert r["status"] == "skipped" and r["display_name"] == "はるとくん"
 
 
+def test_add_child_stores_birthdate(records_db) -> None:
+    """生年月日つきで登録すると児童マスタに保存され /api/children で返る（月齢自動導出の素）。"""
+    c = _client()
+    r = c.post(
+        "/api/children",
+        json={"given_name": "はると", "gender": "male", "birthdate": "2024-11-20"},
+    ).json()
+    assert r["status"] == "created"
+    row = next(
+        x for x in c.get("/api/children").json()["children"] if x["display_name"] == "はるとくん"
+    )
+    assert row["birthdate"] == "2024-11-20"
+
+
+def test_add_child_rejects_bad_birthdate(records_db) -> None:
+    """生年月日が ISO 形式でないときは 400（握りつぶさず可視化）。"""
+    r = _client().post(
+        "/api/children",
+        json={"given_name": "はると", "gender": "male", "birthdate": "2024/11/20"},
+    )
+    assert r.status_code == 400
+
+
+def test_finalize_edit_child_record_fills_age_months_from_birthdate(records_db) -> None:
+    """保育経過記録の歳児欄＝生年月日から満年齢（○歳○か月）を期末時点で自動充填する（登録済みの子）。"""
+    c = _client()
+    # 生年月日つきで園児を登録（表示名 はるとくん）
+    c.post(
+        "/api/children",
+        json={"given_name": "はると", "gender": "male", "birthdate": "2024-11-20"},
+    )
+    entry = _edit_child_record_entry()
+    entry["child_id"] = "はるとくん"  # マスタに存在＝自動導出の対象
+    entry["period"] = "2026-04〜2026-06"  # 期末＝2026-06 末 → 1歳7か月（手入力値を上書き）
+    entry["age_months"] = "9歳9か月"  # わざと誤った手入力＝生年月日が権威で上書きされる
+    body = c.post("/api/finalize-edit", json={"kind": "child_record", "entry": entry}).json()
+    assert body["ok"] is True
+    assert "1歳7か月" in body["formatted"]
+    assert "9歳9か月" not in body["formatted"]
+
+
+def test_finalize_edit_child_record_keeps_manual_age_when_no_birthdate(records_db) -> None:
+    """生年月日が未登録の子（架空児）は手入力の月齢を温存する（自動導出しない＝§14 の設計を壊さない）。"""
+    entry = _edit_child_record_entry()  # child_id=架空児A（マスタ不在・生年月日なし）
+    entry["age_months"] = "1歳3か月"
+    body = (
+        _client().post("/api/finalize-edit", json={"kind": "child_record", "entry": entry}).json()
+    )
+    assert body["ok"] is True
+    assert "1歳3か月" in body["formatted"]
+
+
 def test_add_child_is_passcode_gated(records_db, monkeypatch) -> None:
     """児童マスタへの書込（POST）も辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
     monkeypatch.setattr(settings, "demo_passcode", "secret")

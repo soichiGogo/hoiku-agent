@@ -167,6 +167,11 @@ export function makeClasses(ui) {
       o.value = g.value;
       gender.appendChild(o);
     });
+    // 生年月日（任意）。書類の「歳児」欄を満年齢（○歳○か月）で自動表示するための素。
+    const birth = el("input", "input");
+    birth.type = "date";
+    birth.setAttribute("aria-label", "生年月日（任意）");
+    birth.title = "生年月日（任意）";
     const preview = el("span", "cprev", "");
     const updatePreview = () => {
       const nm = given.value.trim();
@@ -186,16 +191,18 @@ export function makeClasses(ui) {
         given_name: nm,
         family_name: family.value.trim(),
         gender: gender.value,
+        birthdate: birth.value || "",
         class_id: c.id,
       });
       if (applyWrite(res, "登録して追加しました")) {
         given.value = "";
         family.value = "";
+        birth.value = "";
         updatePreview();
         await reload();
       }
     };
-    rowB.append(family, given, gender, preview, reg);
+    rowB.append(family, given, gender, birth, preview, reg);
     body.appendChild(rowB);
 
     wrap.appendChild(body);

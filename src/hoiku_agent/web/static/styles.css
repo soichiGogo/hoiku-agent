@@ -260,6 +260,8 @@ a{color:var(--primary-d)}
 .combo-add-input{padding-left:14px}
 .combo-add-input:first-child{max-width:38%}
 .combo-add-gender{display:flex;gap:8px}
+.combo-add-birth{display:flex;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--ink-soft)}
+.combo-add-birth input{flex:0 1 auto}
 .combo-add-preview{font-size:var(--fs-sm);color:var(--ink-soft)}
 .combo-add-preview b{color:var(--primary-d);font-weight:800}
 .combo-add-actions{display:flex;gap:8px}

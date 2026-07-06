@@ -596,6 +596,13 @@ function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
     const nameRow = el("div", "combo-add-names");
     nameRow.append(family, given);
 
+    // 生年月日（任意）。登録すると保育経過記録などの「歳児」欄を満年齢（○歳○か月）で自動表示できる。
+    const birth = el("input", "combo-input combo-add-input");
+    birth.type = "date";
+    birth.setAttribute("aria-label", "生年月日（任意）");
+    const birthRow = el("label", "combo-add-birth", "生年月日（任意）");
+    birthRow.append(birth);
+
     const genderRow = el("div", "combo-add-gender");
     const genderBtns = GENDER_OPTIONS.map((g) => {
       const b = el("button", "chip", iconHTML("caregiver") + g.label);
@@ -654,7 +661,12 @@ function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
         return;
       }
       addBtn.disabled = true;
-      const res = await onAddChild({ family_name: family.value.trim(), given_name: g, gender });
+      const res = await onAddChild({
+        family_name: family.value.trim(),
+        given_name: g,
+        gender,
+        birthdate: birth.value || "",
+      });
       addBtn.disabled = false;
       if (!res || !res.ok) {
         errBox.textContent = (res && res.message) || "登録に失敗しました。";
@@ -668,7 +680,7 @@ function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
       commit(dn);
     };
 
-    panel.append(nameRow, genderRow, preview, actions, errBox);
+    panel.append(nameRow, genderRow, birthRow, preview, actions, errBox);
     container.append(panel);
     given.focus();
     given.setSelectionRange(given.value.length, given.value.length);
@@ -814,12 +826,12 @@ async function main() {
     onPick: (name) => onChildChange(name),
     labelId: "doc-child-label",
     // 未登録名を選んだら本名（姓/名）＋性別で新規登録（呼び名＋敬称はサーバが合成＝重複児を防ぐ）。
-    onAddChild: async ({ family_name, given_name, gender }) => {
-      // アーカイブ未接続はセッション内だけ選択肢へ足す（本名/性別は保存されない＝氏名欄は呼び名へ降格）。
+    onAddChild: async ({ family_name, given_name, gender, birthdate }) => {
+      // アーカイブ未接続はセッション内だけ選択肢へ足す（本名/性別/生年月日は保存されない＝氏名欄は呼び名へ降格）。
       if (!cfg.records_connected) {
         return { ok: true, displayName: composeDisplayName(given_name, gender) };
       }
-      const res = await adk.addChild({ family_name, given_name, gender });
+      const res = await adk.addChild({ family_name, given_name, gender, birthdate });
       if (res && res.needsGate) {
         window.__requireGate && window.__requireGate();
         return { ok: false, message: "パスコードを入力してから、もう一度追加してください。" };
