@@ -24,8 +24,9 @@ from . import upload_extract
 _APP_NAME = "hoiku_upload"
 _USER_ID = "caregiver"
 
-# finalize_entry が受け付ける種別（record_store.DOC_KINDS と 1:1）。
-_KINDS = ("diary", "monthly", "child_record", "nursery_record")
+# finalize_entry が受け付ける種別（record_store.DOC_KINDS と 1:1）。クラス月案（class_monthly）は
+# クラス単位＝主対象児を持たない（日誌と同型）で、UI からは「書類を見る」タブのクラス月案フォルダから取り込む。
+_KINDS = ("diary", "monthly", "class_monthly", "child_record", "nursery_record")
 
 
 def _empty_entry(kind: str, *, target: str, child: str, age_band: str) -> dict:
@@ -35,6 +36,17 @@ def _empty_entry(kind: str, *, target: str, child: str, age_band: str) -> dict:
         base.update({"date": target, "attendance": [], "individual_notes": [], "evaluation": {}})
     elif kind == "monthly":
         base.update({"month": target, "child_id": child, "education": []})
+    elif kind == "class_monthly":
+        # クラス単位＝主対象児なし。必須欄（月・保育目標・先月の姿）は空で置き、grid は空＝正準化が7行へそろえる。
+        base.update(
+            {
+                "month": target,
+                "monthly_goal": "",
+                "prev_month_state": "",
+                "grid": [],
+                "individual_goals": [],
+            }
+        )
     elif kind == "child_record":
         base.update({"period": target, "child_id": child, "development_notes": []})
     elif kind == "nursery_record":
@@ -48,7 +60,7 @@ def _apply_authoritative_keys(
     """保育士がアップロード時に指定した対象キー・child・age_band を entry へ権威的に上書きする。
 
     seed/検査に効く欄（対象キー・child_id・age_band）は LLM の取り違えを許さず保育士入力を正とする
-    （日誌は child_id を持たない＝クラス単位なので個別 notes 側の子どもは原本のまま）。
+    （日誌・クラス月案は child_id を持たない＝クラス単位なので個別 notes/個人目標側の子どもは原本のまま）。
     """
     e = dict(entry)
     if age_band:
@@ -59,6 +71,8 @@ def _apply_authoritative_keys(
         e["month"] = target
         if child:
             e["child_id"] = child
+    elif kind == "class_monthly":
+        e["month"] = target  # クラス単位＝主対象児なし（top-level child_id は付けない）
     elif kind == "child_record":
         e["period"] = target
         if child:

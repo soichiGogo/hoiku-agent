@@ -18,16 +18,18 @@ import { actorName, banner, el, esc, iconHTML } from "./ui.js";
 
 const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", class_monthly: "クラス月案", child_record: "保育経過記録", nursery_record: "保育要録" };
 const KIND_ICON = { diary: "diary", monthly: "calendar", class_monthly: "calendar", child_record: "chart", nursery_record: "chart" };
-// 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→月案→保育経過記録→要録）。クラス月案は月案の隣。
-// クラス月案の取込（アップロード）は v1 では未対応＝UPLOAD_META に入れない（フォルダは閲覧のみ・取込行は出ない）。
-const TYPE_ORDER = ["diary", "monthly", "class_monthly", "child_record", "nursery_record"];
+// 第1階層（種別フォルダ）の並び順＝集積階層の順（日誌→クラス月案→保育経過記録→要録）。月案は
+// 書類作成がクラス月案に一本化されたため、常時フォルダはクラス月案に統合する。旧・個別月案（monthly）は
+// 常時表示から外す＝過去に取り込んだ個別月案が残っていれば末尾に閲覧のみで出る（KIND_LABEL は温存）。
+const TYPE_ORDER = ["diary", "class_monthly", "child_record", "nursery_record"];
 const NO_CHILD = ""; // child なしの書類は「クラス全体」フォルダへ。
 
 // アップロード取込の種別別メタ：対象キーの入力（ラベル・input type・placeholder）と、child/年齢帯の要否。
-// diary はクラス単位（child を取らない）・nursery_record は年長固定（年齢帯を取らない・常に 3-5）。
+// diary・class_monthly はクラス単位（child を取らない）・nursery_record は年長固定（年齢帯を取らない・常に 3-5）。
+// 旧・個別月案（monthly）は取込対象から外す（書類作成がクラス月案に一本化＝統合）。
 const UPLOAD_META = {
   diary: { targetLabel: "対象日", inputType: "date", placeholder: "", wantsChild: false, wantsAge: true },
-  monthly: { targetLabel: "対象月", inputType: "month", placeholder: "", wantsChild: true, wantsAge: true },
+  class_monthly: { targetLabel: "対象月", inputType: "month", placeholder: "", wantsChild: false, wantsAge: true },
   child_record: { targetLabel: "対象期間", inputType: "text", placeholder: "例: 2026-04〜2026-06", wantsChild: true, wantsAge: true },
   nursery_record: { targetLabel: "対象年度", inputType: "text", placeholder: "例: 2026", wantsChild: true, wantsAge: false },
 };

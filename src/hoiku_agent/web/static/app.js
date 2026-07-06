@@ -108,7 +108,7 @@ const POLICY_TARGETS = [
   { key: "all", label: "すべて", scope: null, docTypes: null },
   { key: "common", label: "共通", scope: "共通", docTypes: ["common"] },
   { key: "diary", label: "保育日誌", scope: "保育日誌", docTypes: ["common", "diary"] },
-  { key: "monthly", label: "個別月案", scope: "月案", docTypes: ["common", "monthly"] },
+  { key: "monthly", label: "クラス月案", scope: "月案", docTypes: ["common", "monthly"] },
   { key: "child_record", label: "保育経過記録", scope: "保育経過記録", docTypes: ["common", "child_record"] },
   { key: "nursery_record", label: "保育要録", scope: "保育要録", docTypes: ["common", "nursery_record"] },
 ];

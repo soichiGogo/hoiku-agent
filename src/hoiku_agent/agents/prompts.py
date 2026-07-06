@@ -355,17 +355,51 @@ _UPLOAD_SCHEMA = {
   "school_name": "就学先（原本に明記があれば・無ければ空文字）",
   "enrollment_period": "保育期間（原本に明記があれば・無ければ空文字）"
 }""",
+    "class_monthly": """\
+スキーマ（ClassMonthlyPlan・クラス月案＝園の月間指導計画・クラス単位）。応答の末尾に ```json フェンスで1つだけ出力する。
+これは「1人の子」でなく**クラス全体**の月次計画で、区分×領域グリッド（養護2本柱＋教育5領域）が本体:
+{
+  "month": "対象月 YYYY-MM（与件）",
+  "age_band": "0-2 または 3-5（与件）",
+  "class_name": "クラス名（原本にあれば。例: ひよこ組。無ければ空文字）",
+  "monthly_goal": "今月の保育目標＝クラス全体のねらい（原本の記述）",
+  "prev_month_state": "先月の子どもの姿（原本の記述。無ければ空文字）",
+  "events": "今月の行事（原本にあれば・任意）",
+  "parent_support": "保護者支援（原本にあれば・任意）",
+  "grid": [
+    {"category": "養護", "domain": "生命の保持", "aim": "ねらい", "environment": "環境・構成", "child_state": "子どもの姿", "support": "援助・配慮"},
+    {"category": "養護", "domain": "情緒の安定", "aim": "…", "environment": "…", "child_state": "…", "support": "…"},
+    {"category": "教育", "domain": "健康", "aim": "…", "environment": "…", "child_state": "…", "support": "…"},
+    {"category": "教育", "domain": "人間関係", "aim": "…", "environment": "…", "child_state": "…", "support": "…"},
+    {"category": "教育", "domain": "環境", "aim": "…", "environment": "…", "child_state": "…", "support": "…"},
+    {"category": "教育", "domain": "言葉", "aim": "…", "environment": "…", "child_state": "…", "support": "…"},
+    {"category": "教育", "domain": "表現", "aim": "…", "environment": "…", "child_state": "…", "support": "…"}
+  ],
+  "syokuiku": "食育（原本にあれば・任意）",
+  "health_safety": "健康・安全（原本にあれば・任意）",
+  "family_liaison": "家庭との連携（原本にあれば・任意）",
+  "staff_liaison": "職員間の連携（原本にあれば・任意）",
+  "individual_goals": [{"child_id": "子どもの呼び名", "age_months": "月齢（任意）", "child_state": "子どもの姿", "aim_support": "ねらい・配慮"}]
+}
+- grid の domain は必ず次の7つ（養護＝生命の保持／情緒の安定、教育＝健康／人間関係／環境／言葉／表現）に対応づけて写す。
+  原本の各欄をこの領域へ割り当て、読み取れない欄は空文字にする（行を勝手に増やさない）。
+- individual_goals は **0–2 のみ**（原本に個人目標の小表があれば登場児ごとに写す。3–5 は空配列 [] にする）。
+- 評価系の欄（保育者の評価・子どもの評価・気になる子どもへの対応・個人目標の評価/反省）は保育士が月末に記入する
+  運用欄なので **AI では埋めない**（JSON に含めない／空文字にする）。
+- この様式に tags 欄は無いので、末尾のタグ指示は適用しない（grid の領域が5領域に対応する）。""",
 }
 
 _UPLOAD_KIND_LABEL = {
     "diary": "保育日誌",
     "monthly": "個別月案",
+    "class_monthly": "クラス月案",
     "child_record": "保育経過記録",
     "nursery_record": "保育要録",
 }
 _UPLOAD_TARGET_LABEL = {
     "diary": "対象日(date)",
     "monthly": "対象月(month)",
+    "class_monthly": "対象月(month)",
     "child_record": "対象期間(period)",
     "nursery_record": "対象年度(fiscal_year)",
 }
@@ -382,7 +416,10 @@ def build_upload_extract_instruction(
     schema = _UPLOAD_SCHEMA.get(kind)
     if schema is None:
         raise ValueError(f"未対応の取込種別: {kind!r}")
-    child_line = f"\n- 対象児(child_id): {child}" if child and kind != "diary" else ""
+    # 日誌・クラス月案はクラス単位（主対象児を持たない）＝与件の対象児行を出さない。
+    child_line = (
+        f"\n- 対象児(child_id): {child}" if child and kind not in ("diary", "class_monthly") else ""
+    )
     givens = _UPLOAD_GIVENS.format(
         kind_label=_UPLOAD_KIND_LABEL.get(kind, kind),
         target_label=_UPLOAD_TARGET_LABEL.get(kind, "対象"),
