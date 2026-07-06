@@ -261,6 +261,8 @@ def test_list_diary_meta_flags_evaluation_completeness(db):
     assert by_date["2026-06-20"]["evaluation_complete"] is False  # (a) 空＝未記入
     # id はフロントが「その日誌へ飛んで編集」する導線に使う＝存在すること。
     assert all(m["id"] for m in meta)
+    # age_band＝クラス月案がクラス（年齢帯）の日誌だけに絞るために返す。
+    assert by_date["2026-06-10"]["age_band"] == "0-2"
 
 
 def test_list_diary_meta_empty_when_disabled(monkeypatch):

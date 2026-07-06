@@ -213,6 +213,22 @@ a{color:var(--primary-d)}
   font-size:var(--fs-caption);font-weight:700;padding:3px 11px;border-radius:var(--r-pill)}
 .badge .ic{width:13px;height:13px}
 
+/* 前月日誌の評価未記入 → 記入導線カード（クラス月案作成時・attention＝degraded トークンで「要対応」を表す） */
+.eval-notice{margin:var(--sp-3) 0;padding:var(--sp-3) var(--sp-4);border:1px solid var(--state-degraded);
+  background:var(--state-degraded-soft);border-radius:10px}
+.eval-notice.hidden{display:none}
+.eval-notice-title{display:flex;align-items:center;gap:6px;font-weight:700;
+  color:var(--state-degraded-ink);font-size:var(--fs-sm)}
+.eval-notice-title .ic{width:16px;height:16px;flex:0 0 auto}
+.eval-notice-sub{margin:4px 0 var(--sp-2);font-size:var(--fs-caption);color:var(--ink-soft);line-height:1.6}
+.eval-notice-chips{display:flex;gap:6px;flex-wrap:wrap}
+.eval-chip{display:inline-flex;align-items:center;gap:5px;font-family:inherit;font-size:var(--fs-caption);
+  font-weight:700;padding:5px 10px;border-radius:var(--r-pill);cursor:pointer;
+  border:1.5px solid var(--state-degraded);background:var(--surface);color:var(--state-degraded-ink)}
+.eval-chip:hover{background:var(--state-degraded-soft)}
+.eval-chip .ic{width:13px;height:13px}
+.eval-chip:focus-visible{outline:2px solid var(--primary);outline-offset:2px}
+
 /* チップ */
 .chips{display:flex;gap:7px;flex-wrap:wrap}
 .chips-sm .chip{font-size:var(--fs-caption);padding:5px 11px}

@@ -693,6 +693,8 @@ def list_diary_meta(date_from: date, date_to: date) -> list[dict]:
                         "id": str(doc.id),
                         "date": doc.target_date.isoformat() if doc.target_date else "",
                         "status": doc.status,
+                        # クラス月案は年齢帯（クラス）単位なので、フロントが当該クラスの日誌だけに絞れるよう返す。
+                        "age_band": (entry or {}).get("age_band") or "",
                         "evaluation_complete": _diary_evaluation_complete(entry),
                     }
                 )
