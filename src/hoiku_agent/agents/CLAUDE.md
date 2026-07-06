@@ -30,9 +30,9 @@
   対象キー・age_band・child は与件（保育士入力）を prompt に前置し、システムが最終的に上書きする（LLM の取り違えを封じる）。
   **output_schema は使わず作成AI と同じ ```json フェンス出力**（タグ欄の union で responseSchema が不安定なため・harness の
   `extract_json_block`→`finalize_entry` で復元・検査・整形＝決定的実体は harness）。確認・修正は保育士が編集フォームで行う。
-- **factory で返す。** `build_author_agent` / `build_monthly_author_agent` / `build_class_monthly_author_agent` /
+- **factory で返す。** `build_monthly_author_agent` / `build_class_monthly_author_agent` /
   `build_child_record_author_agent` / `build_nursery_record_author_agent` / `build_review_agent` /
-  `build_upload_parser_agent`。
+  `build_upload_parser_agent`（**保育日誌の作成AI＝旧 `build_author_agent` は退役**＝日誌は手入力・ヒアリング 2026-07）。
   トップレベルでインスタンス化しない（例外は `agent.py` の root_agent のみ）。任意引数 `model`（既定
   None＝`models.build_model()`＝`gemini_model` を `model_location`＝global に固定した Gemini。Gemini 3.x は
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の

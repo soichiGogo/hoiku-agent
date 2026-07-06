@@ -23,12 +23,11 @@ def test_root_agent_builds():
 
     from hoiku_agent import root_agent
 
-    # root_agent は doc_type 分岐ルータ（既定＝保育日誌）。子に日誌・（個別/クラス）月案・保育経過記録・
-    # 保育要録のパイプラインを持つ。
+    # root_agent は doc_type 分岐ルータ（既定＝クラス月案）。子に（個別/クラス）月案・保育経過記録・
+    # 保育要録のパイプラインを持つ。**保育日誌は AI 生成を退役**（手入力＝web）したためルータに載らない。
     assert root_agent.name == "hoiku_root"
     sub_names = {a.name for a in root_agent.sub_agents}
     assert sub_names == {
-        "document_pipeline",
         "monthly_plan_pipeline",
         "class_monthly_pipeline",
         "child_record_pipeline",

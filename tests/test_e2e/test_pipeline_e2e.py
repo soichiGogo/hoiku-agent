@@ -1,11 +1,14 @@
-"""決定論E2E（結合テスト）：document_pipeline を LLM/GCP 非依存に通す。
+"""決定論E2E（結合テスト）：作成パイプラインの**共用機構**を LLM/GCP 非依存に通す。
 
 設計コンテキスト §4/§5/§16。harness（型の保証）と agents（中身）の "結合" ＝パイプラインの
 順序制御を、実 Gemini を呼ばずに検証する層。author/reviewer の build_xxx(model=...) に
 FakeLlm（BaseLlm の決定的スタブ）を注入し、authoring_loop（作成→レビュー→ゲートの巡回）→finalize を
 実 ADK ランタイムで end-to-end に回す。creds 不要・無料・決定的なので毎PR/毎編集で回せる（品質採点は別層＝eval/）。
 
-ここで担保する "結合経路"（harness/pipeline.py・finalize.py が分岐を持つ点）:
+**保育日誌の AI 生成パイプラインは退役した**（ヒアリング 2026-07：日誌は手入力＝AI を通さない）ので、
+共用機構（`build_authoring_loop`・`FinalizeAgent`・`persist_visit_to_memory`）は月案/保育経過記録/要録が
+使い続ける。ここでは**保育経過記録パイプライン**（`build_child_record_pipeline`）を代表の乗り物にして、
+共用機構の結合経路（harness/pipeline.py・finalize.py が分岐を持つ点）を固定する:
   1. 連結          author→state["draft"]→reviewer→state["review"]→finalize→state["final_document"]
   2. 早期終了      reviewer 1行目 APPROVED で ApprovalGate が escalate（is_approved）
   3. 再作成        NEEDS_REVISION で author が次巡で再作成し、2枚目の下書きが確定される（巡回に author を含む）
@@ -13,6 +16,7 @@ FakeLlm（BaseLlm の決定的スタブ）を注入し、authoring_loop（作成
   5. 確定3経路     ① 成功（problems 空・formatted 生成）② parse 失敗（finalize_parse_error）
                    ③ 検証不足（validation 非空でも確定下書きは生成される）
   6. HITL 関門     ask_caregiver を発火させずに通る／確定段で awaiting_caregiver_approval=True
+  7. 書き戻し      真の承認ゲート（caregiver_approved＋型成立でのみ Memory Bank へ）
 
 中身の良し悪し（指針整合/10の姿/表現）は採点しない（それは層B eval＝要 LLM・/adk-eval）。
 ここは "型と順序" だけを決定的に検証する。
@@ -38,17 +42,12 @@ from google.adk.sessions import InMemorySessionService  # noqa: E402
 from google.genai import types  # noqa: E402
 from pydantic import PrivateAttr  # noqa: E402
 
-from hoiku_agent.harness.pipeline import (  # noqa: E402
-    MAX_REVIEW_ITERATIONS,
-    build_document_pipeline,
-)
+from hoiku_agent.harness.child_record import build_child_record_pipeline  # noqa: E402
+from hoiku_agent.harness.pipeline import MAX_REVIEW_ITERATIONS  # noqa: E402
 
 _APP = "hoiku_e2e"
 _USER = "tester"
-_MEMO = (
-    "観察メモ：架空児Aが園庭の砂場でスコップを使い感触を確かめていた。"
-    "0–2個別の保育日誌の下書きを作成してください。"
-)
+_MEMO = "2026-04〜2026-06 の保育経過記録の下書きを作成してください。"
 
 
 class FakeLlm(BaseLlm):
@@ -83,42 +82,43 @@ class FakeLlm(BaseLlm):
 
 
 def _valid_entry() -> dict:
-    """validate_fields を通過する 0–2 個別の DiaryEntry（タグ＝3つの視点）。"""
+    """validate_child_record_fields を通過する 0–2 の ChildRecord（タグ＝3つの視点）。"""
     return {
-        "date": "2026-06-25",
+        "period": "2026-04〜2026-06",
         "age_band": "0-2",
-        "weather": "晴れ",
-        "attendance": [{"child_id": "架空児A", "present": True, "reason": None}],
-        "health_notes": None,
-        "practice_record": "園庭の砂場で感触遊びを行った。",
-        "individual_notes": [
+        "child_id": "架空児A",
+        "development_notes": [
             {
-                "child_id": "架空児A",
-                "observed_state": "スコップで砂をすくい、感触を確かめるように繰り返した。",
-                "tags": ["身近なものと関わり感性が育つ"],  # ThreeViewpoint
-                # 0–2 養護の中核＝生活記録（1欄以上記入で型成立）
-                "life_record": {
-                    "meal": "完食",
-                    "sleep": "午睡2時間",
-                    "toilet": "排尿3回",
-                    "mood_health": "機嫌よく過ごす",
-                },
+                "description": "感触遊びに繰り返し関わり、素材への探索が広がった。",
+                "tags": ["身近なものと関わり感性が育つ"],  # ThreeViewpoint（0–2 必須）
             }
         ],
-        "evaluation": {
-            "child_focus": "砂の感触に繰り返し関わり、感覚的な満足を得ていた。",
-            "self_review": "スコップを十分用意でき、落ち着いて関われた。",
-        },
+        "care_notes": "",
+        "family_liaison": "",
+        "overall_note": "身近なものへの興味を土台に、自分から関わる姿が育った。",
+        "next_aims": "",
     }
 
 
 def _author_text(entry: dict) -> str:
-    """author の最終応答を模す（散文＋```json フェンスの DiaryEntry）。"""
+    """author の最終応答を模す（散文＋```json フェンスの ChildRecord）。"""
     return (
-        "観察メモから0–2個別の保育日誌の下書きを作成しました。\n```json\n"
+        "期間集積から保育経過記録の下書きを作成しました。\n```json\n"
         + json.dumps(entry, ensure_ascii=False, indent=2)
         + "\n```"
     )
+
+
+def _base_state(extra: dict | None = None) -> dict:
+    """共用機構を回すための最小 state（保育経過記録パイプラインの入力）。
+
+    period_entries は空でよい（period_prep は空 digest で素通り＝state-only・落ちない）。extra で
+    保育士の明示承認（caregiver_approved=True）等を seed できる（真の承認ゲートの検証）。
+    """
+    state = {"doc_type": "保育経過記録", "period_entries": []}
+    if extra:
+        state.update(extra)
+    return state
 
 
 def _function_call_names(events) -> list[str]:
@@ -133,20 +133,24 @@ def _function_call_names(events) -> list[str]:
     return names
 
 
-def _run(author_model, reviewer_model, memo: str = _MEMO, session_id: str = "s1"):
+def _run(author_model, reviewer_model, session_id: str = "s1", initial_state: dict | None = None):
     """pipeline をオフライン実行し (最終 state, events) を返す（決定論・creds 不要）。"""
 
     async def _go():
-        pipeline = build_document_pipeline(author_model=author_model, reviewer_model=reviewer_model)
+        pipeline = build_child_record_pipeline(
+            author_model=author_model, reviewer_model=reviewer_model
+        )
         session_service = InMemorySessionService()
-        await session_service.create_session(app_name=_APP, user_id=_USER, session_id=session_id)
+        await session_service.create_session(
+            app_name=_APP, user_id=_USER, session_id=session_id, state=_base_state(initial_state)
+        )
         runner = Runner(app_name=_APP, agent=pipeline, session_service=session_service)
         events = [
             ev
             async for ev in runner.run_async(
                 user_id=_USER,
                 session_id=session_id,
-                new_message=types.Content(role="user", parts=[types.Part(text=memo)]),
+                new_message=types.Content(role="user", parts=[types.Part(text=_MEMO)]),
             )
         ]
         sess = await session_service.get_session(
@@ -179,16 +183,15 @@ def _run_with_memory(
     session_id: str = "s1",
     initial_state: dict | None = None,
 ) -> dict:
-    """memory_service 付きで pipeline をオフライン実行し最終 state を返す（書き戻し検証用）。
-
-    initial_state で保育士の明示承認（caregiver_approved=True）等を seed できる（真の承認ゲート）。
-    """
+    """memory_service 付きで pipeline をオフライン実行し最終 state を返す（書き戻し検証用）。"""
 
     async def _go():
-        pipeline = build_document_pipeline(author_model=author_model, reviewer_model=reviewer_model)
+        pipeline = build_child_record_pipeline(
+            author_model=author_model, reviewer_model=reviewer_model
+        )
         session_service = InMemorySessionService()
         await session_service.create_session(
-            app_name=_APP, user_id=_USER, session_id=session_id, state=initial_state or {}
+            app_name=_APP, user_id=_USER, session_id=session_id, state=_base_state(initial_state)
         )
         runner = Runner(
             app_name=_APP,
@@ -227,6 +230,7 @@ def test_happy_path_approved_finalizes_and_skips_hitl():
     assert state.get("validation") == []
     assert state.get("finalize_parse_error") is None
     assert state.get("final_document")
+    assert state.get("final_doc_kind") == "child_record"
     # ⑤ HITL：最終OKは保育士＝承認待ちフラグが立つ／ask_caregiver は呼ばれていない
     assert state.get("awaiting_caregiver_approval") is True
     assert "ask_caregiver" not in _function_call_names(events)
@@ -239,9 +243,9 @@ def test_first_content_event_authored_by_llm_author():
     """eval 互換の回帰防止（§12）：invocation の先頭 content 付きイベントは LLM 段（author）が著者。
 
     ADK の rubric judge は invocation_events（＝content を持つイベント）の先頭著者の developer
-    instructions を引き、非LLM段（prep）が登録されないため採点不能になる。文書作成指針・集積を prep の
-    content イベントでなく InstructionProvider／state-only 集計で運ぶことで、先頭 content 段＝author に
-    保つ（本設計変更の核）。ここでは日誌パイプラインの先頭 content イベントが author であることを固定する。
+    instructions を引き、非LLM段（prep）が登録されないため採点不能になる。集積を prep の content
+    イベントでなく state-only 集計で運ぶことで、先頭 content 段＝author に保つ。ここでは保育経過記録
+    パイプラインの先頭 content イベントが author（child_record_author）であることを固定する。
     """
     author = FakeLlm(responses=[_author_text(_valid_entry())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
@@ -256,26 +260,7 @@ def test_first_content_event_authored_by_llm_author():
 
     first = next((e for e in events if e.author != "user" and _has_content(e)), None)
     assert first is not None
-    assert first.author == "author"
-
-
-def test_finalize_injects_date_when_author_emits_placeholder():
-    """回帰防止（本バグ）：author が壊れた/雛形 echo の date を出しても harness が救って確定が通る。
-
-    新プロンプトは date を出力させないが、旧雛形を echo した壊れた値（YYYY-MM-DD）が来ても、
-    FinalizeAgent が state["doc_date"]（無ければ本日）を解決し finalize へ渡して上書きするため
-    parse_error にならない。配線（FinalizeAgent→_resolve_doc_date→finalize_document）の end-to-end 固定。
-    """
-    entry = _valid_entry()
-    entry["date"] = "YYYY-MM-DD"  # 旧プロンプト雛形を echo した壊れた値を模す
-    author = FakeLlm(responses=[_author_text(entry)])
-    reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
-
-    state, _ = _run(author, reviewer)
-
-    assert state.get("finalize_parse_error") is None  # harness が日付を注入して救う
-    assert state.get("final_document")
-    assert state.get("validation") == []
+    assert first.author == "child_record_author"
 
 
 def test_needs_revision_then_approved_loops_then_early_exits():
@@ -285,7 +270,7 @@ def test_needs_revision_then_approved_loops_then_early_exits():
     """
     author = FakeLlm(responses=[_author_text(_valid_entry())])
     reviewer = FakeLlm(
-        responses=["NEEDS_REVISION\n天候の記述を補ってください。", "APPROVED\n改善を確認。"]
+        responses=["NEEDS_REVISION\n発達の経過を補ってください。", "APPROVED\n改善を確認。"]
     )
 
     state, _ = _run(author, reviewer)
@@ -298,18 +283,18 @@ def test_needs_revision_then_approved_loops_then_early_exits():
 
 
 def test_needs_revision_triggers_reauthor_and_second_draft_finalizes():
-    """★本変更の核：NEEDS_REVISION で作成AIが再作成し、2枚目の下書きが確定される。
+    """★共用機構の核：NEEDS_REVISION で作成AIが再作成し、2枚目の下書きが確定される。
 
     旧構成（author をループ外）では再作成が起きず1枚目が確定していた。author を巡回に含めたことで、
     1巡目 NEEDS_REVISION → 2巡目に author が再提出 → その2枚目が finalize されることを固定する。
     """
     entry_v1 = _valid_entry()
-    entry_v1["practice_record"] = "初回の下書き（指摘前）。"
+    entry_v1["overall_note"] = "初回の総合所見（指摘前）。"
     entry_v2 = _valid_entry()
-    entry_v2["practice_record"] = "修正後の下書き（指摘を反映）。"
+    entry_v2["overall_note"] = "修正後の総合所見（指摘を反映）。"
     author = FakeLlm(responses=[_author_text(entry_v1), _author_text(entry_v2)])
     reviewer = FakeLlm(
-        responses=["NEEDS_REVISION\n実践記録を具体化してください。", "APPROVED\n改善を確認。"]
+        responses=["NEEDS_REVISION\n総合所見を具体化してください。", "APPROVED\n改善を確認。"]
     )
 
     state, _ = _run(author, reviewer)
@@ -321,8 +306,8 @@ def test_needs_revision_triggers_reauthor_and_second_draft_finalizes():
     assert reviewer.call_count == 2
     # 確定されるのは2枚目（再作成後）の下書き
     final_doc = state.get("final_document") or ""
-    assert "修正後の下書き（指摘を反映）。" in final_doc
-    assert "初回の下書き（指摘前）。" not in final_doc
+    assert "修正後の総合所見（指摘を反映）。" in final_doc
+    assert "初回の総合所見（指摘前）。" not in final_doc
     assert state.get("validation") == []
     assert state.get("awaiting_caregiver_approval") is True
 
@@ -343,10 +328,8 @@ def test_never_approved_hits_max_iterations_then_finalizes():
 
 
 def test_parse_error_when_draft_has_no_json():
-    """④-② author 出力に DiaryEntry JSON が無ければ finalize は parse_error を立てる。"""
-    author = FakeLlm(
-        responses=["観察情報が不足しており下書きを作成できませんでした。"]
-    )  # 波括弧なし
+    """④-② author 出力に ChildRecord JSON が無ければ finalize は parse_error を立てる。"""
+    author = FakeLlm(responses=["集積が不足しており下書きを作成できませんでした。"])  # 波括弧なし
     reviewer = FakeLlm(responses=["APPROVED\n（内容なし）"])
 
     state, _ = _run(author, reviewer)
@@ -359,7 +342,7 @@ def test_parse_error_when_draft_has_no_json():
 def test_validation_problems_surface_but_draft_still_produced():
     """④-③ パースは成功するが年齢分岐タグ不足→validation 非空・確定下書きは生成。"""
     entry = _valid_entry()
-    entry["individual_notes"][0]["tags"] = ["表現"]  # FiveDomains＝0–2 では不適合
+    entry["development_notes"][0]["tags"] = ["表現"]  # FiveDomains＝0–2 では不適合
     author = FakeLlm(responses=[_author_text(entry)])
     reviewer = FakeLlm(responses=["APPROVED\n（型は別途）"])
 
@@ -377,8 +360,8 @@ def test_all_events_share_one_invocation_id_for_eval_compat():
     """eval 互換：1ユーザターンの全イベントが同一の非空 invocation_id を持つこと。
 
     ADK の eval は「invocation 数＝conversation 数」を要求する（local_eval_service・採点段）。
-    custom BaseAgent（ApprovalGate/FinalizeAgent/MonthlyPrepAgent）が Event に invocation_id を
-    伝播しないと、それらが空 id の別 invocation 扱いになり、1ターンが2 invocation に割れて
+    custom BaseAgent（DigestPrepAgent/ApprovalGate/FinalizeAgent）が Event に invocation_id を
+    伝播しないと、それらが空 id の別 invocation 扱いになり、1ターンが複数 invocation に割れて
     本採点が ValueError で落ちる。harness 側で ctx.invocation_id を載せる回帰防止。
     """
     author = FakeLlm(responses=[_author_text(_valid_entry())])
@@ -391,7 +374,7 @@ def test_all_events_share_one_invocation_id_for_eval_compat():
         f"全イベントが非空 invocation_id を持つべき（custom agent 由来の欠落を検出）: {inv_ids}"
     )
     assert len(inv_ids) == 1, (
-        f"1ターンの invocation_id は1つに揃うべき（finalize/gate の欠落）: {inv_ids}"
+        f"1ターンの invocation_id は1つに揃うべき（prep/finalize/gate の欠落）: {inv_ids}"
     )
 
 
@@ -435,7 +418,7 @@ def test_writeback_skipped_without_caregiver_approval():
 
 def test_writeback_skipped_when_parse_error_even_if_approved():
     """承認済みでも parse 失敗（型不成立）の確定では像を汚さないため書き戻さない。"""
-    author = FakeLlm(responses=["観察情報が不足しており下書きを作成できませんでした。"])
+    author = FakeLlm(responses=["集積が不足しており下書きを作成できませんでした。"])
     reviewer = FakeLlm(responses=["APPROVED\n（内容なし）"])
     memory = _SpyMemory()
 
@@ -449,7 +432,7 @@ def test_writeback_skipped_when_parse_error_even_if_approved():
 def test_writeback_skipped_when_validation_problems_even_if_approved():
     """承認済みでも年齢分岐タグ不足（validation 非空）の確定では書き戻さない（型成立ゲート）。"""
     entry = _valid_entry()
-    entry["individual_notes"][0]["tags"] = ["表現"]  # 0–2 に 5領域タグ＝違反
+    entry["development_notes"][0]["tags"] = ["表現"]  # 0–2 に 5領域タグ＝違反
     author = FakeLlm(responses=[_author_text(entry)])
     reviewer = FakeLlm(responses=["APPROVED\n（型は別途）"])
     memory = _SpyMemory()
@@ -469,5 +452,5 @@ def test_writeback_degrades_without_memory_service():
     # _run は memory_service を渡さない＝add_session_to_memory が ValueError → フックが握る
     state, _ = _run(author, reviewer)
 
-    assert state.get("final_document")  # 書き戻し先が無くても日誌の確定は完了する
+    assert state.get("final_document")  # 書き戻し先が無くても確定は完了する
     assert state.get("awaiting_caregiver_approval") is True

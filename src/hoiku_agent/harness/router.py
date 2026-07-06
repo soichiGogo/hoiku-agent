@@ -21,39 +21,37 @@ from google.adk.utils.context_utils import Aclosing
 from .child_record import build_child_record_pipeline
 from .class_monthly import build_class_monthly_pipeline
 from .monthly import build_monthly_pipeline
-from .pipeline import build_document_pipeline
 from .youroku import build_nursery_record_pipeline
 
 if TYPE_CHECKING:
     from google.adk.models import BaseLlm
 
-_DIARY = "document_pipeline"
 _MONTHLY = "monthly_plan_pipeline"
 _CLASS_MONTHLY = "class_monthly_pipeline"
 _CHILD_RECORD = "child_record_pipeline"
 _NURSERY_RECORD = "nursery_record_pipeline"
+# 既定（doc_type 未設定／未知）＝クラス月案。保育日誌は AI 生成を退役したため（手入力＝web で AI を
+# 通さない）ここには載らない。product は doc_type を明示するので既定に来るのは adk run/web の dev 用途だけ。
+_DEFAULT = _CLASS_MONTHLY
 
 
 class DocTypeRouter(BaseAgent):
-    """state["doc_type"] で日誌／月案／クラス月案／保育経過記録／保育要録パイプラインを振り分ける（決定的・§10/§18/§19）。
+    """state["doc_type"] で月案／クラス月案／保育経過記録／保育要録パイプラインを振り分ける（決定的・§10/§18/§19）。
 
-    既定は保育日誌（doc_type 未設定＝既存デモの挙動）。doc_type=="月案" は個別月案、"クラス月案" は
-    クラス月案（園の実様式・§18）、"保育経過記録" は保育経過記録、"保育要録" は要録（L4）のパイプラインへ。選んだ
+    doc_type=="月案" は個別月案、"クラス月案" はクラス月案（園の実様式・§18）、"保育経過記録" は保育経過記録、
+    "保育要録" は要録（L4）のパイプラインへ。**保育日誌は AI 生成を退役**（手入力＝web の docedit→finalize_entry）
+    したためルータには載らない。doc_type 未設定/未知の既定はクラス月案（product は doc_type を明示する）。選んだ
     サブパイプラインの確定処理（after_agent_callback の書き戻し含む）はそのまま委譲する。
     """
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         doc_type = (ctx.session.state.get("doc_type") or "").strip()
-        if doc_type == "月案":
-            target_name = _MONTHLY
-        elif doc_type == "クラス月案":
-            target_name = _CLASS_MONTHLY
-        elif doc_type == "保育経過記録":
-            target_name = _CHILD_RECORD
-        elif doc_type == "保育要録":
-            target_name = _NURSERY_RECORD
-        else:
-            target_name = _DIARY
+        target_name = {
+            "月案": _MONTHLY,
+            "クラス月案": _CLASS_MONTHLY,
+            "保育経過記録": _CHILD_RECORD,
+            "保育要録": _NURSERY_RECORD,
+        }.get(doc_type, _DEFAULT)
         target = next(a for a in self.sub_agents if a.name == target_name)
         async with Aclosing(target.run_async(ctx)) as agen:
             async for event in agen:
@@ -66,15 +64,15 @@ def build_root_agent(
 ) -> DocTypeRouter:
     """doc_type 分岐ルータ（root_agent の実体）を構築する（§10/§19）。
 
-    日誌・月案・保育経過記録のパイプラインを子に持ち、doc_type で選ぶ。author_model/reviewer_model は
-    通常 None（実 Gemini）。テストでは FakeLlm を各パイプラインへ注入できる。
+    月案・クラス月案・保育経過記録・保育要録のパイプラインを子に持ち、doc_type で選ぶ（保育日誌は手入力＝
+    AI 生成を退役したため子に持たない）。author_model/reviewer_model は通常 None（実 Gemini）。テストでは
+    FakeLlm を各パイプラインへ注入できる。
     """
-    diary = build_document_pipeline(author_model, reviewer_model)
     monthly = build_monthly_pipeline(author_model, reviewer_model)
     class_monthly = build_class_monthly_pipeline(author_model, reviewer_model)
     child_record = build_child_record_pipeline(author_model, reviewer_model)
     nursery_record = build_nursery_record_pipeline(author_model, reviewer_model)
     return DocTypeRouter(
         name="hoiku_root",
-        sub_agents=[diary, monthly, class_monthly, child_record, nursery_record],
+        sub_agents=[monthly, class_monthly, child_record, nursery_record],
     )

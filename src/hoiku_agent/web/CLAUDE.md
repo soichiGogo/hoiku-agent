@@ -5,8 +5,10 @@
 
 ## 立ち位置（4つ目の責務ではない）
 
-- **薄い presentation 層**。日誌/月案/保育経過記録の生成は ADK の `get_fast_api_app` が出す**ネイティブ REST**
-  （`/run_sse`・`/apps/{app}/users/{u}/sessions`・`PATCH …/sessions`）をフロント SPA が直接叩く＝
+- **薄い presentation 層**。**保育日誌は手入力フォーム**（`diaryform.js`＝AI を通さない・ヒアリング 2026-07：日誌は
+  自分の言葉で打つ一次情報の蓄積口）＝クラスの在籍児を空欄で並べ docedit→`/api/finalize-edit`→`/api/records`で保存
+  （ADK セッション不使用）。月案（クラス月案）/保育経過記録/要録の生成は ADK の `get_fast_api_app` が出す
+  **ネイティブ REST**（`/run_sse`・`/apps/{app}/users/{u}/sessions`・`PATCH …/sessions`）をフロント SPA が直接叩く＝
   **自前 Runner を組まない**（server.py の方針・§9）。harness/agents/schemas は不変のまま動く。
 - improver（二階）だけは discoverable app でない（root_agent を持たない＝improver/CLAUDE.md）ため、
   `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動する（run_improver.py と同型・
@@ -145,10 +147,11 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `upload_parse.py` … アップロード取込の実体（`parse_uploaded_file`）。extract →（`build_upload_parser_agent` を
   InMemoryRunner で1パス駆動＝improver_stream と同型・SSE 無しの一発）→ 対象キー/child/age_band を保育士入力で
   **権威的に上書き**→ `finalize.extract_json_block`→`finalize_entry` で検査・整形（決定的実体は harness）。creds 無/LLM 失敗は正直に error 降格。
-- `static/` … 保育士 SPA。**上位タブは3つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
-  種別を切替。フロー本体は共通で入力欄と seed だけ切替・対象児コンボは共有・結果エリアは種別ごとに保持・生成中は種別切替をロック。
-  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1。**月案セグメントはクラス月案に一本化**＝flow kind=class_monthly・年齢帯（クラス）で回す＝
-  クラス単位なので対象児コンボは非表示・前月サンプルは複数児。個別月案はバックエンド/アーカイブ閲覧で温存）／**育てる**／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
+- `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
+  種別を切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
+  クラス未登録/DB 未接続は年齢帯チップへ降格・記録日は既定=今日）／月案/経過記録/要録は共通の ADK フロー（`docflow.js`）。
+  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1〔日誌は載らない〕。**月案セグメントはクラス月案に一本化**）／**育てる**／
+  **クラス・園児**（園の名簿管理＝`classes.js`・クラス定義＋園児登録/割当・日誌 roster の素）／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
   「指針を育てる」（agentic な勘所）｜「表記ルール」（決定的な統一）**。仕組みは分離のまま（policy_store と notation_store・§5）で、
   保育士から見た「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。**「指針を育てる」には対象書類セレクタ**（`app.js` の
   `POLICY_TARGETS`＝すべて/共通/日誌/月案/保育経過記録/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（いまの指針カード）を「共通＋その書類」に
