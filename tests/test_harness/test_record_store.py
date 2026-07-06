@@ -233,6 +233,35 @@ def test_list_diary_entries_filters_by_range(db):
     assert [e["date"] for e in entries] == ["2026-07-01", "2026-07-15"]
 
 
+def test_list_diary_meta_flags_evaluation_completeness(db):
+    """日誌メタ（id/日付/状態/評価充足）を日付順に返す＝クラス月案の未記入検出用。
+
+    評価・反省は2視点とも記入で complete。片方でも空なら未記入（validate_fields と同じ判定）。
+    """
+    # 6/10=両視点あり（complete）、6/11=(b)空（未記入）、6/20=(a)空（未記入）
+    e_full = _diary_entry("2026-06-10")
+    e_no_b = dict(_diary_entry("2026-06-11"), evaluation={"child_focus": "あり", "self_review": ""})
+    e_no_a = dict(_diary_entry("2026-06-20"), evaluation={"child_focus": "", "self_review": "あり"})
+    for e in (e_full, e_no_b, e_no_a):
+        rs.save_document("diary", e, author_kind="ai", now=_NOW)
+
+    meta = rs.list_diary_meta(date(2026, 6, 1), date(2026, 6, 30))
+    assert [m["date"] for m in meta] == ["2026-06-10", "2026-06-11", "2026-06-20"]  # 日付順
+    by_date = {m["date"]: m for m in meta}
+    assert by_date["2026-06-10"]["evaluation_complete"] is True
+    assert by_date["2026-06-11"]["evaluation_complete"] is False  # (b) 空＝未記入
+    assert by_date["2026-06-20"]["evaluation_complete"] is False  # (a) 空＝未記入
+    # id はフロントが「その日誌へ飛んで編集」する導線に使う＝存在すること。
+    assert all(m["id"] for m in meta)
+
+
+def test_list_diary_meta_empty_when_disabled(monkeypatch):
+    """DATABASE_URL 未設定は降格＝空（読取は落とさない）。"""
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.list_diary_meta(date(2026, 6, 1), date(2026, 6, 30)) == []
+
+
 def test_list_child_record_entries_returns_latest_per_period_for_child(db):
     """保育経過記録の過去期取得（年間マトリクス帳票の埋め込み用）＝その子の最新版だけ・期間順・他児は混ざらない。"""
     q1 = {"period": "2026-04〜2026-06", "child_id": "はるとくん", "overall_note": "1期の所見"}

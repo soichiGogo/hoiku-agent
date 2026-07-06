@@ -524,6 +524,25 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "store": record_store.store_status(),
         }
 
+    @app.get("/api/records/diary-meta")
+    def web_list_diary_meta(date_from: str, date_to: str) -> dict:
+        """期間内の日誌メタ（id・対象日・状態・評価充足）＝クラス月案作成時の「評価未記入」検出用。
+
+        本文は載せない軽量メタ。フロントは evaluation_complete=false の日誌を「記入する」導線に出し、
+        id で書類管理タブの当該日誌を開く。リテラル路なので `/api/records/{document_id}` より前に宣言する。
+        """
+        try:
+            f, t = date.fromisoformat(date_from), date.fromisoformat(date_to)
+        except ValueError:
+            return JSONResponse(
+                {"error": "date_from/date_to は YYYY-MM-DD", "code": "invalid_request"},
+                status_code=400,
+            )
+        return {
+            "entries": record_store.list_diary_meta(f, t),
+            "store": record_store.store_status(),
+        }
+
     @app.get("/api/records/child-record-entries")
     def web_list_child_record_entries(child: str) -> dict:
         """指定児の保育経過記録（最新版・期間順）＝保育要録 L4 の seed 取得口（§19）。
