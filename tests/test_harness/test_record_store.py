@@ -110,8 +110,12 @@ def test_approve_unsaved_document_errors(db):
     assert r["status"] == "error"
 
 
-def test_edit_after_approve_keeps_versions(db):
-    """承認後の編集も版として積める（証跡が残る・黙って上書きしない）。"""
+def test_edit_after_approve_keeps_versions_and_revokes_approval(db):
+    """承認後の編集も版として積める（証跡が残る）。ただし承認は失効し finalized へ戻る（偽の緑を出さない）。
+
+    書類管理タブでの編集（caregiver・decision A）は編集→再承認の流れに乗る＝編集後の現行内容を
+    「承認済み」と偽らない。旧内容への承認証跡（audit）は残る。
+    """
     entry = _diary_entry("2026-07-01")
     rs.save_document("diary", entry, author_kind="ai", now=_NOW)
     rs.approve_document("diary", entry, actor="園長", now=_NOW)
@@ -119,7 +123,11 @@ def test_edit_after_approve_keeps_versions(db):
         "diary", dict(entry, daily_aim="追記"), author_kind="caregiver", actor="保育士A", now=_NOW
     )
     assert r["version_seq"] == 2
-    assert r["doc_status"] == "approved"
+    assert r["doc_status"] == "finalized"  # 承認失効＝現行版は未承認へ（再承認が要る）
+    assert rs.list_documents()[0]["status"] == "finalized"
+    # 旧内容への承認証跡は audit に残る（黙って消さない）。
+    actions = [e["action"] for e in rs.list_audit_events()]
+    assert "approve" in actions and actions.count("edit") == 1
 
 
 # ──────────────────────────── 単一書類の全文取得（書類を見る＝アーカイブ閲覧） ────────────────────────────

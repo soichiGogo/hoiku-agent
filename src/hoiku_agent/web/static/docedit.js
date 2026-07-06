@@ -243,6 +243,7 @@ function buildBody(body, templateSections, builders, defaultOrder) {
     const make = builders[sec.key];
     if (!make) continue; // テンプレに未知 key があってもフォームは壊さない
     const { node, collect } = make(sec.label);
+    node.dataset.sectionKey = sec.key; // 外から特定の欄へフォーカス/スクロールする導線用（例: 評価・反省の記入）
     body.appendChild(node);
     collects.push(collect);
   }

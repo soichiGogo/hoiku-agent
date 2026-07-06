@@ -304,7 +304,7 @@ export function makeRecords(ui) {
       );
     }
 
-    // 帳票PDF（現場の様式）で確認・保存する。整形テキストが空でも entry から描ける。
+    // 操作：帳票PDF／編集／（未承認なら）承認。整形テキストが空でも entry から描ける。
     const act = el("div", "rdetail-act");
     const msg = el("p", "rmsg hidden");
     const btn = el("button", "btn btn-ghost btn-sm", `${iconHTML("download")}帳票PDFをダウンロード`);
@@ -325,7 +325,46 @@ export function makeRecords(ui) {
         btn.innerHTML = orig;
       }
     };
-    act.append(btn, msg);
+    act.append(btn);
+
+    // 編集（保育士の編集＝新しい版を積む・harness が再検査/再整形）。docedit が対応する種別のみ。
+    if (KIND_LABEL[doc.doc_type]) {
+      const editBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("edit")}編集する`);
+      editBtn.type = "button";
+      editBtn.onclick = () => renderEditDoc(doc);
+      act.append(editBtn);
+    }
+
+    // 未承認（finalized）なら承認できる（編集で失効した承認の再承認もここから＝decision A）。
+    if (doc.status !== "approved") {
+      const apBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("check")}承認する`);
+      apBtn.type = "button";
+      apBtn.onclick = async () => {
+        apBtn.disabled = true;
+        const o = apBtn.innerHTML;
+        apBtn.innerHTML = `<span class="spinner"></span>承認中…`;
+        msg.classList.add("hidden");
+        try {
+          const r = await adk.approveRecord(doc.doc_type, doc.entry || {}, actorName());
+          if (r.status === "approved") {
+            await loadTree();
+            await select(doc.id, ui.tree.querySelector(`.fsrow.is-file[data-id="${doc.id}"]`) || null);
+          } else {
+            msg.textContent = "承認できませんでした: " + (r.detail || r.reason || "未接続/エラー");
+            msg.classList.remove("hidden");
+            apBtn.disabled = false;
+            apBtn.innerHTML = o;
+          }
+        } catch (e) {
+          msg.textContent = "承認に失敗: " + e.message;
+          msg.classList.remove("hidden");
+          apBtn.disabled = false;
+          apBtn.innerHTML = o;
+        }
+      };
+      act.append(apBtn);
+    }
+    act.append(msg);
     ui.detail.appendChild(act);
   }
 
@@ -468,8 +507,10 @@ export function makeRecords(ui) {
     targetInput.focus();
   }
 
-  // 解析結果を標準様式の編集フォーム（docedit.js）で確認・修正 → finalize-edit で再検査 → 保存。
-  async function renderConfirm(kind, res) {
+  // 標準様式の編集フォーム（docedit.js）＋検査＋保存バーを ui.detail に描く共通処理。
+  // 取込確認（author_kind=imported）とアーカイブ書類の編集（author_kind=caregiver）で共用する。
+  // opts: { title, sub, saveLabel, authorKind, note, initialProblems, initialParseError, focusKey }
+  async function mountEditor(kind, entry, opts) {
     if (formMeta === null || docTemplates === null) {
       try {
         [formMeta, docTemplates] = await Promise.all([adk.getFormMeta(), adk.getDocTemplate()]);
@@ -479,36 +520,33 @@ export function makeRecords(ui) {
       }
     }
     const template = (docTemplates.templates || {})[kind] || null;
-    const editor = renderEditableDoc({ kind, entry: res.entry || {}, formMeta, template });
+    const editor = renderEditableDoc({ kind, entry: entry || {}, formMeta, template });
 
     ui.detail.innerHTML = "";
     const head = el("div", "rup-head");
     head.innerHTML =
-      `<span class="card-title">${iconHTML("edit")}${esc(KIND_LABEL[kind])}を確認・修正</span>` +
-      `<p class="rup-sub">AI が読み取った内容です。日付・子ども・タグや本文を直してから保存してください` +
-      `（保存時の検査・整形は harness が行います）。</p>`;
+      `<span class="card-title">${iconHTML("edit")}${esc(opts.title)}</span>` +
+      `<p class="rup-sub">${esc(opts.sub)}</p>`;
     ui.detail.appendChild(head);
-    if (res.parse_error) {
-      banner(ui.detail, "err", "AI 解析: " + res.parse_error);
-    }
+    if (opts.initialParseError) banner(ui.detail, "err", "AI 解析: " + opts.initialParseError);
     ui.detail.appendChild(editor.panel);
 
     const vNode = el("div", "validation");
-    setValidation(vNode, res.problems || [], res.parse_error);
+    setValidation(vNode, opts.initialProblems || [], opts.initialParseError);
     editor.panel._body.appendChild(vNode);
 
     const bar = el("div", "approve-bar");
-    const note = el("span", "persist-note", "内容を確認・修正して「取り込んで保存」を押してください。");
+    const note = el("span", "persist-note", opts.note || "内容を確認・修正して保存してください。");
     const recheck = el("button", "btn btn-ghost btn-sm", `${iconHTML("shield")}再チェック`);
     recheck.type = "button";
-    const saveBtn = el("button", "btn btn-approve", `${iconHTML("check")}取り込んで保存する`);
+    const saveBtn = el("button", "btn btn-approve", `${iconHTML("check")}${opts.saveLabel}`);
     saveBtn.type = "button";
 
     async function revalidate() {
-      const entry = editor.collect();
-      const r = await adk.finalizeEdit(kind, entry, null);
+      const e = editor.collect();
+      const r = await adk.finalizeEdit(kind, e, null);
       setValidation(vNode, r.problems || [], r.parse_error);
-      return { entry, ...r };
+      return { entry: e, ...r };
     }
 
     recheck.onclick = async () => {
@@ -516,7 +554,7 @@ export function makeRecords(ui) {
       try {
         const r = await revalidate();
         note.textContent = r.ok
-          ? "必須項目OK。よければ「取り込んで保存」へ。"
+          ? "必須項目OK。よければ保存へ。"
           : "必須項目に不足があります（保存はできますが、確認をおすすめします）。";
       } catch (e) {
         note.textContent = "再チェックに失敗: " + e.message;
@@ -536,21 +574,18 @@ export function makeRecords(ui) {
           recheck.disabled = false;
           return;
         }
-        // アーカイブへ取込保存（author_kind=imported＝AI 生成でも保育士編集でもない第三の来歴）。
-        const saved = await adk.saveRecord(kind, r.entry, r.formatted, "imported", actorName());
+        const saved = await adk.saveRecord(kind, r.entry, r.formatted, opts.authorKind, actorName());
         if (saved.status === "saved") {
-          note.textContent = "取り込んで保存しました。";
-          await loadTree(); // ツリーを最新化（保存した書類が並ぶ＝以後 seed 参照可能）。
-          if (saved.document_id) {
-            const row = ui.tree.querySelector(`.fsrow.is-file[data-id="${saved.document_id}"]`);
-            await select(saved.document_id, row || null);
-          }
+          await loadTree(); // ツリーを最新化（保存した版が反映＝以後 seed 参照可能）。
+          const id = saved.document_id;
+          const row = id ? ui.tree.querySelector(`.fsrow.is-file[data-id="${id}"]`) : null;
+          if (id) await select(id, row || null); // 保存後は読取ビューへ（現行版を表示）。
         } else if (saved.status === "skipped") {
           banner(ui.detail, "err", "保存先が未接続のため保存できませんでした（DATABASE_URL を設定してください）。");
           saveBtn.disabled = false;
           recheck.disabled = false;
         } else {
-          banner(ui.detail, "err", "アーカイブ保存に失敗: " + (saved.detail || "不明なエラー"));
+          banner(ui.detail, "err", "保存に失敗: " + (saved.detail || "不明なエラー"));
           saveBtn.disabled = false;
           recheck.disabled = false;
         }
@@ -563,6 +598,41 @@ export function makeRecords(ui) {
 
     bar.append(recheck, saveBtn, note);
     editor.panel._body.appendChild(bar);
+
+    // 指定欄へスクロール＋フォーカス（例: 評価・反省の記入導線＝クラス月案から飛んできた場合）。
+    if (opts.focusKey) {
+      const sec = editor.panel.querySelector(`[data-section-key="${opts.focusKey}"]`);
+      if (sec) {
+        sec.scrollIntoView({ behavior: "smooth", block: "center" });
+        const first = sec.querySelector("textarea, input");
+        if (first) first.focus();
+      }
+    }
+  }
+
+  // 取込：解析結果を確認・修正 → 保存（author_kind=imported＝AI 生成でも保育士編集でもない第三の来歴）。
+  async function renderConfirm(kind, res) {
+    await mountEditor(kind, res.entry || {}, {
+      title: `${KIND_LABEL[kind]}を確認・修正`,
+      sub: "AI が読み取った内容です。日付・子ども・タグや本文を直してから保存してください（保存時の検査・整形は harness が行います）。",
+      saveLabel: "取り込んで保存する",
+      authorKind: "imported",
+      note: "内容を確認・修正して「取り込んで保存」を押してください。",
+      initialProblems: res.problems || [],
+      initialParseError: res.parse_error,
+    });
+  }
+
+  // アーカイブ済み書類の編集（author_kind=caregiver＝保育士の編集）。承認済みは編集で失効し再承認が要る。
+  function renderEditDoc(doc, { focusKey } = {}) {
+    return mountEditor(doc.doc_type, doc.entry || {}, {
+      title: `${KIND_LABEL[doc.doc_type] || doc.doc_type}を編集`,
+      sub: "内容を直して保存すると、新しい版として記録されます（承認済みの場合は、編集後にもう一度承認が必要です）。",
+      saveLabel: "保存する",
+      authorKind: "caregiver",
+      note: "内容を直して「保存する」を押してください。",
+      focusKey,
+    });
   }
 
   // 必須項目の不足（problems）／構造化失敗（parse_error）を正直に描く（偽の緑を出さない）。
@@ -604,6 +674,30 @@ export function makeRecords(ui) {
     await loadTree();
   }
 
+  // 特定の書類（id）を外（別タブ）から開く導線。edit=true なら編集フォームで開き、focus 指定の欄へ寄せる
+  // （クラス月案作成時の「評価未記入の日誌へ飛んで記入」＝Slice4 が使う）。ツリー未取得なら先に読み込む。
+  async function openDoc(id, { edit = false, focus = null } = {}) {
+    if (!docs.length) await loadTree();
+    selectedId = id;
+    ui.tree.querySelectorAll(".fsrow.is-file.is-active").forEach((n) => n.classList.remove("is-active"));
+    let doc = bodyCache.get(id);
+    if (!doc) {
+      ui.detail.innerHTML = "";
+      ui.detail.appendChild(el("p", "rempty", "読み込み中…"));
+      doc = await adk.getRecord(id);
+      if (doc) bodyCache.set(id, doc);
+    }
+    if (!doc) {
+      renderDetail(null);
+      return false;
+    }
+    const row = ui.tree.querySelector(`.fsrow.is-file[data-id="${id}"]`);
+    if (row) row.classList.add("is-active"); // 展開済みフォルダにあればハイライト。
+    if (edit) renderEditDoc(doc, { focusKey: focus });
+    else renderDetail(doc);
+    return true;
+  }
+
   // タブを開くたびに最新化する（他タブで確定した書類がすぐ反映される）。
-  return { init, refresh: loadTree };
+  return { init, refresh: loadTree, openDoc };
 }

@@ -391,6 +391,11 @@ def save_document(
             session.flush()
             doc.current_version_id = version.id
             doc.updated_at = now
+            # 承認後に新しい版が積まれたら承認は失効させる（現行版＝未承認の finalized へ戻す）。旧内容への
+            # 承認証跡は audit に残るが、編集後の現行内容を「承認済み」と偽らない（§偽の緑を出さない）。
+            # 書類管理タブでの編集（caregiver）は編集→再承認の流れに乗る（decision A）。
+            if doc.status == "approved":
+                doc.status = "finalized"
             session.add(
                 AuditEvent(
                     document_id=doc.id,
