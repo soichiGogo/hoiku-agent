@@ -51,7 +51,7 @@ _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
 _GATED_PREFIX = ("/api/improve", "/api/parse-upload")
 # 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
 # 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
-_GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children")
+_GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children", "/api/classes")
 
 
 class GateRequest(BaseModel):
@@ -131,6 +131,28 @@ class ChildAddRequest(BaseModel):
     given_name: str  # 名（＝呼び名・必須）
     family_name: str = ""  # 姓（氏名欄用・任意）
     gender: str = ""  # male / female（敬称導出・空は敬称なし）
+    class_id: str = ""  # 所属クラス（任意・登録と同時に割り当てる＝名簿管理の1操作で完結）
+    actor: str = ""
+
+
+class ClassAddRequest(BaseModel):
+    """クラス（組）の定義（園の名簿管理・日誌 roster の素）。書込ゲート＝辞書荒らしと同枠。
+
+    同一性は (name, fiscal_year)＝進級で組名が再利用されても年度で分かれる（record_store が担保）。
+    age_band は 0-2/3-5（クラス選択で書類の年齢分岐を決めるキー）。
+    """
+
+    name: str  # 組名（例: ひまわり組・必須）
+    age_band: str  # 0-2 / 3-5（必須）
+    fiscal_year: str = ""  # 年度（例: 2026・任意）
+    actor: str = ""
+
+
+class ClassAssignRequest(BaseModel):
+    """児童のクラス割当/移動/解除（園の名簿管理）。class_id 空/None は未所属へ戻す。"""
+
+    child: str  # 対象児の表示名（呼び名＋敬称・必須）
+    class_id: str = ""  # 割り当て先クラス（空＝未所属へ）
     actor: str = ""
 
 
@@ -608,14 +630,70 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 {"status": "error", "detail": f"性別が不正です: {req.gender!r}"}, status_code=400
             )
         display_name = record_store.compose_display_name(given, gender)
+        now = datetime.now()
         result = record_store.upsert_child(
             display_name,
             family_name=req.family_name,
             given_name=given,
             gender=gender or None,
-            now=datetime.now(),
+            now=now,
         )
+        # 名簿管理からの登録は所属クラスを同時に割り当てられる（1操作で完結）。割当失敗は本流
+        # （登録）を壊さず result に status を添えて正直に出す。
+        class_id = (req.class_id or "").strip()
+        if class_id and result.get("status") in ("created", "exists"):
+            assigned = record_store.assign_child_to_class(display_name, class_id, now=now)
+            result["assign"] = assigned.get("status")
+            if assigned.get("status") == "ok":
+                result["class_id"] = assigned.get("class_id")
+                result["class_name"] = assigned.get("class_name")
         result["display_name"] = display_name
+        result["store"] = record_store.store_status()
+        return result
+
+    @app.get("/api/classes")
+    def web_list_classes(fiscal_year: str | None = None) -> dict:
+        """クラス（組）一覧＋在籍児数（園の名簿管理・日誌のクラス選択）。未接続は空＝降格表示。"""
+        return {
+            "classes": record_store.list_classes(fiscal_year=fiscal_year),
+            "store": record_store.store_status(),
+        }
+
+    @app.get("/api/classes/roster")
+    def web_class_roster(class_id: str) -> dict:
+        """指定クラスの在籍児（日誌フォームの roster／名簿UIのクラス内一覧）。未接続/不在は空。"""
+        return {
+            "children": record_store.list_children_in_class(class_id),
+            "store": record_store.store_status(),
+        }
+
+    @app.post("/api/classes")
+    def web_add_class(req: ClassAddRequest):
+        """クラス（組）を定義する（書込ゲート）。組名/年齢帯は必須・age_band 不正は 400・降格は skipped。"""
+        name = (req.name or "").strip()
+        if not name:
+            return JSONResponse({"status": "error", "detail": "組名は必須です"}, status_code=400)
+        age_band = (req.age_band or "").strip()
+        if age_band not in record_store.AGE_BANDS:
+            return JSONResponse(
+                {"status": "error", "detail": f"年齢帯が不正です: {req.age_band!r}"},
+                status_code=400,
+            )
+        result = record_store.upsert_class(
+            name, age_band, (req.fiscal_year or "").strip(), now=datetime.now()
+        )
+        result["store"] = record_store.store_status()
+        return result
+
+    @app.post("/api/classes/assign")
+    def web_assign_child(req: ClassAssignRequest):
+        """児童をクラスへ割当/移動/解除する（書込ゲート）。対象児名は必須・不在は record_store が error。"""
+        child = (req.child or "").strip()
+        if not child:
+            return JSONResponse({"status": "error", "detail": "対象児は必須です"}, status_code=400)
+        result = record_store.assign_child_to_class(
+            child, (req.class_id or "").strip() or None, now=datetime.now()
+        )
         result["store"] = record_store.store_status()
         return result
 

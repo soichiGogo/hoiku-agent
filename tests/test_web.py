@@ -573,6 +573,85 @@ def test_add_child_is_passcode_gated(records_db, monkeypatch) -> None:
     assert ok.status_code == 200 and ok.json()["display_name"] == "はるとくん"
 
 
+# ──────────────────── クラス（組）マスタ（/api/classes＝record_store 中継・名簿管理） ────────────────────
+
+
+def test_classes_crud_and_roster_flow(records_db) -> None:
+    """クラス作成→児童をクラスへ割当→roster/一覧に反映（園の名簿管理・日誌 roster の素）。"""
+    c = _client()
+    # クラス作成
+    r = c.post(
+        "/api/classes", json={"name": "ひまわり組", "age_band": "3-5", "fiscal_year": "2026"}
+    ).json()
+    assert r["status"] == "created" and r["name"] == "ひまわり組" and r["age_band"] == "3-5"
+    cid = r["id"]
+    # 児童登録（クラス指定つき＝1操作で割当まで完結）
+    reg = c.post(
+        "/api/children",
+        json={"given_name": "はると", "gender": "male", "class_id": cid},
+    ).json()
+    assert reg["status"] == "created" and reg.get("assign") == "ok"
+    # 児童登録（後から assign）
+    c.post("/api/children", json={"given_name": "ゆい", "gender": "female"})
+    asg = c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": cid}).json()
+    assert asg["status"] == "ok" and asg["class_name"] == "ひまわり組"
+    # roster＝クラスの在籍児（日誌フォームの素）
+    roster = c.get("/api/classes/roster", params={"class_id": cid}).json()["children"]
+    assert [x["display_name"] for x in roster] == ["はるとくん", "ゆいちゃん"]
+    assert roster[0]["class_age_band"] == "3-5"
+    # 一覧＋在籍児数
+    lst = c.get("/api/classes").json()
+    assert lst["store"] == "ok"
+    assert next(x for x in lst["classes"] if x["id"] == cid)["child_count"] == 2
+    # 未所属へ戻す
+    assert (
+        c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": ""}).json()["status"]
+        == "ok"
+    )
+    assert [
+        x["display_name"]
+        for x in c.get("/api/classes/roster", params={"class_id": cid}).json()["children"]
+    ] == ["はるとくん"]
+
+
+def test_classes_validate_input(records_db) -> None:
+    c = _client()
+    assert c.post("/api/classes", json={"name": "", "age_band": "3-5"}).status_code == 400
+    assert c.post("/api/classes", json={"name": "ばら組", "age_band": "9-9"}).status_code == 400
+    assert c.post("/api/classes/assign", json={"child": "", "class_id": "x"}).status_code == 400
+
+
+def test_classes_degrade_when_db_unset(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "database_url", "")
+    record_store.reset_engine_cache()
+    c = _client()
+    assert c.get("/api/classes").json() == {"classes": [], "store": "disabled"}
+    assert c.get("/api/classes/roster", params={"class_id": "x"}).json()["children"] == []
+    assert (
+        c.post("/api/classes", json={"name": "ひまわり組", "age_band": "0-2"}).json()["status"]
+        == "skipped"
+    )
+
+
+def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:
+    """クラスの書込（POST）は辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    assert c.post("/api/classes", json={"name": "ひまわり組", "age_band": "3-5"}).status_code == 401
+    assert (
+        c.post("/api/classes/assign", json={"child": "はるとくん", "class_id": "x"}).status_code
+        == 401
+    )
+    assert c.get("/api/classes").status_code == 200
+    assert c.get("/api/classes/roster", params={"class_id": "x"}).status_code == 200
+    ok = c.post(
+        "/api/classes",
+        json={"name": "ひまわり組", "age_band": "3-5"},
+        headers={"X-Demo-Passcode": "secret"},
+    )
+    assert ok.status_code == 200 and ok.json()["status"] == "created"
+
+
 def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:
     """要録の氏名欄は登録済みの本名で解決できる（get_child 経路が通り PDF を返す）。"""
     c = _client()

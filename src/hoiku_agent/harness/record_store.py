@@ -38,6 +38,9 @@ Base = db.Base
 _JSON = db.JSON_VARIANT
 
 DOC_KINDS = ("diary", "monthly", "class_monthly", "child_record", "nursery_record")
+# 年齢帯（クラスの年齢区分・schemas.enums.AgeBand の値と一致＝0–2:3つの視点/3–5:5領域）。
+# record_store は schemas を引かない純ストアなので GENDERS と同じくローカル定数で持つ（値は単一の事実）。
+AGE_BANDS = ("0-2", "3-5")
 # 版の来歴：ai（AI が生成・確定）/ caregiver（保育士が編集して保存）/ imported（外部ファイルを
 # 取り込んで保存＝「書類を見る」タブのアップロード取込。AI 生成でも保育士の AI 下書き編集でもない
 # 第三の来歴なので混ぜない＝「修正差分の一次データ」を汚さない・§12/§19）。
@@ -92,6 +95,34 @@ class Child(Base):
     gender: Mapped[str | None] = mapped_column(sa.String(10))  # male/female（敬称導出）
     official_name: Mapped[str | None] = mapped_column(sa.String(100))  # 旧・単一氏名（deprecated）
     birthdate: Mapped[date | None] = mapped_column(sa.Date)
+    # 所属クラス（組）。園の名簿管理で保育士が割り当てる（日誌 roster・クラス月案の素）。v0 は
+    # 「現在の所属」1本＝FK（年度またぎの履歴は書類 JSON が作成時の age_band/組名を既に保持するため
+    # 不要＝migration 0007）。未所属は NULL（auto-create された児は未所属＝管理画面で割り当てる）。
+    class_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("classes.id"), index=True)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
+
+
+class Class(Base):
+    """クラス（組）マスタ。園の名簿管理で保育士が定義し、児童を割り当てる（日誌 roster の素）。
+
+    現状クラスは一次エンティティとして存在せず、書類 JSON 内の `class_name`（自由記述）と `age_band`
+    でしか表現されていなかった。これを一次化して ① 日誌フォームの roster（在籍児の一括流し込み）②
+    年齢帯（0–2/3–5）の自動決定 ③ 園児登録の受け皿 を支える。
+
+    同一性は (name, fiscal_year)＝同じ組名でも年度が違えば別クラス（進級で組名は再利用されるため）。
+    `age_band` はクラス選択で書類の年齢分岐を決めるキー（AgeBand と一致）。児童との関係は
+    `Child.class_id`（現在の所属1本・v0）で、年度またぎの履歴は持たない（§18 と同じ現場依存＝残課題）。
+    """
+
+    __tablename__ = "classes"
+    __table_args__ = (sa.UniqueConstraint("name", "fiscal_year"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(sa.String(50))  # 組名（例: ひまわり組）
+    age_band: Mapped[str] = mapped_column(sa.String(10))  # 0-2 / 3-5（年齢分岐キー）
+    fiscal_year: Mapped[str] = mapped_column(sa.String(10), default="")  # 年度（例: 2026）
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
@@ -517,6 +548,80 @@ def upsert_child(
         return {"status": "error", "detail": str(e)}
 
 
+def upsert_class(name: str, age_band: str, fiscal_year: str = "", *, now: datetime) -> dict:
+    """クラス（組）を (name, fiscal_year) で upsert する（無ければ作成）。冪等。
+
+    園の名簿管理でクラスを定義する口（web `/api/classes` の中継先）。同一性は組名＋年度＝進級で
+    組名が再利用されても年度で分かれる。既存クラスの age_band だけは保育士が直したら反映する
+    （組名/年度は同定キーなので不変）。空名・未接続は skipped、age_band 不正・DB 障害は error。
+    """
+    name = name.strip()
+    age_band = age_band.strip()
+    fiscal_year = fiscal_year.strip()
+    eng = _engine()
+    if eng is None or not name:
+        return {"status": "skipped"}
+    if age_band not in AGE_BANDS:
+        return {"status": "error", "detail": f"age_band は {AGE_BANDS} のいずれか: {age_band!r}"}
+    try:
+        with Session(eng) as session, session.begin():
+            existing = session.scalar(
+                sa.select(Class).where(Class.name == name, Class.fiscal_year == fiscal_year)
+            )
+            created = existing is None
+            if existing is None:
+                cls = Class(
+                    name=name,
+                    age_band=age_band,
+                    fiscal_year=fiscal_year,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(cls)
+                session.flush()
+            else:
+                cls = existing
+                if cls.age_band != age_band:  # 年齢帯の付け替えだけ許す（同定キーは name+year）
+                    cls.age_band = age_band
+                    cls.updated_at = now
+            return {"status": "created" if created else "exists", **_class_view(cls)}
+    except SQLAlchemyError as e:
+        return {"status": "error", "detail": str(e)}
+
+
+def assign_child_to_class(child_display_name: str, class_id: str | None, *, now: datetime) -> dict:
+    """児童を指定クラスへ割り当てる（class_id=None/"" で未所属へ戻す）。
+
+    表示名→children 行を解決し class_id を張り替える（園の名簿管理での割当/移動/解除）。児童が
+    未登録・クラスが不在は error（先に登録する）。空名・未接続は skipped、不正 id・DB 障害は error。
+    """
+    name = child_display_name.strip()
+    eng = _engine()
+    if eng is None or not name:
+        return {"status": "skipped"}
+    raw = (class_id or "").strip()
+    try:
+        target_uuid = uuid.UUID(raw) if raw else None
+    except ValueError:
+        return {"status": "error", "detail": f"class_id が不正です: {class_id!r}"}
+    try:
+        with Session(eng) as session, session.begin():
+            child = session.scalar(sa.select(Child).where(Child.display_name == name))
+            if child is None:
+                return {"status": "error", "detail": "対象の児童がいません（先に登録してください）"}
+            cls = None
+            if target_uuid is not None:
+                cls = session.get(Class, target_uuid)
+                if cls is None:
+                    return {"status": "error", "detail": "対象のクラスがありません"}
+            child.class_id = target_uuid
+            child.updated_at = now
+            session.flush()
+            return {"status": "ok", **_child_view(child, cls)}
+    except SQLAlchemyError as e:
+        return {"status": "error", "detail": str(e)}
+
+
 def get_child(display_name: str) -> dict | None:
     """表示名→児童マスタの本名/性別/誕生日（氏名欄の本名解決に使う＝帳票PDF）。未接続/不在は None。"""
     name = display_name.strip()
@@ -711,8 +816,12 @@ def list_child_record_entries(child_display_name: str) -> list[dict]:
         return []
 
 
-def _child_view(c: Child) -> dict:
-    """児童マスタ行→UI/描画用の dict（本名の合成＝氏名欄用の official_name を含む）。"""
+def _child_view(c: Child, cls: Class | None = None) -> dict:
+    """児童マスタ行→UI/描画用の dict（本名の合成＝氏名欄用の official_name＋所属クラスを含む）。
+
+    `cls` を渡すと所属クラスの名前・年齢帯を添える（名簿UIのグループ表示・日誌 roster の年齢帯決定用）。
+    渡さないと class_name/class_age_band は空（get_child/upsert_child の名前解決用途では不要）。
+    """
     return {
         "id": str(c.id),
         "display_name": c.display_name,
@@ -721,20 +830,98 @@ def _child_view(c: Child) -> dict:
         "gender": c.gender or "",
         "official_name": official_full_name(c.family_name, c.given_name),  # 氏名欄用（姓＋名）
         "birthdate": c.birthdate.isoformat() if c.birthdate else None,
+        "class_id": str(c.class_id) if c.class_id else None,
+        "class_name": cls.name if cls else "",
+        "class_age_band": cls.age_band if cls else "",
     }
 
 
 def list_children() -> list[dict]:
-    """児童マスタ（active のみ・表示名順）。UI の子ども選択肢（降格は空＝従来チップへ）。"""
+    """児童マスタ（active のみ・表示名順）。UI の子ども選択肢（降格は空＝従来チップへ）。
+
+    各児に所属クラス（class_name/class_age_band）を添える＝名簿UIの「未所属／各クラス」グループ化と
+    日誌 roster の年齢帯決定に使う（クラス表を1回引いて map で解決＝N+1 を避ける）。
+    """
     eng = _engine()
     if eng is None:
         return []
     try:
         with Session(eng) as session:
+            classes = {c.id: c for c in session.scalars(sa.select(Class))}
             children = session.scalars(
                 sa.select(Child).where(Child.active.is_(True)).order_by(Child.display_name)
             )
-            return [_child_view(c) for c in children]
+            return [_child_view(c, classes.get(c.class_id)) for c in children]
+    except SQLAlchemyError:
+        return []
+
+
+# ──────────────────────────── クラス（組）マスタ：CRUD＋roster（名簿管理・日誌 roster の素） ────────────────────────────
+
+
+def _class_view(c: Class, child_count: int | None = None) -> dict:
+    """クラス行→UI 用の dict（児童数は list_classes が集計して添える）。"""
+    view = {
+        "id": str(c.id),
+        "name": c.name,
+        "age_band": c.age_band,
+        "fiscal_year": c.fiscal_year or "",
+        "active": c.active,
+    }
+    if child_count is not None:
+        view["child_count"] = child_count
+    return view
+
+
+def list_classes(fiscal_year: str | None = None, active_only: bool = True) -> list[dict]:
+    """クラス一覧（年度降順→年齢帯→組名）。各クラスに在籍児数を添える。降格・障害は空（読取は落とさない）。"""
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        with Session(eng) as session:
+            q = sa.select(Class)
+            if active_only:
+                q = q.where(Class.active.is_(True))
+            if fiscal_year:
+                q = q.where(Class.fiscal_year == fiscal_year.strip())
+            q = q.order_by(Class.fiscal_year.desc(), Class.age_band, Class.name)
+            classes = list(session.scalars(q))
+            counts = dict(
+                session.execute(
+                    sa.select(Child.class_id, sa.func.count())
+                    .where(Child.active.is_(True), Child.class_id.is_not(None))
+                    .group_by(Child.class_id)
+                ).all()
+            )
+            return [_class_view(c, counts.get(c.id, 0)) for c in classes]
+    except SQLAlchemyError:
+        return []
+
+
+def list_children_in_class(class_id: str) -> list[dict]:
+    """指定クラスの在籍児（active・表示名順）＝日誌フォームの roster／名簿UIのクラス内一覧の素。
+
+    不正 id・未接続・障害・該当なしは空（読取は落とさない）。年齢帯決定のためクラス情報も child_view に添える。
+    """
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        target = uuid.UUID(class_id)
+    except (ValueError, AttributeError):
+        return []
+    try:
+        with Session(eng) as session:
+            cls = session.get(Class, target)
+            if cls is None:
+                return []
+            children = session.scalars(
+                sa.select(Child)
+                .where(Child.class_id == target, Child.active.is_(True))
+                .order_by(Child.display_name)
+            )
+            return [_child_view(c, cls) for c in children]
     except SQLAlchemyError:
         return []
 
