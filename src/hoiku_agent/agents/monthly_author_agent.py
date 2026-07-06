@@ -22,7 +22,7 @@ from google.adk.agents import LlmAgent
 from ..models import build_model
 from ..schemas.policy import PolicyScope
 from ..tools import ask_caregiver, recall_child_history, search_guideline
-from .instructions import build_author_instruction
+from .instructions import MONTHLY_DIGESTS, build_author_instruction
 from .prompts import MONTHLY_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -49,8 +49,7 @@ def build_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
         instruction=build_author_instruction(
             MONTHLY_AUTHOR_INSTRUCTION,
             PolicyScope.月案,
-            digest_key="prev_month_digest",
-            digest_label="前月",
+            digests=MONTHLY_DIGESTS,
         ),
         tools=[
             recall_child_history,  # その子の前回までの像（前月連続性＝§9）

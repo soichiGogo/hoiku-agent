@@ -9,13 +9,17 @@ from datetime import date
 
 from hoiku_agent.harness import (
     aggregate_by_child,
+    class_plan_history_digest,
     collect_reflections,
+    format_class_plan_history_for_prompt,
     format_digest_for_prompt,
     format_reflections_for_prompt,
     prev_month_digest,
 )
 from hoiku_agent.schemas import (
     AgeBand,
+    ClassMonthlyPlan,
+    ClassPlanRow,
     DiaryEntry,
     DiaryEvaluation,
     IndividualNote,
@@ -119,3 +123,51 @@ def test_format_reflections_lists_by_date():
 def test_format_reflections_empty_degrades():
     """記入済みの振り返りが無ければ降格メッセージを返す（落ちない）。"""
     assert "評価・反省がありません" in format_reflections_for_prompt([])
+
+
+def _class_plan(
+    month: str, goal: str, *, aim: str = "", teacher_eval: str = ""
+) -> ClassMonthlyPlan:
+    grid = [ClassPlanRow(domain="健康", aim=aim)] if aim else []
+    return ClassMonthlyPlan(
+        month=month,
+        age_band=AgeBand.零から二歳,
+        monthly_goal=goal,
+        prev_month_state="先月の姿",
+        grid=grid,
+        teacher_evaluation=teacher_eval,
+    )
+
+
+def test_class_plan_history_digest_sorts_by_month_and_keeps_filled_fields():
+    """クラス月案の自己履歴＝月昇順（年度跨ぎも辞書順＝時系列）・記入済みのねらい/評価だけ拾う。"""
+    history = class_plan_history_digest(
+        [
+            _class_plan("2026-05", "5月の目標", aim="体を動かす", teacher_eval="評価済み"),
+            _class_plan("2026-04", "4月の目標"),
+            _class_plan("2027-01", "1月の目標"),  # 年度跨ぎ
+        ]
+    )
+    assert [r["month"] for r in history] == ["2026-04", "2026-05", "2027-01"]
+    assert history[1]["aims"] == {"健康": "体を動かす"}
+    assert history[1]["teacher_evaluation"] == "評価済み"
+    assert history[0]["aims"] == {}  # 空欄行は拾わない（正準化の空行を事実として混ぜない）
+
+
+def test_format_class_plan_history_lists_facts_without_summarizing():
+    """整形は事実列挙のみ（月・目標・ねらい・記入済み評価）。要約は author の責務。"""
+    text = format_class_plan_history_for_prompt(
+        class_plan_history_digest(
+            [_class_plan("2026-05", "5月の目標", aim="体を動かす", teacher_eval="評価済み")]
+        ),
+        label="これまで",
+    )
+    assert "【これまでのクラス月案（月順）】" in text
+    assert "2026-05" in text and "5月の目標" in text
+    assert "健康: 体を動かす" in text
+    assert "保育者の評価: 評価済み" in text
+
+
+def test_format_class_plan_history_empty_degrades():
+    """初回（履歴なし）は降格メッセージ（落ちない・偽の中身を出さない）。"""
+    assert "作成済みクラス月案がありません" in format_class_plan_history_for_prompt([])

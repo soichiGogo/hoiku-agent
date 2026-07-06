@@ -22,7 +22,7 @@ from google.adk.agents import LlmAgent
 from ..models import build_model
 from ..schemas.policy import PolicyScope
 from ..tools import ask_caregiver, recall_child_history, search_guideline
-from .instructions import build_author_instruction
+from .instructions import CHILD_RECORD_DIGESTS, build_author_instruction
 from .prompts import CHILD_RECORD_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -44,12 +44,12 @@ def build_child_record_author_agent(model: str | BaseLlm | None = None) -> LlmAg
     return LlmAgent(
         name="child_record_author",
         model=model if model is not None else build_model(),
-        # 文書作成指針（共通＋保育経過記録）＋期間集積（state["period_digest"]）を prompt 冒頭へ前置注入（§5）。
+        # 文書作成指針（共通＋保育経過記録）＋期間集積（period_digest）＋前回までの保育経過記録
+        # （prev_records_digest＝前期からの連続性・依存モデル 2026-07）を prompt 冒頭へ前置注入（§5）。
         instruction=build_author_instruction(
             CHILD_RECORD_AUTHOR_INSTRUCTION,
             PolicyScope.保育経過記録,
-            digest_key="period_digest",
-            digest_label="期間",
+            digests=CHILD_RECORD_DIGESTS,
         ),
         tools=[
             recall_child_history,  # その子の前回までの像（期の連続性＝§9）

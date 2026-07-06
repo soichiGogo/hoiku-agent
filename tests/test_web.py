@@ -786,11 +786,64 @@ def test_child_record_entries_endpoint_seeds_youroku(records_db) -> None:
     body = c.get("/api/records/child-record-entries", params={"child": "架空児A"}).json()
     assert body["store"] == "ok"
     assert [e["period"] for e in body["entries"]] == ["2026-04〜2026-07", "2026-08〜2026-11"]
+    # exclude_period＝作成対象の期を「前回まで」seed から除く（保育経過記録の自己履歴・依存モデル 2026-07）
+    past = c.get(
+        "/api/records/child-record-entries",
+        params={"child": "架空児A", "exclude_period": "2026-08〜2026-11"},
+    ).json()
+    assert [e["period"] for e in past["entries"]] == ["2026-04〜2026-07"]
     # 未登録児は空＝フロントがサンプルへ降格
     assert (
         c.get("/api/records/child-record-entries", params={"child": "未登録"}).json()["entries"]
         == []
     )
+
+
+def test_class_monthly_seed_endpoint_composes_three_inputs(records_db) -> None:
+    """クラス月案 seed 取得口＝①クラス児童の経過記録 ②過去クラス月案 ③未反映期間の日誌の合成（非ゲート）。"""
+    c = _client()
+    # 経過記録（4〜6月をカバー＝境界 6/30）・6月の日誌（反映済み）・7月の日誌（未反映）・7月のクラス月案
+    c.post(
+        "/api/records",
+        json={
+            "kind": "child_record",
+            "entry": {
+                "period": "2026-04〜2026-06",
+                "age_band": "0-2",
+                "child_id": "架空児A",
+                "development_notes": [{"description": "経過", "tags": ["健康"]}],
+                "overall_note": "所見",
+            },
+            "author_kind": "ai",
+        },
+    )
+    for day in ("2026-06-25", "2026-07-10"):
+        c.post(
+            "/api/records",
+            json={
+                "kind": "diary",
+                "entry": {**_edit_diary_entry(), "date": day},
+                "author_kind": "caregiver",
+            },
+        )
+    c.post(
+        "/api/records",
+        json={
+            "kind": "class_monthly",
+            "entry": {"month": "2026-07", "age_band": "0-2", "monthly_goal": "7月の目標"},
+            "author_kind": "ai",
+        },
+    )
+    body = c.get(
+        "/api/records/class-monthly-seed", params={"age_band": "0-2", "month": "2026-08"}
+    ).json()
+    assert body["store"] == "ok"
+    assert [e["date"] for e in body["class_diary_entries"]] == ["2026-07-10"]  # 未反映だけ
+    assert [r["period"] for r in body["class_record_entries"]] == ["2026-04〜2026-06"]
+    assert [p["month"] for p in body["past_class_plans"]] == ["2026-07"]
+    # month 不正は 400（黙って誤解釈しない）
+    bad = c.get("/api/records/class-monthly-seed", params={"age_band": "0-2", "month": "abc"})
+    assert bad.status_code == 400
 
 
 def test_records_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:

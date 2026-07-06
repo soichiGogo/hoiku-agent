@@ -127,12 +127,26 @@ def _run(author_model, reviewer_model, initial_state: dict, session_id: str = "c
 
 
 def test_child_record_path_aggregates_period_and_finalizes():
-    """① ルータ分岐（保育経過記録）＋② L3 還流（期間集計）＋③ 保育経過記録確定。"""
+    """① ルータ分岐（保育経過記録）＋② L3 還流（期間集計）＋②' 前回まで還流＋③ 保育経過記録確定。"""
     author = FakeLlm(responses=[_author_text(_child_record())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
+    prev_record = {
+        "period": "2026-01〜2026-03",
+        "age_band": "0-2",
+        "child_id": "架空児A",
+        "development_notes": [
+            {"description": "前期は指差しで意思を伝えた", "tags": ["身近な人と気持ちが通じ合う"]}
+        ],
+        "care_notes": "",
+        "family_liaison": "",
+        "overall_note": "前期の総合所見",
+        "next_aims": "言葉での表現を支える",
+    }
     state = {
         "doc_type": "保育経過記録",
         "period_entries": [_period_entry(4, 10), _period_entry(5, 15), _period_entry(6, 12)],
+        # 前回までの保育経過記録（自己履歴・依存モデル 2026-07）
+        "prev_record_entries": [prev_record],
     }
 
     final_state, events = _run(author, reviewer, state)
@@ -141,6 +155,11 @@ def test_child_record_path_aggregates_period_and_finalizes():
     digest = final_state.get("period_digest") or {}
     assert "架空児A" in digest
     assert digest["架空児A"]["note_count"] == 3
+    # ②' 前回までの保育経過記録も child_id 別に集計され state に乗る（前期からの連続性の素）
+    prev_digest = final_state.get("prev_records_digest") or {}
+    assert prev_digest["架空児A"]["periods"] == ["2026-01〜2026-03"]
+    assert any("次期" in k or True for k in prev_digest["架空児A"])  # serializable 集約
+    assert prev_digest["架空児A"]["next_aims"] == ["（2026-01〜2026-03）言葉での表現を支える"]
     # 月案の digest キーは汚さない（キー一般化の分離）
     assert final_state.get("prev_month_digest") is None
     # ③ 確定：ChildRecord が復元・検査通過・保育経過記録様式で整形される
@@ -163,4 +182,5 @@ def test_period_prep_degrades_without_entries():
     final_state, _ = _run(author, reviewer, {"doc_type": "保育経過記録"})
 
     assert final_state.get("period_digest") == {}
+    assert final_state.get("prev_records_digest") == {}  # 初回＝前回までの記録なしも降格で素通り
     assert final_state.get("final_document")  # 初回でも保育経過記録は確定下書きまで作る

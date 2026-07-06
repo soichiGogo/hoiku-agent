@@ -1,21 +1,26 @@
-"""クラス月案パイプライン（園の実様式・L2 還流）の手動起動エントリ（設計コンテキスト §3/§10/§18）。
+"""クラス月案パイプライン（園の実様式）の手動起動エントリ（設計コンテキスト §3/§10/§18・依存モデル 2026-07）。
 
 個別月案（run_monthly.py）と対称に、**園の実様式のクラス月案**（区分×領域グリッド＋0–2 の個人目標）を
-前月日誌の集積（L2 還流）に乗せて回す専用スクリプト。個別月案が1児単位なのに対し、クラス月案は
-クラス全体（＝年齢帯）単位で、前月の当該クラスの全登場児を集計して書く。
+3系統の蓄積に乗せて回す専用スクリプト。個別月案が1児単位なのに対し、クラス月案はクラス全体
+（＝年齢帯）単位で書く。
 
 このスクリプトは:
-1. 前月日誌を読む。優先順位＝ `--prev-entries-file`（JSON 配列）＞ 書類アーカイブ（`DATABASE_URL` 設定時・
-   前月の当該年齢帯の日誌）＞ 同梱の仮名サンプル（複数児・降格）。
-2. session state に doc_type="クラス月案" と prev_month_entries を seed して root_agent を回す。
-3. DigestPrepAgent（class_month_prep）が child_id 別に集計（state["prev_month_digest"]）→ クラス月案 author が
-   クラス全体のねらい・区分×領域グリッド・0–2 の個人目標を生成 → reviewer → finalize（検査・整形）。
+1. seed 3系統を読む（依存モデル 2026-07）＝ `record_store.class_monthly_seed_inputs` の合成:
+   ① クラス児童の作成済み保育経過記録すべて（全期・名簿優先） ② それまでのクラス月案すべて
+   ③ 保育経過記録に未反映の期間の当該クラスの日誌（境界＝①の期間末）。
+   `--prev-entries-file`（JSON 配列）は③を手渡しで差し替える。未接続/該当なしは
+   同梱の仮名サンプル（③のみ・複数児）へ降格。
+2. session state に doc_type="クラス月案" と class_record_entries・past_class_plans・
+   class_diary_entries を seed して root_agent を回す。
+3. 3つの prep が決定的に集計（class_records_digest / class_plan_digest / class_diary_digest）→
+   クラス月案 author がクラス全体のねらい・区分×領域グリッド・0–2 の個人目標を生成（計画の連続性・
+   PDCA）→ reviewer → finalize（検査・整形）。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:
     uv run python scripts/run_class_monthly.py --age-band 0-2 --month 2026-07
-    uv run python scripts/run_class_monthly.py --prev-entries-file path/to/prev_diaries.json
+    uv run python scripts/run_class_monthly.py --prev-entries-file path/to/diaries.json
 
-前月日誌の JSON は DiaryEntry の配列（tests/test_e2e/test_class_monthly_e2e.py の _prev_entry と同型）。
+日誌の JSON は DiaryEntry の配列（tests/test_e2e/test_class_monthly_e2e.py の _prev_entry と同型）。
 実データは置かない＝実在しない仮名のみ（§14）。
 """
 
@@ -37,7 +42,7 @@ _AGE_LABEL = {"0-2": "0〜2歳児クラス", "3-5": "3歳以上児クラス"}
 
 
 def _sample_prev_entries(age_band: str) -> list[dict]:
-    """前月のクラスの日誌サンプル（L2 還流のデモ入力）。実データは置かない＝実在しない仮名のみ（§14）。
+    """クラスの日誌サンプル（未反映期間の想定・デモ入力）。実データは置かない＝実在しない仮名のみ（§14）。
 
     クラス全体なので**複数の仮名児**を登場させる（digest がクラス全登場児ぶんになり、0–2 は個人目標が
     児ごとに生成される）。年齢帯で内容を切替（0–2＝3視点・生活記録あり／3–5＝5領域・生活記録なし）。
@@ -127,30 +132,29 @@ def _sample_prev_entries(age_band: str) -> list[dict]:
     return entries
 
 
-def _archive_prev_entries(month: str, age_band: str) -> list[dict]:
-    """書類アーカイブから前月の当該年齢帯の日誌を引く（L2 seed の本命経路・Phase 1）。
+def _archive_seed_inputs(month: str, age_band: str) -> dict:
+    """書類アーカイブから seed 3系統を合成して引く（本命経路・依存モデル 2026-07）。
 
-    DATABASE_URL 未設定・月の解釈不能・該当なしは []＝呼び出し側がサンプルへ降格する。
-    年齢帯フィルタはクラス月案がクラス（＝年齢帯）単位のため（他クラスの姿を混ぜない）。
+    合成の実体は `record_store.class_monthly_seed_inputs`（境界計算＝covered_until に1つ）。
+    DATABASE_URL 未設定・該当なしは全部空＝呼び出し側が日誌サンプルへ降格する。
+    月の解釈不能は ValueError を空へ降格（黙って誤解釈しない・サンプルで回る）。
     """
     from hoiku_agent.harness import record_store
 
     try:
-        date_from, date_to = record_store.month_date_range(record_store.prev_month_of(month))
+        return record_store.class_monthly_seed_inputs(age_band, month)
     except ValueError:
-        return []
-    entries = record_store.list_diary_entries(date_from, date_to)
-    return [e for e in entries if (e.get("age_band") or "0-2") == age_band]
+        return {"class_diary_entries": [], "class_record_entries": [], "past_class_plans": []}
 
 
-async def _run(month: str, age_band: str, prev_entries: list[dict]) -> None:
+async def _run(month: str, age_band: str, seed: dict) -> None:
     from google.adk.runners import InMemoryRunner
 
     runner = InMemoryRunner(agent=root_agent, app_name=_APP_NAME)
     session = await runner.session_service.create_session(
         app_name=_APP_NAME,
         user_id=_USER_ID,
-        state={"doc_type": "クラス月案", "prev_month_entries": prev_entries},
+        state={"doc_type": "クラス月案", **seed},
     )
     label = _AGE_LABEL.get(age_band, age_band)
     message = types.Content(
@@ -180,7 +184,14 @@ async def _run(month: str, age_band: str, prev_entries: list[dict]) -> None:
     )
     print("\n--- 最終 state ---")
     print(
-        "prev_month_digest:", json.dumps(final.state.get("prev_month_digest"), ensure_ascii=False)
+        "class_records_digest:",
+        json.dumps(final.state.get("class_records_digest"), ensure_ascii=False),
+    )
+    print(
+        "class_plan_digest:", json.dumps(final.state.get("class_plan_digest"), ensure_ascii=False)
+    )
+    print(
+        "class_diary_digest:", json.dumps(final.state.get("class_diary_digest"), ensure_ascii=False)
     )
     print("validation:", final.state.get("validation"))
     print("final_document:\n", final.state.get("final_document"))
@@ -195,22 +206,32 @@ def main() -> None:
         "--age-band", default="0-2", choices=["0-2", "3-5"], help="クラス（年齢帯）"
     )
     parser.add_argument(
-        "--prev-entries-file", help="前月日誌（DiaryEntry の JSON 配列）。無ければ同梱サンプル"
+        "--prev-entries-file",
+        help="日誌（DiaryEntry の JSON 配列）＝③未反映期間ぶんの手渡し。無ければアーカイブ→サンプル",
     )
     args = parser.parse_args()
 
+    seed = _archive_seed_inputs(args.month, args.age_band)
+    diary_src = "書類アーカイブ（DATABASE_URL）"
     if args.prev_entries_file:
-        prev_entries = json.loads(Path(args.prev_entries_file).read_text(encoding="utf-8"))
-        seed_src = f"ファイル {args.prev_entries_file}"
-    else:
-        prev_entries = _archive_prev_entries(args.month, args.age_band)
-        seed_src = "書類アーカイブ（DATABASE_URL）"
-        if not prev_entries:
-            prev_entries = _sample_prev_entries(args.age_band)
-            seed_src = "同梱サンプル（アーカイブ未設定/該当なし＝降格）"
-    print(f"[seed] 前月日誌 {len(prev_entries)} 件（{seed_src}・クラス={args.age_band}）")
+        seed["class_diary_entries"] = json.loads(
+            Path(args.prev_entries_file).read_text(encoding="utf-8")
+        )
+        diary_src = f"ファイル {args.prev_entries_file}"
+    elif not seed["class_diary_entries"]:
+        seed["class_diary_entries"] = _sample_prev_entries(args.age_band)
+        diary_src = "同梱サンプル（アーカイブ未設定/該当なし＝降格）"
+    print(
+        f"[seed] クラス児童の保育経過記録 {len(seed['class_record_entries'])} 件 / "
+        f"それまでのクラス月案 {len(seed['past_class_plans'])} 件（いずれも書類アーカイブ・"
+        f"未接続は 0 件降格）"
+    )
+    print(
+        f"[seed] 未反映期間の日誌 {len(seed['class_diary_entries'])} 件"
+        f"（{diary_src}・クラス={args.age_band}）"
+    )
 
-    asyncio.run(_run(args.month, args.age_band, prev_entries))
+    asyncio.run(_run(args.month, args.age_band, seed))
 
 
 if __name__ == "__main__":

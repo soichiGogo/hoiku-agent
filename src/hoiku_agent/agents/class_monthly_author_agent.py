@@ -19,7 +19,11 @@ from google.adk.agents import LlmAgent
 from ..models import build_model
 from ..schemas.policy import PolicyScope
 from ..tools import ask_caregiver, recall_child_history, search_guideline
-from .instructions import build_author_instruction
+from .instructions import (
+    CLASS_MONTHLY_DIGESTS,
+    CLASS_MONTHLY_REFLECTIONS,
+    build_author_instruction,
+)
 from .prompts import CLASS_MONTHLY_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -34,21 +38,21 @@ def build_class_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmA
             global に固定した Gemini。§11／models.py）。決定論E2E では FakeLlm 等の BaseLlm を注入する。
 
     指針 scope は個別月案と同じ PolicyScope.月案 を流用する（クラス月案専用 scope を増やさず月案の勘所を
-    共有＝scope の増殖を避ける）。前月集積（state["prev_month_digest"]）を prompt 冒頭へ前置注入する点も
-    個別月案と共通。output_key は日誌/月案と共通の "draft"（後段 finalize が kind="class_monthly" で
+    共有＝scope の増殖を避ける）。集積は依存モデル（2026-07）の3系統＝クラス児童の保育経過記録すべて
+    （class_records_digest）／それまでのクラス月案（class_plan_digest）／経過記録に未反映の期間の日誌
+    （class_diary_digest）＋評価・反省（class_diary_reflections・決定B）を prompt 冒頭へ前置注入する。
+    output_key は日誌/月案と共通の "draft"（後段 finalize が kind="class_monthly" で
     ClassMonthlyPlan として復元する）。
     """
     return LlmAgent(
         name="class_monthly_author",
         model=model if model is not None else build_model(),
-        # 文書作成指針（共通＋月案）＋前月集積（prev_month_digest）＋前月の振り返り（prev_month_reflections
-        # ＝評価・反省・決定B）を prompt 冒頭へ前置注入（§5/§10）。
+        # 文書作成指針（共通＋月案）＋依存モデルの3集積＋振り返り（決定B）を prompt 冒頭へ前置注入（§5/§10）。
         instruction=build_author_instruction(
             CLASS_MONTHLY_AUTHOR_INSTRUCTION,
             PolicyScope.月案,
-            digest_key="prev_month_digest",
-            digest_label="前月",
-            reflections_key="prev_month_reflections",
+            digests=CLASS_MONTHLY_DIGESTS,
+            reflections=CLASS_MONTHLY_REFLECTIONS,
         ),
         tools=[
             recall_child_history,

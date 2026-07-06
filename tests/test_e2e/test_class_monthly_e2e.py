@@ -1,10 +1,13 @@
-"""決定論E2E（結合テスト）：クラス月案パイプライン＋doc_type 分岐ルータ＋L2 還流を LLM 非依存に通す。
+"""決定論E2E（結合テスト）：クラス月案パイプライン＋doc_type 分岐ルータ＋集積還流を LLM 非依存に通す。
 
-設計コンテキスト §3/§4（L2 月次PDCA）/ §10（月⇄日集積）/ §18（園の実様式）/ §16。個別月案の
+設計コンテキスト §3/§4 / §10 / §18（園の実様式）/ §16 / 依存モデル（2026-07 確定）。個別月案の
 test_monthly_e2e と対称に、クラス月案パス（園の実様式・区分×領域グリッド＋0–2 の個人目標）を実 ADK
 ランタイムで end-to-end に回す（creds 不要・無料・決定的）。担保する結合経路:
   1. ルータ分岐   doc_type=="クラス月案" → class_monthly_pipeline
-  2. L2 還流      前月日誌（複数児）→ class_month_prep が child_id 別集計 → state["prev_month_digest"]
+  2. 集積還流     ①クラス児童の保育経過記録（class_record_prep→class_records_digest）
+                 ②それまでのクラス月案（class_plan_prep→class_plan_digest）
+                 ③経過記録に未反映の期間の日誌（class_diary_prep→class_diary_digest・境界＝①の期間末）
+                 ＋評価・反省（class_diary_reflections・決定B）
   3. 確定         class_monthly finalize が ClassMonthlyPlan を復元→検査→整形（final_document）
   4. 年齢分岐     0–2 は個人目標必須／3–5 は不要（園フォームに 0–2 だけ個人目標小表がある）
   5. 正準化       author が grid の行を欠いても model_validator が正準7行にそろえて確定が通る
@@ -71,6 +74,37 @@ def _prev_entry(child: str, day: int) -> dict:
             }
         ],
         "evaluation": {"child_focus": "感触に集中していた", "self_review": "素材を十分用意できた"},
+    }
+
+
+def _child_record(child: str, period: str) -> dict:
+    """クラス児童の保育経過記録（実在しない仮名・依存モデル①）の dict。"""
+    return {
+        "period": period,
+        "age_band": "0-2",
+        "child_id": child,
+        "development_notes": [
+            {
+                "description": f"{child}は{period}に感触遊びへ意欲的に関わった",
+                "tags": ["身近なものと関わり感性が育つ"],
+            }
+        ],
+        "care_notes": "",
+        "family_liaison": "",
+        "overall_note": f"{period}を通じて探索意欲が育った",
+        "next_aims": "手指を使う遊びを広げる",
+    }
+
+
+def _past_plan(month: str) -> dict:
+    """それまでのクラス月案（依存モデル②）の dict。"""
+    return {
+        "month": month,
+        "age_band": "0-2",
+        "monthly_goal": f"{month} の保育目標",
+        "prev_month_state": "先月の姿",
+        "grid": [{"category": "教育", "domain": "健康", "aim": "戸外で体を動かす"}],
+        "teacher_evaluation": "水遊びで発散できた",
     }
 
 
@@ -142,8 +176,8 @@ def _run(author_model, reviewer_model, initial_state: dict, session_id: str = "c
     return asyncio.run(_go())
 
 
-def test_class_monthly_path_aggregates_prev_month_and_finalizes():
-    """① ルータ分岐（クラス月案）＋② L2 還流（複数児の前月集計）＋③ クラス月案確定（0–2・個人目標）。"""
+def test_class_monthly_path_aggregates_inputs_and_finalizes():
+    """① ルータ分岐（クラス月案）＋② 3系統の集積還流（経過記録・自己履歴・未反映日誌）＋③ 確定（0–2・個人目標）。"""
     goals = [
         {"child_id": "はるとくん", "child_state": "歩行が安定", "aim_support": "探索を保障する"},
         {"child_id": "ゆいちゃん", "child_state": "感触遊びを好む", "aim_support": "素材を増やす"},
@@ -152,21 +186,38 @@ def test_class_monthly_path_aggregates_prev_month_and_finalizes():
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
     state = {
         "doc_type": "クラス月案",
-        "prev_month_entries": [
+        # ① クラス児童の保育経過記録（〜5月末をカバー＝6月の日誌が「未反映」になる境界）
+        "class_record_entries": [
+            _child_record("はるとくん", "2026-03〜2026-05"),
+            _child_record("ゆいちゃん", "2026-03〜2026-05"),
+        ],
+        # ② それまでのクラス月案
+        "past_class_plans": [_past_plan("2026-06"), _past_plan("2026-05")],
+        # ③ 日誌（5月分＝経過記録に反映済み・6月分＝未反映）
+        "class_diary_entries": [
             _prev_entry("はるとくん", 12),
             _prev_entry("ゆいちゃん", 13),
             _prev_entry("はるとくん", 26),
+            {**_prev_entry("はるとくん", 12), "date": "2026-05-20"},  # 反映済み＝集計から除外される
         ],
     }
 
     final_state, _ = _run(author, reviewer, state)
 
-    # ② L2 還流：前月日誌が child_id 別に決定的集計され state に乗る（クラス＝複数児）
-    digest = final_state.get("prev_month_digest") or {}
+    # ②-1 クラス児童の保育経過記録が child_id 別に集計され state に乗る
+    records_digest = final_state.get("class_records_digest") or {}
+    assert set(records_digest) == {"はるとくん", "ゆいちゃん"}
+    assert records_digest["はるとくん"]["periods"] == ["2026-03〜2026-05"]
+    # ②-2 それまでのクラス月案が月順の履歴に集計される
+    plan_digest = final_state.get("class_plan_digest") or []
+    assert [r["month"] for r in plan_digest] == ["2026-05", "2026-06"]
+    assert plan_digest[0]["teacher_evaluation"] == "水遊びで発散できた"
+    # ②-3 未反映期間の日誌だけが集計される（経過記録の境界＝5/31 より後＝6月分のみ）
+    digest = final_state.get("class_diary_digest") or {}
     assert set(digest) == {"はるとくん", "ゆいちゃん"}
-    assert digest["はるとくん"]["note_count"] == 2
-    # ②' 前月の振り返り（評価・反省）も日付順に別チャネルで state に乗る（決定B・クラス月案のみ）
-    reflections = final_state.get("prev_month_reflections") or []
+    assert digest["はるとくん"]["note_count"] == 2  # 6/12・6/26（5/20 は反映済みで除外）
+    # ②-3' 振り返り（評価・反省）も未反映分だけ日付順に別チャネルで state に乗る（決定B）
+    reflections = final_state.get("class_diary_reflections") or []
     assert [r["date"] for r in reflections] == ["2026-06-12", "2026-06-13", "2026-06-26"]
     assert reflections[0]["self_review"] == "素材を十分用意できた"
     # ③ 確定：ClassMonthlyPlan が復元・検査通過・園様式で整形される
@@ -191,7 +242,7 @@ def test_class_monthly_3_5_needs_no_individual_goals():
     """3–5 クラスは個人目標が無くても確定する（園フォームに 0–2 だけ個人目標小表がある＝§18）。"""
     author = FakeLlm(responses=[_class_author_text(_class_plan("3-5", goals=[]))])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
-    state = {"doc_type": "クラス月案", "prev_month_entries": [_prev_entry("さくらちゃん", 20)]}
+    state = {"doc_type": "クラス月案", "class_diary_entries": [_prev_entry("さくらちゃん", 20)]}
 
     final_state, _ = _run(author, reviewer, state, session_id="cm35")
 
@@ -213,7 +264,7 @@ def test_class_monthly_grid_canonicalized_from_partial():
     author = FakeLlm(responses=[_class_author_text(_class_plan("0-2", grid=partial, goals=goals))])
     # 巡回上限まで同じ下書きを返す（未充足でも上限で finalize へ抜ける）。
     reviewer = FakeLlm(responses=["NEEDS_REVISION\n領域のねらいを補ってください。"])
-    state = {"doc_type": "クラス月案", "prev_month_entries": [_prev_entry("はるとくん", 12)]}
+    state = {"doc_type": "クラス月案", "class_diary_entries": [_prev_entry("はるとくん", 12)]}
 
     final_state, _ = _run(author, reviewer, state, session_id="cmgrid")
 

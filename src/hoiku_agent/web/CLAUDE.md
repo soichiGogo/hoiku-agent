@@ -115,6 +115,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `_GATED_PREFIX` でパスコードゲート**・未対応形式/種別は 400・creds 無/LLM 失敗は 200＋parse_error で正直に降格。保存は後段の
   `/api/records`＝`author_kind="imported"`）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
+  `/api/records/class-monthly-seed`（クラス月案 seed 3系統＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
+  `/api/records/child-record-entries`（全期・`exclude_period` で作成対象の期を除外＝要録 L4／保育経過記録「前回まで」seed）／
   `/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
   リテラル路 diary-entries/diary-meta より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・

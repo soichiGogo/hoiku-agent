@@ -17,9 +17,10 @@
   **クラス月案は園の実様式**＝クラス全体のねらい・区分×領域グリッド〔養護2本柱＋教育5領域・0–2/3–5 共通〕・
   0–2 は登場児ぶんの個人目標を生成し、評価系欄は AI 非生成＝§18。保育経過記録・要録は**開示前提の肯定的・非断定的表現**を
   含む＝§19。要録は小学校引継ぎ＝10の姿の活用・最終年度に至るまでの育ちを recall_child_history から叙述）と、
-  前段 prep が決定的集計した集積（個別/クラス月案＝前月 L2／保育経過記録＝期間 L3／要録＝**最終年度の保育経過記録** L4＝
-  `RecordDigestPrepAgent`・formatter は `format_record_digest_for_prompt`）を InstructionProvider が前置注入する点
-  （クラス月案の指針 scope は個別月案と同じ「月案」を流用＝§10/§18/§19）。
+  前段 prep が決定的集計した集積（**依存モデル 2026-07**＝個別月案:前月 L2／保育経過記録:期間 L3＋**前回までの
+  自己履歴すべて**／クラス月案:**クラス児童の保育経過記録すべて＋それまでのクラス月案すべて＋経過記録に未反映の
+  期間の日誌**／要録:**それまでの保育経過記録すべて** L4）を InstructionProvider が **digest spec 列**で順に
+  前置注入する点（クラス月案の指針 scope は個別月案と同じ「月案」を流用＝§10/§18/§19）。
 - **reviewer は Evaluator** で別視点の点検に徹する（日誌/月案/保育経過記録/保育要録共用・開示前提の表現観点を含む）。**巡回（LoopAgent）と APPROVED 早期終了の
   "制御" は harness/pipeline.py 側**（決定的）。ここは reviewer 単体（指摘の生成）を返す。`date` 等 harness が
   確定時に補完する機械的メタの欠落は指摘対象外＝内容点検に集中する（prompts.py の注意書き）。
@@ -47,10 +48,10 @@
 - **受け渡しは output_key→state**（`state["draft"]` / `state["review"]`）。独自グローバルで渡さない。
 - **文書作成指針は agent が読みに行かない**（`read_policy` ツールは撤去）。`instructions.py` の InstructionProvider
   （`build_author_instruction`／`build_review_instruction`）が author/reviewer の `instruction` を callable にし、
-  作る書類（doc_type）の scope で harness の `render_for_doc`（共通＋当該書類の勘所）＋集積（前月/期間・state の
-  digest を `format_digest_for_prompt`／**要録 L4 は最終年度の保育経過記録集積なので `format_record_digest_for_prompt`
-  を formatter に差し替え**）を **prompt 冒頭へ前置注入**する（author は factory で scope・formatter 固定／reviewer は
-  共用のため state["doc_type"]→scope/formatter 解決）。指針を agent の**与件**にする＝探索を LLM に委ねず決定的に用意（§5）。
+  作る書類（doc_type）の scope で harness の `render_for_doc`（共通＋当該書類の勘所）＋集積（**digest spec 列＝
+  (state キー, ラベル, formatter) を書類ごとに複数**。`MONTHLY_DIGESTS`/`CLASS_MONTHLY_DIGESTS`/
+  `CHILD_RECORD_DIGESTS`/`NURSERY_RECORD_DIGESTS`＝instructions.py に1つ）を **prompt 冒頭へ順に前置注入**する
+  （author は factory で scope・spec 列固定／reviewer は共用のため state["doc_type"]→spec 解決）。指針を agent の**与件**にする＝探索を LLM に委ねず決定的に用意（§5）。
   ここは prompt 文字列の**組み立て**だけで、指針テキストの再生・集積の整形という決定ロジック実体は harness に置く
   （tools が harness を呼ぶ薄いラッパなのと同じ）。prompts.py の各 instruction は「この指示の冒頭に示した指針/集積」を参照する。
 - **instruction は `prompts.py` に分離**（ADK 慣習）。日本語で書く。

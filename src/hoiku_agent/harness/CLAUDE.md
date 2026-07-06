@@ -53,9 +53,11 @@
   汎用本体 `_finalize` を parse/validate/write 差し替えで共用（二重実装しない）。`finalize_entry(dict)` は
   編集UI用＝編集後 entry を直接 正規化→validate/write 再実行（web から中継・実体はここに1つ）。
 - `aggregate.py` … `aggregate_by_child`（Counter 版）/ `prev_month_digest`（state 用 serializable）/
-  `format_digest_for_prompt`（集積の人間可読テキスト・label で月案 L2＝前月／保育経過記録 L3＝期間を切替）/
-  `child_record_digest` ＋ `format_record_digest_for_prompt`（保育要録 L4＝**日誌でなく最終年度の保育経過記録**を
-  child_id 別・期順に集計）。要約生成は各 author に委ねる（§10/§19）。
+  `format_digest_for_prompt`（集積の人間可読テキスト・label 切替）/ `child_record_digest` ＋
+  `format_record_digest_for_prompt`（保育経過記録集積＝**要録 L4〔それまでの全期〕・保育経過記録の「前回まで」・
+  クラス月案の「クラス児童のこれまで」で共用**・child_id 別・期順）/ `class_plan_history_digest` ＋
+  `format_class_plan_history_for_prompt`（クラス月案の自己履歴＝月順の目標・ねらい・記入済み月末評価＝依存モデル
+  2026-07）。要約生成は各 author に委ねる（§10/§19）。
 - `pipeline.py` … 作成パイプラインの**共用機構**（月案/クラス月案/保育経過記録/保育要録が使う）：authoring_loop
   （作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御。**保育日誌の AI 生成パイプライン（旧
   `build_document_pipeline`）は退役**（日誌は手入力＝web の docedit→`finalize_entry`・ヒアリング 2026-07）。
@@ -71,16 +73,24 @@
   ＝集積の prompt 前置は author/reviewer の InstructionProvider が担う。content を持たせないのは eval judge が
   非LLM先頭段を採点不能にするのを避けるため＝§12）→ 月案 author の authoring_loop（日誌と共用）→ 確定。
   `build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
-- `class_monthly.py` … クラス月案（園の実様式＝月間指導計画・§18）：`DigestPrepAgent`（class_month_prep・個別月案と
-  同じ prev_month_entries→prev_month_digest＝L2 還流）でクラスの前月日誌を集計→ クラス月案 author の authoring_loop
-  （共用）→ finalize(kind="class_monthly")。`build_class_monthly_pipeline`。個別月案（1児）と別 doc_type＝**クラス全体
-  （年齢帯）単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は 0–2/3–5 共通＝3つの視点分岐を課さない（様式忠実）。
-  grid の正準7行そろえは `schemas/class_monthly.ClassMonthlyPlan` の model_validator（レイアウトのデータは GRID_ROWS に1つ）。
-- `child_record.py` … 保育経過記録（§19）：`DigestPrepAgent`（period_prep・period_entries→period_digest＝L3 還流）→
+- `class_monthly.py` … クラス月案（園の実様式＝月間指導計画・§18・**依存モデル 2026-07**）：3つの state-only prep＝
+  ①クラス児童の保育経過記録すべて（`RecordDigestPrepAgent` 共用・class_record_entries→class_records_digest）
+  ②それまでのクラス月案すべて（`ClassPlanPrepAgent`・past_class_plans→class_plan_digest）③経過記録に未反映の
+  期間の日誌（`DigestPrepAgent` 共用・class_diary_entries→class_diary_digest・uncovered_by_key で①の境界より後に
+  限定＋評価・反省＝class_diary_reflections〔決定B〕）→ クラス月案 author の authoring_loop（共用）→
+  finalize(kind="class_monthly")。`build_class_monthly_pipeline`。seed 合成＝`record_store.class_monthly_seed_inputs`。
+  個別月案（1児）と別 doc_type＝**クラス全体（年齢帯）単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は
+  0–2/3–5 共通＝3つの視点分岐を課さない（様式忠実）。grid の正準7行そろえは
+  `schemas/class_monthly.ClassMonthlyPlan` の model_validator（レイアウトのデータは GRID_ROWS に1つ）。
+- `child_record.py` … 保育経過記録（§19・**依存モデル 2026-07**）：`DigestPrepAgent`（period_prep・
+  period_entries→period_digest＝L3 還流）＋`RecordDigestPrepAgent`（prev_record_prep・prev_record_entries→
+  prev_records_digest＝**前回までの保育経過記録すべて**・作成対象の期は除外・前期からの連続性の素）→
   保育経過記録 author の authoring_loop（共用）→ finalize(kind="child_record")。`build_child_record_pipeline`。
-- `youroku.py` … 保育要録（§19・L4）：`RecordDigestPrepAgent`（record_prep・**最終年度の保育経過記録**（record_entries）を
-  `aggregate.child_record_digest` で集計→record_digest＝日誌でなく保育経過記録を集める・content 無し state-only）→ 要録 author の
-  authoring_loop（共用）→ finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
+- `youroku.py` … 保育要録（§19・L4・**依存モデル 2026-07＝それまでの保育経過記録すべて・全期・日誌は足さない**）：
+  `RecordDigestPrepAgent`（record_prep・record_entries を `aggregate.child_record_digest` で集計→record_digest＝
+  日誌でなく保育経過記録を集める・content 無し state-only。**入出力キー差し替えで保育経過記録の「前回まで」・
+  クラス月案の「クラス児童のこれまで」とも共用**）→ 要録 author の authoring_loop（共用）→
+  finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
 - `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で月案／クラス月案／保育経過記録／保育要録を
   振り分ける決定的分岐（root_agent の実体・**既定＝クラス月案**＝§18）。**保育日誌は AI 生成を退役**したためルータに載らない
   （日誌は手入力＝web）。
@@ -99,8 +109,13 @@
 - `record_store.py` … 書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL
   PostgreSQL・Phase 1）。本文は JSON（PG は JSONB）が SSOT・検索キーだけ列昇格・版管理
   （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。読取は L2/L3 seed（`list_diary_entries`）に
-  加え `list_child_record_entries`（指定児の保育経過記録の最新版＝年間マトリクス帳票の過去期埋め込み用。
-  列割当・年度の同定は描画側 web/chohyo_pdf の責務＝ここは引くだけ）／`get_document`（単一書類の現行版全文＝本文 entry・
+  加え `list_child_record_entries`（指定児の保育経過記録の最新版・**全期・`exclude_period` で作成対象の期を除外**＝
+  要録 L4／保育経過記録「前回まで」seed・年間マトリクス帳票の過去期埋め込み用。列割当・年度の同定は描画側
+  web/chohyo_pdf の責務＝ここは引くだけ）／**クラス月案 seed 3系統（依存モデル 2026-07）**＝`covered_until`
+  （経過記録の期間終了日の最大＝未反映境界・純関数）・`list_class_child_record_entries`（名簿優先・降格は
+  age_band フィルタ）・`list_class_monthly_entries`（過去クラス月案・月順）・`class_monthly_seed_inputs`（3系統の
+  決定的合成＝scripts/web 共用）。クラス単位書類（diary/class_monthly）の dedupe_key は**年齢帯を含む**
+  （同日・別クラスの版混線防止）／`get_document`（単一書類の現行版全文＝本文 entry・
   整形テキスト・確定/編集の区別＝「書類を見る」タブの閲覧・不在/不正 id/未接続は None）。**LLM もパイプラインも呼ばない**
   （永続化はフロント→web API→ここの明示フロー）。`DATABASE_URL` 未設定は降格（書込 skipped・読取 空）。
   表示名→children.id（UUID）の解決はここに1つ。**クラス（組）マスタ＝`Class`＋`children.class_id`**（migration 0007）＝

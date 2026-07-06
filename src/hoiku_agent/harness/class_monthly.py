@@ -1,50 +1,107 @@
-"""harness：クラス月案パイプラインと L2 還流の配線（決定的）。
+"""harness：クラス月案パイプラインと集積還流の配線（決定的）。
 
-設計コンテキスト §3「月案は日誌の集積に乗せる」/ §10（月⇄日の集積連携）/ §18（園の実様式）。
-個別月案（monthly.py）と対称に、**園の実様式（月間指導計画・クラス単位）**の型を保証する。個別月案が
-1人の子の月次計画なのに対し、クラス月案はクラス全体の月次計画で、前月日誌の集積（L2 還流・全登場児）を
-「先月の子どもの姿」と区分×領域グリッド・0–2 の個人目標へ流す。
+設計コンテキスト §3「月案は日誌の集積に乗せる」/ §10（集積連携）/ §18（園の実様式）/
+依存モデル（2026-07 確定）。個別月案（monthly.py）と対称に、**園の実様式（月間指導計画・クラス単位）**の
+型を保証する。個別月案が1人の子の月次計画なのに対し、クラス月案はクラス全体の月次計画。
+
+クラス月案の入力（依存モデル 2026-07）は3系統：
+① クラス児童の作成済み保育経過記録すべて（全期・年度跨ぎ含む）＝これまでの育ちの土台
+② それまでの作成済みクラス月案すべて（全期）＝計画の連続性（ねらいの発展・月末評価の反映）
+③ **保育経過記録にまだ反映されていない期間**の当該クラスの日誌（＝①の期間境界より後の分だけ。
+   経過記録に巻き取られた日誌は①で見るため重複させない）＋その評価・反省（決定B）
 
 クラス月案パイプライン（doc_type=クラス月案 のときルータが選ぶ）:
-    class_month_prep（前月日誌を child_id 別に決定的集計＝L2 還流・DigestPrepAgent を個別月案と共用・
-      入力=prev_month_entries／出力=prev_month_digest）→ state["prev_month_digest"]
-      → authoring_loop（[class_monthly_author → reviewer → ApprovalGate] を巡回・日誌/月案と共用）
+    class_record_prep（①を child_id 別に決定的集計・RecordDigestPrepAgent を要録と共用・
+      入力=class_record_entries／出力=class_records_digest）
+    class_plan_prep（②を月順の履歴に決定的集計・入力=past_class_plans／出力=class_plan_digest）
+    class_diary_prep（③を child_id 別に決定的集計・DigestPrepAgent を個別月案と共用・
+      入力=class_diary_entries／出力=class_diary_digest・`uncovered_by_key` で①の境界より後に限定・
+      評価・反省は reflections_key=class_diary_reflections に別チャネル集約＝決定B）
+      → authoring_loop（[class_monthly_author → reviewer → ApprovalGate] を巡回・共用）
       → finalize(kind="class_monthly")（ClassMonthlyPlan を復元→validate/write）
       → [after_agent_callback] persist_visit_to_memory（明示承認＋型成立のとき書き戻し・§9）
 
-L2 還流の入力（前月日誌）は個別月案と同じ state["prev_month_entries"]（DiaryEntry の dict 列）から取る。
-呼び出し側（scripts/run_class_monthly.py・web の seed）が前月の当該年齢帯の日誌を seed する。集積は
-child_id 別なので、digest はクラス全登場児ぶんになる（個人目標＝0–2 はその全員分を author が生成）。
+呼び出し側（scripts/run_class_monthly.py・web の seed）は `record_store.class_monthly_seed_inputs` で
+3入力を合成して seed する（境界計算の実体は record_store.covered_until に1つ・prep でも同じ規則で
+防御的に限定＝ファイル/サンプル seed でも一貫）。未接続・該当なしは空＝各 digest が降格メッセージへ。
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, AsyncGenerator
 
-from google.adk.agents import SequentialAgent
+from google.adk.agents import BaseAgent, SequentialAgent
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events import Event, EventActions
+from pydantic import ValidationError
 
 from ..agents import build_class_monthly_author_agent
+from ..schemas import ClassMonthlyPlan
+from .aggregate import class_plan_history_digest
 from .monthly import DigestPrepAgent
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
     persist_visit_to_memory,
 )
+from .youroku import RecordDigestPrepAgent
 
 if TYPE_CHECKING:
     from google.adk.models import BaseLlm
+
+
+def _parse_class_plans(raw: object) -> list[ClassMonthlyPlan]:
+    """state["past_class_plans"]（dict 列）を ClassMonthlyPlan へ復元する（壊れた要素は黙って飛ばす）。
+
+    自己履歴の集計は "ある分だけ" 行えば足り、1件の不正データでクラス月案作成を止めない
+    （降格の哲学＝月案の _parse_prev_entries と同じ）。
+    """
+    if not isinstance(raw, list):
+        return []
+    plans: list[ClassMonthlyPlan] = []
+    for item in raw:
+        try:
+            plans.append(ClassMonthlyPlan.model_validate(item))
+        except (ValidationError, TypeError):
+            continue
+    return plans
+
+
+class ClassPlanPrepAgent(BaseAgent):
+    """クラス月案の自己履歴の決定的 prep：それまでのクラス月案（state[input_key]）を月順に集計する。
+
+    集計結果（serializable な月順履歴）を state[output_key] に**state-only イベント**（content なし・
+    §12＝eval judge を壊さない）で格納する。author はこの履歴を InstructionProvider
+    （`agents/instructions.py`＝`format_class_plan_history_for_prompt`）が prompt 冒頭へ整形注入して読む
+    （計画の連続性の解釈は author の責務・ここは集計のみ）。データが無ければ空履歴で素通り（降格）。
+    集計の決定的実体は aggregate.py（class_plan_history_digest）＝ここは配線のみ。
+    """
+
+    input_key: str = "past_class_plans"
+    output_key: str = "class_plan_digest"
+
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        plans = _parse_class_plans(ctx.session.state.get(self.input_key))
+        history = class_plan_history_digest(plans)
+        # content を付けない（state_delta のみ）＝eval の invocation_events に載らず judge を壊さない。
+        yield Event(
+            invocation_id=ctx.invocation_id,
+            author=self.name,
+            actions=EventActions(state_delta={self.output_key: history}),
+        )
 
 
 def build_class_monthly_pipeline(
     author_model: str | BaseLlm | None = None,
     reviewer_model: str | BaseLlm | None = None,
 ) -> SequentialAgent:
-    """クラス月案（園の実様式）の型を保証するパイプラインを構築する（§18）。
+    """クラス月案（園の実様式）の型を保証するパイプラインを構築する（§18・依存モデル 2026-07）。
 
-    個別月案の build_monthly_pipeline と対称。先頭に DigestPrepAgent（L2 還流の決定的集計・state-only・
-    入力=prev_month_entries／出力=prev_month_digest＝個別月案と同じ既定キー）を置き、巡回は
-    build_authoring_loop（日誌・月案と共用。NEEDS_REVISION で class_monthly_author が再作成）、finalize は
-    kind="class_monthly"。文書作成指針（scope=月案を流用）と前月集積は class_monthly_author/reviewer の
+    先頭に3つの決定的 prep（いずれも state-only）を置く：クラス児童の保育経過記録集積
+    （RecordDigestPrepAgent 共用）／それまでのクラス月案の履歴（ClassPlanPrepAgent）／経過記録に
+    未反映の期間の日誌集積＋評価・反省（DigestPrepAgent 共用・uncovered_by_key で境界限定）。
+    巡回は build_authoring_loop（共用。NEEDS_REVISION で class_monthly_author が再作成）、finalize は
+    kind="class_monthly"。文書作成指針（scope=月案を流用）と各集積は class_monthly_author/reviewer の
     InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。after_agent_callback も
     共用（明示承認＋型成立で書き戻し・§9）。author_model/reviewer_model は通常 None（実 Gemini）。
     決定論E2E では FakeLlm を注入する。
@@ -52,8 +109,22 @@ def build_class_monthly_pipeline(
     return SequentialAgent(
         name="class_monthly_pipeline",
         sub_agents=[
-            # reflections_key＝前月日誌の評価・反省も日付順に集める（クラス月案のみ＝§10 決定B）。
-            DigestPrepAgent(name="class_month_prep", reflections_key="prev_month_reflections"),
+            # ① クラス児童の保育経過記録すべて（全期）＝これまでの育ち。
+            RecordDigestPrepAgent(
+                name="class_record_prep",
+                input_key="class_record_entries",
+                output_key="class_records_digest",
+            ),
+            # ② それまでのクラス月案すべて＝計画の連続性。
+            ClassPlanPrepAgent(name="class_plan_prep"),
+            # ③ 経過記録に未反映の期間の日誌（①の境界より後に限定）＋評価・反省（決定B）。
+            DigestPrepAgent(
+                name="class_diary_prep",
+                input_key="class_diary_entries",
+                output_key="class_diary_digest",
+                reflections_key="class_diary_reflections",
+                uncovered_by_key="class_record_entries",
+            ),
             build_authoring_loop(build_class_monthly_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="class_monthly"),
         ],

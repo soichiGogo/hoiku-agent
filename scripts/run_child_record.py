@@ -7,9 +7,14 @@ seed しづらいので、デモ/検証はこの入口を使う）。
 このスクリプトは:
 1. 期間中の日誌を読む。優先順位＝ `--entries-file`（JSON 配列）＞ 書類アーカイブ
    （`DATABASE_URL` 設定時・record_store から期間分を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
-2. session state に doc_type="保育経過記録" と period_entries を seed して root_agent（DocTypeRouter）を回す。
-3. DigestPrepAgent（period_prep）が child_id 別に集計（state["period_digest"]）→ 保育経過記録 author が
-   領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer → 保育経過記録 finalize（ChildRecord を検査・整形）。
+   併せて**前回までの保育経過記録**（その児の作成済み過去の記録すべて・作成対象の期は除外＝依存モデル
+   2026-07）をアーカイブから引く（未接続/初回は 0 件＝降格）。
+2. session state に doc_type="保育経過記録" と period_entries・prev_record_entries を seed して
+   root_agent（DocTypeRouter）を回す。
+3. DigestPrepAgent（period_prep）が期間日誌を、RecordDigestPrepAgent（prev_record_prep）が前回までの
+   記録を child_id 別に集計（state["period_digest"]/["prev_records_digest"]）→ 保育経過記録 author が
+   前期からの連続性を踏まえ領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer →
+   保育経過記録 finalize（ChildRecord を検査・整形）。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:
     uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06
@@ -153,14 +158,31 @@ def _archive_period_entries(period: str) -> list[dict]:
     return record_store.list_diary_entries(*span)
 
 
-async def _run(period: str, child_id: str, period_entries: list[dict]) -> None:
+def _archive_prev_records(child_id: str, period: str) -> list[dict]:
+    """書類アーカイブから前回までの保育経過記録を引く（自己履歴 seed・依存モデル 2026-07）。
+
+    その児の作成済み記録すべて（全期・年度跨ぎ含む）から、作成対象の期そのものを除いて返す。
+    未接続・該当なし（初回）は []＝prev_records_digest が空で降格（作成は止めない）。
+    """
+    from hoiku_agent.harness import record_store
+
+    return record_store.list_child_record_entries(child_id, exclude_period=period)
+
+
+async def _run(
+    period: str, child_id: str, period_entries: list[dict], prev_records: list[dict]
+) -> None:
     from google.adk.runners import InMemoryRunner
 
     runner = InMemoryRunner(agent=root_agent, app_name=_APP_NAME)
     session = await runner.session_service.create_session(
         app_name=_APP_NAME,
         user_id=_USER_ID,
-        state={"doc_type": "保育経過記録", "period_entries": period_entries},
+        state={
+            "doc_type": "保育経過記録",
+            "period_entries": period_entries,
+            "prev_record_entries": prev_records,
+        },
     )
     message = types.Content(
         role="user",
@@ -191,6 +213,10 @@ async def _run(period: str, child_id: str, period_entries: list[dict]) -> None:
     )
     print("\n--- 最終 state ---")
     print("period_digest:", json.dumps(final.state.get("period_digest"), ensure_ascii=False))
+    print(
+        "prev_records_digest:",
+        json.dumps(final.state.get("prev_records_digest"), ensure_ascii=False),
+    )
     print("validation:", final.state.get("validation"))
     print("final_document:\n", final.state.get("final_document"))
 
@@ -217,7 +243,13 @@ def main() -> None:
             seed_src = "同梱サンプル（アーカイブ未設定/該当なし＝降格）"
     print(f"[seed] 期間日誌 {len(period_entries)} 件（{seed_src}）")
 
-    asyncio.run(_run(args.period, args.child_id, period_entries))
+    # 前回までの保育経過記録（自己履歴）＝アーカイブから全期を引く（初回/未接続は 0 件＝降格）。
+    prev_records = _archive_prev_records(args.child_id, args.period)
+    print(
+        f"[seed] 前回までの保育経過記録 {len(prev_records)} 件（書類アーカイブ・作成対象の期は除外）"
+    )
+
+    asyncio.run(_run(args.period, args.child_id, period_entries, prev_records))
 
 
 if __name__ == "__main__":
