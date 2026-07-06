@@ -688,6 +688,14 @@ select.de-input{appearance:auto;min-height:38px}
 .cadd-or{font-size:var(--fs-caption);color:var(--muted);font-weight:600}
 .cprev{font-size:var(--fs-sm);font-weight:700;color:var(--primary-d);min-width:60px}
 
+/* 日誌（手入力）フォームの見出し＝AI 生成でなく自分の言葉で書く一次情報であることを示す */
+.diaryform-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-3);
+  padding-bottom:var(--sp-2);border-bottom:1px solid var(--line)}
+.diaryform-head b{font-size:var(--fs-body);color:var(--ink)}
+.diaryform-head .ic{align-self:center;color:var(--primary-d)}
+.df-sub{font-size:var(--fs-sm);color:var(--muted)}
+#diary-class-wrap,#diary-ageband-wrap{margin-bottom:var(--sp-2)}
+
 /* ============================================================
    書類を見る（アーカイブ閲覧＝ファイルシステム風ツリー：種別→子ども→書類）
    ============================================================ */

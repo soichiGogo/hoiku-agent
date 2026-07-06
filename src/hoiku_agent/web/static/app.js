@@ -6,6 +6,7 @@ import { makePolicy } from "./policy.js";
 import { makeNotation } from "./notation.js";
 import { makeRecords } from "./records.js";
 import { makeClasses } from "./classes.js";
+import { makeDiaryForm } from "./diaryform.js";
 
 // 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
 // さくらちゃんは 3–5 歳児クラスの仮名児（全年齢対応＝§19。年齢帯で枠組み＝3視点/5領域が切り替わるデモ）。
@@ -24,6 +25,7 @@ const composeDisplayName = (given, gender) => `${(given || "").trim()}${HONORIFI
 const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
+const todayISO = () => new Date().toISOString().slice(0, 10); // 日誌の記録日の既定（今日）
 
 // 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record/youroku。
 // monthly セグメントは**クラス月案**（園の実様式・§18）＝flow kind は "class_monthly"（DocTypeRouter の
@@ -34,9 +36,9 @@ const DOC_TYPES = [
     key: "diary",
     label: "保育日誌",
     icon: "diary",
-    runLabel: "下書きを作成する",
+    runLabel: "日誌フォームを開く",
     desc: "",
-    needsChild: true,
+    needsChild: false, // 日誌は手入力＝クラス（在籍児 roster）単位。単一の対象児コンボは使わない
   },
   {
     key: "monthly",
@@ -85,16 +87,6 @@ function ageBandOf(name) {
   }
   return AGE_BAND_OF[name] || "0-2";
 }
-
-// サンプルメモは当日の生活情報（食事量・午睡時刻・排泄回数・体温・月齢）を含める＝生成される日誌の
-// 生活記録（食事/睡眠/排泄/機嫌・体調）が現場同様に埋まる（手がかりが無い欄は空のまま＝§14・作成AIは創作しない）。
-// 4例目は 3–5 歳児クラス向け（5領域・生活記録なしの全年齢デモ）。
-const DIARY_SAMPLES = [
-  "戸外で砂遊び。スコップで砂をすくって繰り返し感触を確かめていた。友だちが来ると場所を空けていた。離乳食完了期を8割、麦茶80ml。午睡12:15〜14:20。排尿4回・排便1回。視診で体温36.5℃、機嫌よし。1歳3か月。",
-  "室内で積み木。高く積もうと何度も挑戦。崩れても笑って積み直していた。保育者に「みて」と指さしで知らせた。給食を9割、汁物も完食。午睡12:30〜14:10。排尿5回・排便なし。体温36.7℃、鼻水が少しあるが機嫌はよい。1歳6か月。",
-  "午前のおやつで自分でコップを持って飲もうとした。少しこぼれたが満足そう。給食は完了期を全量摂取。午睡12:00〜14:00でぐっすり。排尿4回・排便1回。体温36.6℃、変化なし。0歳11か月。",
-  "園庭で鬼ごっこ。ルールを友だちに説明し、つかまった子に「次は鬼ね」と声をかけていた。帰りの会では当番として号令をかけ、みんなの前で今日楽しかったことを話した。4歳2か月。",
-];
 
 const POLICY_SAMPLES = [
   "感触遊びは『感触語＋そのときの表情』を併記したい。ただし断定的な評価表現は避けたい。",
@@ -839,9 +831,46 @@ async function main() {
     },
   });
 
-  // 日誌の入力欄（年齢帯チップ＋サンプル）。
+  // 日誌（手入力）：クラスを選ぶと在籍児が並ぶ。クラス未登録/DB 未接続は年齢帯チップへ降格。記録日の既定は今日。
   const diaryAge = chipGroup($("diary-ageband"), AGE_BANDS, null, null);
-  sampleChips($("diary-samples"), DIARY_SAMPLES, (s) => ($("diary-memo").value = s));
+  $("diary-date").value = todayISO();
+  let diaryClasses = [];
+  const diaryRosterOf = {}; // class_id -> [表示名]
+  async function loadDiaryClasses() {
+    if (!cfg.records_connected) return;
+    const [cl, kids] = await Promise.all([adk.getClasses(), adk.getChildren()]);
+    diaryClasses = cl.classes || [];
+    for (const k of Object.keys(diaryRosterOf)) delete diaryRosterOf[k];
+    for (const k of kids) if (k.class_id) (diaryRosterOf[k.class_id] ||= []).push(k.display_name);
+    renderDiaryClassSelector();
+  }
+  function renderDiaryClassSelector() {
+    const hasClasses = diaryClasses.length > 0;
+    $("diary-class-wrap").hidden = !hasClasses;
+    $("diary-ageband-wrap").hidden = hasClasses; // クラスがあれば年齢帯はクラスから決まる
+    if (!hasClasses) return;
+    const sel = $("diary-class");
+    sel.innerHTML = "";
+    diaryClasses.forEach((c) => {
+      const roster = diaryRosterOf[c.id] || [];
+      const o = el(
+        "option",
+        "",
+        `${c.name}（${AGE_BAND_LABEL[c.age_band] || c.age_band}・${roster.length}名）`,
+      );
+      o.value = c.id;
+      sel.appendChild(o);
+    });
+    sel.onchange = updateDiaryRosterNote;
+    updateDiaryRosterNote();
+  }
+  function updateDiaryRosterNote() {
+    const roster = diaryRosterOf[$("diary-class").value] || [];
+    $("diary-roster-text").textContent = roster.length
+      ? `在籍児 ${roster.length}名：${roster.join("・")}（フォームで追加・削除もできます）`
+      : "このクラスに在籍児がいません。フォームで追加するか「クラス・園児」タブで登録できます。";
+  }
+  await loadDiaryClasses();
 
   // クラス月案の年齢帯チップ（クラス＝0-2/3-5）。切替で前月サンプルの件数表示を追従する。
   const classAge = chipGroup($("class-ageband"), AGE_BANDS, (label) => onClassAgeChange(label), null);
@@ -855,7 +884,6 @@ async function main() {
   function onChildChange(name) {
     $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
     $("youroku-seed-count").textContent = sampleRecordEntries(name).length + " 件";
-    diaryAge.select(AGE_BAND_LABEL[ageBandOf(name)] || AGE_BANDS[0]);
   }
 
   // 月の初日/末日（"YYYY-MM"）。seed の範囲クエリ用（アーカイブ＝/api/records/diary-entries）。
@@ -878,17 +906,10 @@ async function main() {
     return { entries: fallback, source: "サンプル" };
   }
 
-  // 3種の作成フロー。run ボタン（$("doc-run")）は共有し、onBusy で生成中は種別セグメントを固定する。
-  const diaryFlow = makeDocFlow({
-    area: $("diary-flow"),
-    button: $("doc-run"),
-    stepper: $("diary-stepper"),
-    steps: ["観察メモ", "指針を取り込む", "情報を集める", "下書き", "レビュー", "確定"],
-    showDigest: false,
-    kind: "diary",
-    status,
-    onBusy: setSegBusy,
-  });
+  // 日誌は手入力フォーム（AI 生成しない＝ヒアリング 2026-07：日誌は自分の言葉で打つ一次情報の蓄積口）。
+  // クラスの在籍児を空欄で並べ、検査・整形・保存・帳票は既存の決定的経路（finalize-edit / records /
+  // 帳票PDF・Word）を再利用する＝AI を一切通さない。他の書類（月案/経過記録/要録）は従来の作成フロー。
+  const diaryForm = makeDiaryForm({ area: $("diary-flow"), status });
   // 月案セグメント＝クラス月案（園の実様式・§18）。flow kind は "class_monthly"（DocTypeRouter の
   // doc_type "クラス月案" に対応）。前月集計（L2）・確定・編集フォーム・PDF/Word は共通フローで動く。
   const monthlyFlow = makeDocFlow({
@@ -922,18 +943,23 @@ async function main() {
     onBusy: setSegBusy,
   });
 
-  // 種別ごとの実行（seed 組み立て＋ flow.run）。ロジックは統合前の3ハンドラと同一。
+  // 種別ごとの実行（seed 組み立て＋ flow.run／日誌は手入力フォームを開く）。
   function runDiary() {
-    const memo = $("diary-memo").value.trim();
-    if (!memo) {
-      $("diary-memo").focus();
-      return;
+    // クラスがあればクラスから年齢帯・在籍児 roster を決める。無ければ年齢帯チップへ降格・roster 空。
+    const date = $("diary-date").value || todayISO();
+    let className = "";
+    let ageBand = null;
+    let roster = [];
+    if (diaryClasses.length) {
+      const c = diaryClasses.find((x) => x.id === $("diary-class").value);
+      if (c) {
+        className = c.name;
+        ageBand = c.age_band;
+        roster = diaryRosterOf[c.id] || [];
+      }
     }
-    const child = docChild();
-    status.setSubject(child);
-    // 年齢帯（0-2/3-5）を明示して渡す＝作成AIが枠組み（3視点/5領域）を確認質問せずに済む（全年齢対応）。
-    const text = `対象児: ${child}\n年齢帯: ${AGE_BAND_VALUE[diaryAge()]}（${diaryAge()}）\n本日の観察メモ:\n${memo}`;
-    diaryFlow.run(null, text);
+    if (!ageBand) ageBand = AGE_BAND_VALUE[diaryAge()] || "0-2";
+    diaryForm.open({ className, ageBand, date, roster });
   }
   async function runMonthly() {
     // クラス月案はクラス単位（対象児を取らない）。年齢帯＝クラスと対象月で回す。
@@ -1103,6 +1129,8 @@ async function main() {
   await classes.init();
   // タブを開くたびに最新化（他タブで登録した児がすぐ反映される）。
   $("tabbtn-classes").addEventListener("click", () => classes.refresh());
+  // 「書類を作る」に戻るたび、日誌のクラス選択も最新化（クラス・園児タブで足したクラス/児を反映）。
+  $("tabbtn-docs").addEventListener("click", () => loadDiaryClasses());
 
   // ── 書類を見る（アーカイブ閲覧＝作成済みの確定書類・参照データの点検） ──
   const records = makeRecords({

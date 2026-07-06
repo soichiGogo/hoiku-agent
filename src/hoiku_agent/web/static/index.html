@@ -62,16 +62,21 @@
         <label class="field-label" id="doc-child-label">対象児（仮名）</label>
         <div id="doc-children" class="combo"></div>
 
-        <!-- 日誌の入力欄（年齢帯＋観察メモ＋サンプル） -->
+        <!-- 日誌の入力欄（手入力＝クラスを選ぶと在籍児が並ぶ。AI 生成はしない＝ヒアリング 2026-07） -->
         <div id="doc-fields-diary" class="doc-fields">
-          <label class="field-label">年齢帯（クラス）</label>
-          <div id="diary-ageband" class="chips"></div>
-
-          <label class="field-label" for="diary-memo">観察メモ</label>
-          <textarea id="diary-memo" class="memo" rows="4" placeholder="例）戸外で砂遊び。スコップで砂をすくって繰り返し感触を確かめていた。友だちが来ると場所を空けていた。"></textarea>
-          <div class="samples">
-            <span class="samples-label">サンプル</span>
-            <div id="diary-samples" class="chips chips-sm"></div>
+          <div id="diary-class-wrap" hidden>
+            <label class="field-label" for="diary-class">クラス</label>
+            <select id="diary-class" class="input"></select>
+          </div>
+          <div id="diary-ageband-wrap">
+            <label class="field-label">年齢帯（クラス）</label>
+            <div id="diary-ageband" class="chips"></div>
+          </div>
+          <label class="field-label" for="diary-date">記録日</label>
+          <input id="diary-date" class="input" type="date">
+          <div class="seed-note">
+            <span data-ic="users"></span>
+            <span id="diary-roster-text">クラスを選ぶと在籍児が日誌フォームに並びます（フォームで追加・削除もできます）</span>
           </div>
         </div>
 
