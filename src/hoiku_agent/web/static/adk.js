@@ -187,15 +187,40 @@ export async function getDiaryMeta(dateFrom, dateTo) {
   }
 }
 
-// 指定児の保育経過記録（最新版）＝保育要録（L4）の seed 取得口。未接続/障害/該当なしは空＝
-// 呼び出し側がサンプルへ降格する（黙って誤解釈しない）。
-export async function getChildRecordEntries(child) {
+// 指定児の保育経過記録（最新版・全期）＝要録 L4／保育経過記録「前回まで」の seed 取得口。
+// excludePeriod を渡すと当該期間の記録を除く（作成対象の期を自己履歴に混ぜない＝依存モデル 2026-07）。
+// 未接続/障害/該当なしは空＝呼び出し側がサンプル/0件へ降格する（黙って誤解釈しない）。
+export async function getChildRecordEntries(child, excludePeriod) {
   try {
-    const r = await fetch(`/api/records/child-record-entries?child=${encodeURIComponent(child)}`);
+    const q = excludePeriod ? `&exclude_period=${encodeURIComponent(excludePeriod)}` : "";
+    const r = await fetch(
+      `/api/records/child-record-entries?child=${encodeURIComponent(child)}${q}`,
+    );
     if (!r.ok) return [];
     return (await r.json()).entries || [];
   } catch {
     return [];
+  }
+}
+
+// クラス月案の seed 3系統（依存モデル 2026-07）＝①クラス児童の保育経過記録すべて ②それまでの
+// クラス月案 ③経過記録に未反映の期間の日誌（境界計算はサーバ側 harness に1つ＝JS で再実装しない）。
+// 未接続/障害は全部空＝呼び出し側が日誌サンプルへ降格する。
+export async function getClassMonthlySeed(ageBand, month) {
+  const empty = { class_diary_entries: [], class_record_entries: [], past_class_plans: [] };
+  try {
+    const r = await fetch(
+      `/api/records/class-monthly-seed?age_band=${encodeURIComponent(ageBand)}&month=${encodeURIComponent(month)}`,
+    );
+    if (!r.ok) return empty;
+    const j = await r.json();
+    return {
+      class_diary_entries: j.class_diary_entries || [],
+      class_record_entries: j.class_record_entries || [],
+      past_class_plans: j.past_class_plans || [],
+    };
+  } catch {
+    return empty;
   }
 }
 

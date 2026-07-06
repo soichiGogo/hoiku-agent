@@ -937,7 +937,7 @@ async function main() {
     area: $("monthly-flow"),
     button: $("doc-run"),
     stepper: $("monthly-stepper"),
-    steps: ["前月の集計", "指針を取り込む", "情報を集める", "下書き", "レビュー", "確定"],
+    steps: ["蓄積の集計", "指針を取り込む", "情報を集める", "下書き", "レビュー", "確定"],
     showDigest: true,
     kind: "class_monthly",
     status,
@@ -957,7 +957,7 @@ async function main() {
     area: $("youroku-flow"),
     button: $("doc-run"),
     stepper: $("youroku-stepper"),
-    steps: ["最終年度の集計", "情報を集める", "下書き", "レビュー", "確定"],
+    steps: ["これまでの集計", "情報を集める", "下書き", "レビュー", "確定"],
     showDigest: true,
     kind: "nursery_record",
     status,
@@ -988,20 +988,23 @@ async function main() {
     const ageBandLabel = classAge();
     const ageBand = AGE_BAND_VALUE[ageBandLabel] || "0-2";
     status.setSubject(ageBandLabel);
-    // L2 seed＝前月のクラスの日誌。アーカイブに保存済み（当月年齢帯分）があれば使い、無ければサンプルへ降格。
+    // seed 3系統（依存モデル 2026-07）＝①クラス児童の保育経過記録すべて ②それまでのクラス月案
+    // ③経過記録に未反映の期間の日誌（境界計算はサーバ側 harness に1つ）。未接続/該当なしは
+    // ③だけ仮名サンプルへ降格（①②は 0 件＝digest が降格メッセージを出す）。
     const pm = prevMonth(month);
-    const fallback = sampleClassPrevEntries(ageBand);
-    let { entries, source } = await seedEntries(pm, pm, fallback);
-    // アーカイブ由来は当該年齢帯の日誌だけに絞る（クラス＝年齢帯の月案なので他クラスの姿を混ぜない）。
-    if (source === "アーカイブ") {
-      const filtered = entries.filter((e) => (e.age_band || "0-2") === ageBand);
-      if (filtered.length) entries = filtered;
-      else ({ entries, source } = { entries: fallback, source: "サンプル" });
+    let source = "アーカイブ";
+    let seed3 = { class_diary_entries: [], class_record_entries: [], past_class_plans: [] };
+    if (cfg.records_connected) seed3 = await adk.getClassMonthlySeed(ageBand, month);
+    if (!seed3.class_diary_entries.length && !seed3.class_record_entries.length) {
+      seed3.class_diary_entries = sampleClassPrevEntries(ageBand);
+      source = "サンプル";
     }
-    $("monthly-seed-count").textContent = `${entries.length} 件（${source}）`;
+    $("monthly-seed-count").textContent =
+      `経過記録 ${seed3.class_record_entries.length}・月案 ${seed3.past_class_plans.length}・` +
+      `日誌 ${seed3.class_diary_entries.length} 件（${source}）`;
     // 前月日誌で評価・反省が未記入のものを検出して記入導線を出す（生成はブロックしない＝並行）。
     checkPrevMonthEvaluations(pm, ageBand);
-    const seed = { doc_type: "クラス月案", prev_month_entries: entries };
+    const seed = { doc_type: "クラス月案", ...seed3 };
     monthlyFlow.run(
       seed,
       `${month} の ${ageBandLabel}（年齢帯 ${ageBand}）のクラス月案（月間指導計画）を作成してください。` +
@@ -1058,8 +1061,13 @@ async function main() {
     status.setSubject(child);
     // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
     const { entries, source } = await seedEntries(start, end, samplePeriodEntries(child));
-    $("record-seed-count").textContent = `${entries.length} 件（${source}）`;
-    const seed = { doc_type: "保育経過記録", period_entries: entries };
+    // 前回までの保育経過記録（自己履歴・作成対象の期は除外＝依存モデル 2026-07）。未接続/初回は 0 件降格。
+    const prevRecords = cfg.records_connected
+      ? await adk.getChildRecordEntries(child, period)
+      : [];
+    $("record-seed-count").textContent =
+      `日誌 ${entries.length} 件（${source}）・前回までの経過記録 ${prevRecords.length} 件`;
+    const seed = { doc_type: "保育経過記録", period_entries: entries, prev_record_entries: prevRecords };
     recordFlow.run(
       seed,
       `対象期間 ${period} の ${child}（年齢帯 ${ageBand}）の保育経過記録を作成してください。period には「${period}」をそのまま書いてください。`,

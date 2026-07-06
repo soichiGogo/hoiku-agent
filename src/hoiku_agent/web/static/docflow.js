@@ -29,9 +29,9 @@ const PREP_META = {
     phaseText: "前月の積み重ねを集計しています",
   },
   class_monthly: {
-    digestKey: "prev_month_digest",
-    digestTitle: "前月の積み重ね（クラス全体・自動集計・L2 還流）",
-    phaseText: "前月の積み重ねを集計しています",
+    digestKey: "class_diary_digest",
+    digestTitle: "保育経過記録に未反映の期間の日誌（クラス全体・自動集計）",
+    phaseText: "クラスの蓄積（経過記録・これまでの月案・日誌）を集計しています",
   },
   child_record: {
     digestKey: "period_digest",
@@ -40,8 +40,8 @@ const PREP_META = {
   },
   nursery_record: {
     digestKey: "record_digest",
-    digestTitle: "最終年度の保育経過記録の積み重ね（自動集計・L4 還流）",
-    phaseText: "最終年度の保育経過記録を集計しています",
+    digestTitle: "これまでの保育経過記録の積み重ね（自動集計・L4 還流）",
+    phaseText: "これまでの保育経過記録を集計しています",
   },
 };
 

@@ -676,16 +676,37 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         }
 
     @app.get("/api/records/child-record-entries")
-    def web_list_child_record_entries(child: str) -> dict:
-        """指定児の保育経過記録（最新版・期間順）＝保育要録 L4 の seed 取得口（§19）。
+    def web_list_child_record_entries(child: str, exclude_period: str = "") -> dict:
+        """指定児の保育経過記録（最新版・期間順・全期）＝要録 L4／保育経過記録「前回まで」の seed 取得口。
 
-        リテラル路なので `/api/records/{document_id}` より前に宣言し優先させる（diary-entries と同じ）。
-        フロントは entries が空/未接続ならサンプル seed へ降格する（黙って空 seed で回さない）。
+        `exclude_period` を与えると当該期間の記録を除く（保育経過記録の作成時、作成対象の期そのものを
+        「前回まで」に混ぜない＝依存モデル 2026-07）。リテラル路なので `/api/records/{document_id}` より
+        前に宣言し優先させる（diary-entries と同じ）。フロントは entries が空/未接続ならサンプル seed へ
+        降格する（黙って空 seed で回さない）。
         """
         return {
-            "entries": record_store.list_child_record_entries(child),
+            "entries": record_store.list_child_record_entries(
+                child, exclude_period=exclude_period or None
+            ),
             "store": record_store.store_status(),
         }
+
+    @app.get("/api/records/class-monthly-seed")
+    def web_class_monthly_seed(age_band: str, month: str) -> dict:
+        """クラス月案の seed 3系統（依存モデル 2026-07）＝アーカイブからの決定的合成の取得口。
+
+        合成の実体は `record_store.class_monthly_seed_inputs`（①クラス児童の保育経過記録すべて
+        ②それまでのクラス月案 ③経過記録に未反映の期間の日誌＝境界計算 covered_until に1つ）。
+        リテラル路なので `/api/records/{document_id}` より前に宣言。month 不正は 400（黙って誤解釈
+        しない）。未接続は全部空＝フロントがサンプル seed へ降格する。読取なので非ゲート。
+        """
+        try:
+            seed = record_store.class_monthly_seed_inputs(age_band, month)
+        except ValueError:
+            return JSONResponse(
+                {"error": "month は YYYY-MM", "code": "invalid_request"}, status_code=400
+            )
+        return {**seed, "store": record_store.store_status()}
 
     @app.get("/api/records/{document_id}")
     def web_get_record(document_id: str):
