@@ -1156,6 +1156,24 @@ _KIND_LABEL = {
 }
 
 
+def _child_of(kind: str, entry: dict) -> str:
+    """既存判定用：書類の主対象児表示名（日誌・クラス月案はクラス単位＝空）。record_store と同じ規約。"""
+    if kind in ("diary", "class_monthly"):
+        return ""
+    return str(entry.get("child_id") or "")
+
+
+def _target_of(kind: str, entry: dict) -> str:
+    """既存判定用：対象期間キー（日誌=記録日・月案=対象月・保育経過記録=期間・要録=年度）。"""
+    if kind == "diary":
+        return str(entry.get("date") or "")
+    if kind == "class_monthly":
+        return str(entry.get("month") or "")
+    if kind == "child_record":
+        return str(entry.get("period") or "")
+    return str(entry.get("fiscal_year") or "")
+
+
 def _entry_label(kind: str, entry: dict) -> str:
     """ログ用の書類ラベル（種別＋対象児/クラス＋対象期間）。"""
     if kind == "diary":
@@ -1198,6 +1216,13 @@ def main() -> None:
         help="保存後に承認済み（approved）にする（既定 True・--no-approve で確定止まり）",
     )
     parser.add_argument("--actor", default="seed", help="監査証跡の担当者名（自己申告・既定 seed）")
+    parser.add_argument(
+        "--skip-existing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="アーカイブに既にある書類（同一 種別×児×期間）はスキップする＝再実行安全"
+        "（既定 True・--no-skip-existing で全件を版として上書き投入）",
+    )
     args = parser.parse_args()
 
     total = sum(len(entries) for _, entries in _JOBS)
@@ -1231,11 +1256,25 @@ def main() -> None:
             "（手順は docs/ライブ実行手順.md）。型検査は上で通過しています。"
         )
 
+    # 既存書類の同一性キー（種別×児×期間）＝再実行安全のためのスキップ判定。list_documents の view は
+    # doc_type / child（クラス書類は空）/ target（日誌=記録日・月案=対象月・保育経過記録=期間・要録=年度）。
+    existing: set[tuple[str, str, str]] = set()
+    if args.skip_existing:
+        for kind, _ in _JOBS:
+            for d in record_store.list_documents(kind, limit=5000):
+                existing.add((d["doc_type"], d.get("child", ""), d.get("target", "")))
+
     now = datetime.now()
-    saved = approved = errors = 0
+    saved = approved = skipped = errors = 0
     for kind, entries in _JOBS:
         for entry in entries:
             label = _entry_label(kind, entry)
+            if (
+                args.skip_existing
+                and (kind, _child_of(kind, entry), _target_of(kind, entry)) in existing
+            ):
+                skipped += 1
+                continue
             fd = finalize_entry(
                 entry, kind=kind
             )  # 型検査済みだが正規化済み entry/整形テキストを得る
@@ -1261,7 +1300,9 @@ def main() -> None:
                     print(f"  [approve-error] {label}: {ares}")
             print(f"  [saved] {label}（seq {res.get('version_seq')}）")
 
-    print(f"\n完了: 保存 {saved} / 承認 {approved} / 失敗 {errors}（計 {total}）")
+    print(
+        f"\n完了: 保存 {saved} / 承認 {approved} / スキップ既存 {skipped} / 失敗 {errors}（計 {total}）"
+    )
     if errors:
         raise SystemExit(1)
 
