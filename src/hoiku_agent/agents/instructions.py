@@ -50,7 +50,13 @@ _DOC_TYPE_ROUTING: dict[str, tuple[PolicyScope, str | None, str, _Formatter, str
         format_digest_for_prompt,
         "prev_month_reflections",
     ),
-    "保育経過記録": (PolicyScope.保育経過記録, "period_digest", "期間", format_digest_for_prompt, None),
+    "保育経過記録": (
+        PolicyScope.保育経過記録,
+        "period_digest",
+        "期間",
+        format_digest_for_prompt,
+        None,
+    ),
     "保育要録": (
         PolicyScope.保育要録,
         "record_digest",

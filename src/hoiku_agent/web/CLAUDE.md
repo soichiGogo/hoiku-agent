@@ -108,8 +108,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   受けたファイルを `upload_parse.parse_uploaded_file` で解析し確認・編集用 entry〔＋整形/検査結果〕を返す中継。**LLM を回す口＝
   `_GATED_PREFIX` でパスコードゲート**・未対応形式/種別は 400・creds 無/LLM 失敗は 200＋parse_error で正直に降格。保存は後段の
   `/api/records`＝`author_kind="imported"`）・**`/api/records`／`/api/records/approve`／
-  `/api/records/diary-entries`／`/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
-  リテラル路 diary-entries より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
+  `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
+  `/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
+  リテラル路 diary-entries/diary-meta より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
   **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
@@ -157,10 +158,13 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `GET /api/records` のメタ一覧（本文なし・軽い）を1回引き、**種別→子ども→書類**の階層をクライアント側で組む（左＝ツリー／右＝内容の2ペイン・`.fs*`）。
   **表示に必要な分だけ読む最適化**＝フォルダは折りたたみ既定で初期描画は種別フォルダのみ・展開したフォルダの DOM だけを都度組む／書類本文（重い＝整形テキスト＋entry）は
   **ファイルを開いたときだけ** `GET /api/records/{id}` を引き**セッション内はキャッシュ**（再クリックは再取得しない）／展開状態は再読込を跨いで保持・本文キャッシュはタブ再オープンで捨て最新を正とする。
-  選ぶと現行版の整形テキスト＋帳票PDF ボタンを右ペインに描く読取専用ビュー・未接続/空/障害は正直に降格。
+  選ぶと現行版の整形テキスト＋帳票PDF ボタンを右ペインに描く。**読取専用ではなく編集・（再）承認もできる**＝右ペインの
+  「編集する」で `docedit.js` の編集フォームを開き `finalizeEdit`→`saveRecord(author_kind="caregiver")`＝新版を積む（`mountEditor` を取込確認と共用）、
+  未承認なら「承認する」で `approveRecord`。**承認済みを編集すると承認は失効し finalized へ戻る**（record_store が demote・偽の緑を出さない）。未接続/空/障害は正直に降格。
+  **外から特定書類を編集モードで開く `openDoc(id,{edit,focus})` を公開**（`{init, refresh, openDoc}`）＝クラス月案作成時の「評価未記入の日誌へ飛んで記入」導線（下記）が使う。
   **アップロード取込**＝4種別フォルダを常時表示（空でも取込先）し、各フォルダ（＋personal 種別の子フォルダ）を開くと先頭に「取り込む」行を出す
   ＝場所から kind〔＋child〕が決まる。押すと右ペインに取込フォーム（対象キー/年齢帯/対象児/ファイル・D&D 可）→`adk.parseUpload`（`/api/parse-upload`）→
-  **既存 `docedit.js` の編集フォームで確認・修正**→`finalizeEdit`→`saveRecord(author_kind="imported")`→`loadTree`。取込先が未接続（store≠ok）のときは取り込めない〔正直に降格〕）／`ui.js`・`app.js`・`styles.css`・`index.html`。
+  **既存 `docedit.js` の編集フォームで確認・修正**→`finalizeEdit`→`saveRecord(author_kind="imported")`→`loadTree`。取込先が未接続（store≠ok）のときは取り込めない〔正直に降格〕）／`ui.js`・`app.js`（**クラス月案作成時に前月・当該クラスの日誌で評価・反省が未記入のものを `getDiaryMeta`〔`/api/records/diary-meta`〕で検出し「N/D を記入」チップを出す＝`checkPrevMonthEvaluations`。チップは `switchTab("records")`＋`records.openDoc(id,{edit,focus:"evaluation"})` で当該日誌の評価欄へ飛ぶ＝生成はブロックしない。決定B〔評価をクラス月案の集計に反映〕の記入を促す動線**）・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
 - `templates/` … `docx_fill` が流し込む**園の実 Word 様式（空欄フォーム・PII なし）**：`child_record.docx`（保育経過記録）・
   `monthly_0_2.docx`／`monthly_3_5.docx`（月間指導計画）。`COPY src ./src` で同梱＝実行時に外部取得しない（ローカル完結）。
