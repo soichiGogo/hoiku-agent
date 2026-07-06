@@ -403,7 +403,9 @@ def _fill_class_monthly(entry: dict) -> Document:
             _set_cell(row.cells[0], f"{name}（{months}）" if months else name)
             _set_cell(row.cells[1], str(goal.get("child_state") or ""))
             _set_cell(row.cells[2], str(goal.get("aim_support") or ""))
-            # 評価・反省（col3）は月末記入＝空欄温存。
+            # 評価・反省（col3）は月末に保育士が記入する運用欄＝AI 非生成なので通常は空。ただし編集フォームで
+            # 記入済みなら反映する（空なら空欄温存＝帳票PDF と同じ挙動。記入値を黙って落とさない）。
+            _set_cell(row.cells[3], str(goal.get("evaluation") or ""))
 
     return doc
 

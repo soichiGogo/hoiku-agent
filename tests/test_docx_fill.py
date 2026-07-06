@@ -233,6 +233,15 @@ def test_fill_class_monthly_generates_one_row_per_child():
         assert _row_has_full_borders(row)  # 複製行も罫線を引き継ぐ（add_row の崩れを防ぐ）
 
 
+def test_fill_class_monthly_renders_filled_evaluation():
+    """評価・反省は通常 AI 非生成で空だが、編集フォームで記入済みなら docx にも反映する（帳票PDF と同じ）。"""
+    entry = _class_monthly(1)
+    entry["individual_goals"][0]["evaluation"] = "水遊びを十分に楽しめた。次月は素材を増やす"
+    tables = _tables(fill_docx("class_monthly", entry))
+    goals = _goals_table(tables)
+    assert "水遊びを十分に楽しめた" in goals.rows[2].cells[3].text  # col3=評価・反省
+
+
 def test_fill_class_monthly_removes_extra_template_rows():
     """個人目標がテンプレ既定（2行）より少なければ余った空枠を削る（人数分ちょうど）。"""
     tables = _tables(fill_docx("class_monthly", _class_monthly(1)))
