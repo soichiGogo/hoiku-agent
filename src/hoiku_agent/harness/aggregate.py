@@ -26,8 +26,8 @@ def aggregate_by_child(entries: list[DiaryEntry]) -> dict[str, dict]:
         {child_id: {"note_count", "tag_freq", "observed_states"}} の決定的集約。
         tag_freq は Counter。state へ載せる serializable 版は prev_month_digest を使う。
 
-    TODO(設計):
-    - 評価・反省の双方向（予想ねらいと実際の姿の照合）を集計に織り込む（§10）。
+    評価・反省の双方向（予想ねらいと実際の姿の照合＝§10）は child_id 別でなく日次のクラス全体所見なので、
+    ここ（child_id 別集約）でなく `collect_reflections` が日付順に別チャネルで集める（クラス月案が使う）。
     """
     digest: dict[str, dict] = {}
     for entry in entries:
@@ -87,6 +87,62 @@ def format_digest_for_prompt(digest: dict[str, dict], label: str = "前月") -> 
         )
         for state_text in slot["observed_states"]:
             lines.append(f"    ・{state_text}")
+    return "\n".join(lines)
+
+
+def collect_reflections(entries: list[DiaryEntry]) -> list[dict]:
+    """前月日誌の「評価・反省」（2視点）を日付順に集める（クラス月案の L2 還流の一部・§10）。
+
+    評価・反省は個別記録（child_id 別）でなく**その日のクラス全体の振り返り**（(a)子どもに焦点／
+    (b)自分の保育の適否）なので、child_id 別の `aggregate_by_child` とは別チャネルで日付順に集約する。
+    (a)/(b) のどちらかでも記入があれば拾う（両空＝未記入の日は含めない＝プロンプトを膨らませない）。
+    クラス月案 author が「先月の子どもの姿／今月のねらい」を書くとき、前月の振り返りを踏まえる素にする
+    （要約・反映は author の責務＝§10・ここは集計のみ）。日付は isoformat 文字列（state へ serializable）。
+
+    Args:
+        entries: 前月の日誌（DiaryEntry）のリスト。
+
+    Returns:
+        [{"date": "YYYY-MM-DD", "child_focus": str, "self_review": str}] の日付昇順リスト。
+    """
+    rows: list[dict] = []
+    for entry in entries:
+        child_focus = (entry.evaluation.child_focus or "").strip()
+        self_review = (entry.evaluation.self_review or "").strip()
+        if not child_focus and not self_review:
+            continue  # 両視点とも空＝未記入の日は集めない
+        rows.append(
+            {
+                "date": entry.date.isoformat(),
+                "child_focus": child_focus,
+                "self_review": self_review,
+            }
+        )
+    rows.sort(key=lambda r: r["date"])
+    return rows
+
+
+def format_reflections_for_prompt(reflections: list[dict], label: str = "前月") -> str:
+    """前月の振り返り集積（collect_reflections）を、後段 author が読む人間可読テキストへ整形する。
+
+    要約・今月の計画への反映は author（LlmAgent）の責務（§10）。ここは日付ごとの (a)/(b) を列挙するだけ
+    （解釈を加えない）。空（記入された振り返りが無い）なら降格メッセージを返す。
+    """
+    if not reflections:
+        return (
+            f"【{label}の振り返り（評価・反省）】{label}の日誌に記入済みの評価・反省がありません"
+            f"（未記入、またはデータ未提供）。"
+        )
+    lines = [
+        f"【{label}の振り返り（評価・反省・日付順）】今月のねらい／先月の子どもの姿を書くときに踏まえる:"
+    ]
+    for r in reflections:
+        parts = []
+        if r.get("child_focus"):
+            parts.append(f"(a)子どもの姿: {r['child_focus']}")
+        if r.get("self_review"):
+            parts.append(f"(b)保育の適否: {r['self_review']}")
+        lines.append(f"- {r['date']}: " + " ／ ".join(parts))
     return "\n".join(lines)
 
 

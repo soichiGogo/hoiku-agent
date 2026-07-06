@@ -99,6 +99,38 @@ def test_author_provider_uses_record_formatter_for_youroku():
     assert out.rstrip().endswith("BASE")
 
 
+def test_author_provider_injects_reflections_for_class_monthly():
+    """クラス月案 author は state["prev_month_reflections"]（前月の評価・反省）を前置する（決定B）。"""
+    prov = build_author_instruction(
+        "BASE",
+        PolicyScope.月案,
+        digest_key="prev_month_digest",
+        digest_label="前月",
+        reflections_key="prev_month_reflections",
+    )
+    refl = [{"date": "2026-06-05", "child_focus": "水遊びに夢中", "self_review": "導線を見直す"}]
+    out = prov(_Ctx({"prev_month_digest": _digest(), "prev_month_reflections": refl}))
+    assert "【前月の集積" in out  # 従来の集積
+    assert "【前月の振り返り（評価・反省" in out  # 新規＝前月の振り返り
+    assert "水遊びに夢中" in out and "導線を見直す" in out
+    assert out.rstrip().endswith("BASE")
+
+
+def test_author_provider_skips_absent_or_empty_reflections():
+    """振り返りが無い/空なら前置しない（集積のみ・記入済みが無い月は膨らませない）。"""
+    prov = build_author_instruction(
+        "BASE",
+        PolicyScope.月案,
+        digest_key="prev_month_digest",
+        digest_label="前月",
+        reflections_key="prev_month_reflections",
+    )
+    out_absent = prov(_Ctx({"prev_month_digest": _digest()}))
+    out_empty = prov(_Ctx({"prev_month_digest": _digest(), "prev_month_reflections": []}))
+    for out in (out_absent, out_empty):
+        assert "【前月の振り返り" not in out
+
+
 # ──────────────────────────── review provider ────────────────────────────
 
 
@@ -109,6 +141,24 @@ def test_review_provider_resolves_scope_from_doc_type():
     assert "### 保育経過記録（期ごと）" in out
     assert "### 月案 / 週案 / 日案" not in out
     assert "【期間の集積" in out  # 保育経過記録は period_digest を前置
+    assert out.rstrip().endswith("REVIEW-BASE")
+
+
+def test_review_provider_injects_reflections_for_class_monthly():
+    """reviewer は doc_type=クラス月案 で前月の集積＋振り返り（評価・反省）を前置する（決定B）。"""
+    prov = build_review_instruction("REVIEW-BASE")
+    refl = [{"date": "2026-06-05", "child_focus": "水遊びに夢中", "self_review": "導線を見直す"}]
+    out = prov(
+        _Ctx(
+            {
+                "doc_type": "クラス月案",
+                "prev_month_digest": _digest(),
+                "prev_month_reflections": refl,
+            }
+        )
+    )
+    assert "### 月案 / 週案 / 日案" in out  # クラス月案は月案 scope を流用
+    assert "【前月の集積" in out and "【前月の振り返り（評価・反省" in out
     assert out.rstrip().endswith("REVIEW-BASE")
 
 
