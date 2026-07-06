@@ -377,6 +377,10 @@ a{color:var(--primary-d)}
 .stp.now .n{background:var(--state-working);color:#fff}
 .stp.wait{border-color:color-mix(in srgb,var(--state-waiting) 50%,var(--line));color:var(--state-waiting-ink);font-weight:700}
 .stp.wait .n{background:var(--state-waiting);color:#fff}
+/* レビュー巡回の周回バッジ（例「2/3」）。差し戻しで再作成に入ったときだけ付く（round>1）。 */
+.stp-badge{display:inline-flex;align-items:center;justify-content:center;margin-left:1px;padding:0 6px;height:15px;
+  border-radius:var(--r-pill);background:var(--accent-soft);color:var(--accent-d);
+  font-size:10px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
 
 /* ============================================================
    HITL 質問カード

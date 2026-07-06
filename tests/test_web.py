@@ -31,6 +31,10 @@ def test_config_shape() -> None:
     # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（保育経過記録・クラス月案は配線済み）。
     assert "child_record" in body["docx_kinds"]
     assert "class_monthly" in body["docx_kinds"]
+    # レビュー巡回の上限＝harness の SSOT を露出（UI が差し戻し時「N巡目/最大M」の M に使う）。
+    from hoiku_agent.harness.pipeline import MAX_REVIEW_ITERATIONS
+
+    assert body["max_review_iterations"] == MAX_REVIEW_ITERATIONS
 
 
 def test_doc_template_shape() -> None:

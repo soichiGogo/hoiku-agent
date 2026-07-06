@@ -192,13 +192,39 @@ export function makeStepper(container, steps) {
     const n = node.querySelector(".n");
     n.innerHTML = state === "done" ? iconHTML("check") : String(i + 1);
   }
+  // レビュー巡回の周回バッジ（例「2/3」）を任意ステップの脇に出す（差し戻しでの再作成を可視化）。
+  // text 空/未指定で消す。ステップの通し番号（.n）とは別に、右肩へ小さく添える。
+  function badge(i, text) {
+    const node = container.querySelector(`.stp[data-i="${i}"]`);
+    if (!node) return;
+    let b = node.querySelector(".stp-badge");
+    if (!text) {
+      if (b) b.remove();
+      return;
+    }
+    if (!b) {
+      b = el("span", "stp-badge");
+      node.appendChild(b);
+    }
+    b.textContent = text;
+  }
   return {
     set,
+    badge,
     // i 未満を done・i を now（state 指定可）にする。後退はしない。
     advanceTo(i, state = "now") {
       steps.forEach((_, k) => {
         if (k < i) set(k, "done");
         else if (k === i) set(k, state);
+      });
+    },
+    // i を now（state 指定可）にし、**i より後ろのステップは未完了へ戻す**（巡回の巻き戻し用）。
+    // advanceTo は前進のみだが、レビュー差し戻しでは「下書き」へ戻って再点灯する必要があるためこれを使う。
+    rewindTo(i, state = "now") {
+      steps.forEach((_, k) => {
+        if (k < i) set(k, "done");
+        else if (k === i) set(k, state);
+        else set(k, null); // 後続（レビュー・確定）を pending へ戻す
       });
     },
     allDone() {
