@@ -59,6 +59,7 @@ def test_static_ui_served() -> None:
         "policy.js",
         "notation.js",
         "records.js",
+        "classes.js",
         "ui.js",
         "styles.css",
     ):

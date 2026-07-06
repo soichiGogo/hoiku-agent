@@ -45,6 +45,7 @@
     <nav class="tabs" role="tablist" aria-label="機能">
       <button class="tab is-active" data-tab="docs" role="tab" id="tabbtn-docs" aria-controls="tab-docs" aria-selected="true"><span data-ic="diary"></span><span class="tab-label">書類作成</span></button>
       <button class="tab" data-tab="grow" role="tab" id="tabbtn-grow" aria-controls="tab-grow" aria-selected="false"><span data-ic="sprout"></span><span class="tab-label">育てる</span></button>
+      <button class="tab" data-tab="classes" role="tab" id="tabbtn-classes" aria-controls="tab-classes" aria-selected="false"><span data-ic="users"></span><span class="tab-label">クラス・園児</span></button>
       <button class="tab" data-tab="records" role="tab" id="tabbtn-records" aria-controls="tab-records" aria-selected="false"><span data-ic="book"></span><span class="tab-label">書類管理</span></button>
     </nav>
   </header>
@@ -214,6 +215,28 @@
           <div class="card-title"><span data-ic="clipboard"></span>いまの表記ルール<span id="notation-store" class="badge"></span></div>
           <div id="notation-list" class="nlist"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ───────── クラス・園児（園の名簿管理＝クラス定義＋園児登録/割当） ───────── -->
+    <section id="tab-classes" class="panel" role="tabpanel" aria-labelledby="tabbtn-classes" tabindex="0">
+      <div class="card">
+        <div class="card-title"><span data-ic="users"></span>クラスを作る</div>
+        <div class="cadd">
+          <input id="class-name" class="input" placeholder="組名（例: ひまわり組）" aria-label="組名">
+          <select id="class-new-ageband" class="input" aria-label="年齢帯">
+            <option value="0-2">0〜2歳児クラス</option>
+            <option value="3-5" selected>3〜5歳児クラス</option>
+          </select>
+          <input id="class-fiscal" class="input cadd-year" placeholder="年度（例: 2026）" aria-label="年度">
+          <button id="class-add" class="btn btn-primary"><span data-ic="check"></span>作成</button>
+        </div>
+        <p id="class-msg" class="nmsg hidden" aria-live="polite"></p>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><span data-ic="clipboard"></span>クラス・園児<span id="classes-store" class="badge"></span></div>
+        <div id="classes-list" class="clist"></div>
       </div>
     </section>
 

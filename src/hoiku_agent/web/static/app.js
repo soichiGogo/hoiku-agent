@@ -5,6 +5,7 @@ import { makeDocFlow } from "./docflow.js";
 import { makePolicy } from "./policy.js";
 import { makeNotation } from "./notation.js";
 import { makeRecords } from "./records.js";
+import { makeClasses } from "./classes.js";
 
 // 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
 // さくらちゃんは 3–5 歳児クラスの仮名児（全年齢対応＝§19。年齢帯で枠組み＝3視点/5領域が切り替わるデモ）。
@@ -1088,6 +1089,20 @@ async function main() {
     addBtn: $("notation-add"),
   });
   await notation.init();
+
+  // ── クラス・園児（園の名簿管理＝クラス定義＋園児登録/割当・日誌 roster の素） ──
+  const classes = makeClasses({
+    list: $("classes-list"),
+    store: $("classes-store"),
+    msg: $("class-msg"),
+    nameInput: $("class-name"),
+    ageSelect: $("class-new-ageband"),
+    fiscalInput: $("class-fiscal"),
+    addBtn: $("class-add"),
+  });
+  await classes.init();
+  // タブを開くたびに最新化（他タブで登録した児がすぐ反映される）。
+  $("tabbtn-classes").addEventListener("click", () => classes.refresh());
 
   // ── 書類を見る（アーカイブ閲覧＝作成済みの確定書類・参照データの点検） ──
   const records = makeRecords({

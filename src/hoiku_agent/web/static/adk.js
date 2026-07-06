@@ -267,6 +267,59 @@ export async function addChild(payload) {
   }
 }
 
+// クラス（組）一覧＋在籍児数（園の名簿管理・日誌のクラス選択）。未設定/障害は空＝降格。
+export async function getClasses(fiscalYear) {
+  try {
+    const q = fiscalYear ? "?fiscal_year=" + encodeURIComponent(fiscalYear) : "";
+    const r = await fetch("/api/classes" + q);
+    if (!r.ok) return { classes: [], store: "unavailable" };
+    return await r.json();
+  } catch {
+    return { classes: [], store: "unavailable" };
+  }
+}
+
+// 指定クラスの在籍児（日誌フォームの roster／名簿UIのクラス内一覧）。未接続/不在は空。
+export async function getClassRoster(classId) {
+  try {
+    const r = await fetch("/api/classes/roster?class_id=" + encodeURIComponent(classId));
+    if (!r.ok) return [];
+    return (await r.json()).children || [];
+  } catch {
+    return [];
+  }
+}
+
+// クラス（組）を定義する（書込ゲート）。成功 {status:"created"/"exists", ...}／未認証は 401→needsGate。
+export async function addClass(payload) {
+  try {
+    const r = await fetch("/api/classes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
+    return await r.json();
+  } catch {
+    return { status: "error", detail: "クラスの作成に失敗しました" };
+  }
+}
+
+// 児童をクラスへ割当/移動/解除する（class_id 空＝未所属へ・書込ゲート）。
+export async function assignChild(child, classId) {
+  try {
+    const r = await fetch("/api/classes/assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child, class_id: classId || "" }),
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
+    return await r.json();
+  } catch {
+    return { status: "error", detail: "割り当てに失敗しました" };
+  }
+}
+
 // 確定 entry を園の帳票PDFに描いて受け取る（現場でそのまま綴じる最終形）。{ blob, filename } を返す。
 export async function exportPdf(kind, entry) {
   const r = await fetch("/api/export-pdf", {
