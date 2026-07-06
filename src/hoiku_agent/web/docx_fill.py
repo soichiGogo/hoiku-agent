@@ -10,9 +10,11 @@ Word で開いて微修正・印刷・PDF 化できる（＝Word が母艦の現
 同梱し実行時に外部取得しない（ローカル完結）。docx→PDF の**サーバ変換はしない**（LibreOffice 等の
 重い依存を持ち込まない＝確定・綴じ用の PDF は `chohyo_pdf.py` が担い、Word 編集用は本モジュールが担う）。
 
-配線済みスライス：**保育経過記録**＝5領域×子どもの姿（3–5）。**月案**＝園フォームは
-クラス月案だが、決定に従い**個別月案の中身を「個人目標」小表へ写像**しクラス欄は保育士記入で温存
-（個人目標小表がある 0-2 フォームが本命・3-5 フォームは小表が無くヘッダのみ）。**保育要録**＝公式様式
+配線済みスライス：**保育経過記録**＝5領域×子どもの姿（3–5）。**クラス月案（class_monthly）**＝
+園フォーム（月間指導計画）の**全欄を直接埋める**（保育目標・先月の姿・区分×領域グリッド〔養護2本柱＋
+教育5領域〕・食育/健康・安全/家庭/職員の連携・0–2 は個人目標小表を登場児ぶん）＝§18。評価系欄は月末記入＝
+AI 非生成で空欄温存。**個別月案（monthly）**＝旧経路として温存＝個別月案の中身を「個人目標」小表へ写像し
+クラス欄は保育士記入で温存（0-2 フォームのみ小表・3-5 はヘッダのみ）。**保育要録**＝公式様式
 （こども家庭庁 保育所児童保育要録・参考例）の「保育に関する記録」の括弧ラベル（最終年度の重点/個人の重点/
 保育の展開と子どもの育ち/特に配慮すべき事項）直下と列4（最終年度に至るまでの育ち）へ追記（ガイドラベルは残す）。
 拡張は `_FILLERS` に kind を追加するだけ。
@@ -276,6 +278,106 @@ def _fill_monthly(entry: dict) -> Document:
     return doc
 
 
+def _set_after_label(tbl: Table, label: str, value: str) -> bool:
+    """表内で text が label のセルの**次のセル**（同じ行の隣）に value を入れる（label|value 横並び用）。
+
+    _label_row_value_cell（行の最終列を返す）と違い、ラベルの直後セルに入れる＝食育|健康・安全 のように
+    1行に label|value|label|value が並ぶ様式に使う。見つけて入れたら True。
+    """
+    for row in tbl.rows:
+        cells = row.cells
+        for i, cell in enumerate(cells[:-1]):
+            if cell.text.strip() == label:
+                _set_cell(cells[i + 1], value)
+                return True
+    return False
+
+
+def _fill_class_monthly(entry: dict) -> Document:
+    """クラス月案（園の実様式＝月間指導計画）フォームへ確定 entry を流し込む（§18）。
+
+    園フォーム（monthly_0_2.docx / monthly_3_5.docx＝A4 横）の欄構成そのものに埋める：
+    - ヘッダ表：年度・月／クラス／年齢（担任・園長・主任は押印欄＝手書きのまま）。
+    - 上部の単欄表：今月の保育目標／先月の子どもの姿／今月の行事／保護者支援。
+    - 区分×領域グリッド：領域名で行を引き当て、ねらい／環境・構成／子どもの姿／援助・配慮を埋める。
+    - 連携表：食育／健康・安全／家庭との連携／職員間の連携。
+    - 個人目標小表（0–2 フォームのみ存在）：登場児ぶんを行に埋める（不足行は add_row）。
+    評価系欄（保育者の評価等）は月末記入＝AI 非生成なので触らない（空欄温存）。描画のみ（型の保証は harness）。
+    """
+    age = entry.get("age_band") or "0-2"
+    template = "monthly_0_2.docx" if age == "0-2" else "monthly_3_5.docx"
+    doc = Document(str(_TEMPLATE_DIR / template))
+
+    # ── ヘッダ（年度・月／クラス／年齢） ──
+    header = _find_table(doc, header_contains=("年度・月", "クラス", "担任"))
+    if header is not None:
+        _set_cell(header.rows[0].cells[1], str(entry.get("month") or ""))
+        _set_cell(header.rows[0].cells[3], str(entry.get("class_name") or ""))
+        if len(header.rows) > 1:
+            _set_cell(header.rows[1].cells[1], f"{_AGE_LABEL.get(age, age)}歳児")
+
+    # ── 上部の単欄（今月の保育目標／先月の子どもの姿／今月の行事／保護者支援） ──
+    top = _find_table(doc, header_contains=("今月の保育目標",))
+    if top is not None:
+        for label, key in (
+            ("今月の保育目標", "monthly_goal"),
+            ("先月の子どもの姿", "prev_month_state"),
+            ("今月の行事", "events"),
+            ("保護者支援", "parent_support"),
+        ):
+            cell = _label_row_value_cell(top, label)
+            if cell is not None:
+                _set_cell(cell, str(entry.get(key) or ""))
+
+    # ── 区分×領域グリッド（領域名で行を引き当て、内容4欄を埋める） ──
+    grid = _find_table(doc, header_contains=("区分", "領域", "ねらい"))
+    if grid is not None:
+        by_domain = {
+            str((r or {}).get("domain") or "").strip(): (r or {}) for r in entry.get("grid") or []
+        }
+        for row in grid.rows[1:]:  # 見出し行を除く
+            cells = row.cells
+            if len(cells) < 6:
+                continue
+            domain = cells[1].text.strip()
+            src = by_domain.get(domain)
+            if not src:
+                continue
+            _set_cell(cells[2], str(src.get("aim") or ""))
+            _set_cell(cells[3], str(src.get("environment") or ""))
+            _set_cell(cells[4], str(src.get("child_state") or ""))
+            _set_cell(cells[5], str(src.get("support") or ""))
+
+    # ── 連携（食育／健康・安全／家庭との連携／職員間の連携＝label|value 横並び） ──
+    liaison = _find_table(doc, header_contains=("食育", "健康・安全"))
+    if liaison is not None:
+        _set_after_label(liaison, "食育", str(entry.get("syokuiku") or ""))
+        _set_after_label(liaison, "健康・安全", str(entry.get("health_safety") or ""))
+        _set_after_label(liaison, "家庭との連携", str(entry.get("family_liaison") or ""))
+        _set_after_label(liaison, "職員間の連携", str(entry.get("staff_liaison") or ""))
+
+    # ── 個人目標小表（0–2 フォームのみ）：登場児ぶんを行に埋める（不足行は add_row） ──
+    goals = entry.get("individual_goals") or []
+    goals_tbl = _find_table(doc, header_contains=("個人目標",))
+    if goals_tbl is not None and goals:
+        # r0=見出し「個人目標…」、r1=列見出し（氏名/子どもの姿/ねらい・配慮/評価・反省）、r2 以降=記入行。
+        data_start = 2
+        for i, goal in enumerate(goals):
+            goal = goal or {}
+            ri = data_start + i
+            row = goals_tbl.rows[ri] if ri < len(goals_tbl.rows) else goals_tbl.add_row()
+            if len(row.cells) < 4:
+                continue
+            name = str(goal.get("child_id") or "")
+            months = str(goal.get("age_months") or "").strip()
+            _set_cell(row.cells[0], f"{name}（{months}）" if months else name)
+            _set_cell(row.cells[1], str(goal.get("child_state") or ""))
+            _set_cell(row.cells[2], str(goal.get("aim_support") or ""))
+            # 評価・反省（col3）は月末記入＝空欄温存。
+
+    return doc
+
+
 def _append_cell_lines(cell, lines: list[str]) -> None:
     """セルの既存内容（括弧ラベル等）を残したまま、内容を段落として下に追記する。
 
@@ -361,6 +463,7 @@ def _fill_nursery_record(entry: dict) -> Document:
 _FILLERS = {
     "child_record": _fill_child_record,
     "monthly": _fill_monthly,
+    "class_monthly": _fill_class_monthly,
     "nursery_record": _fill_nursery_record,
 }
 
