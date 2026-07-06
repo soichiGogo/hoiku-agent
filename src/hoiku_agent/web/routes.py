@@ -133,6 +133,8 @@ class ChildAddRequest(BaseModel):
     given_name: str  # 名（＝呼び名・必須）
     family_name: str = ""  # 姓（氏名欄用・任意）
     gender: str = ""  # male / female（敬称導出・空は敬称なし）
+    # 生年月日（ISO 8601＝YYYY-MM-DD・任意）。書類の月齢（○歳○か月）を満年齢で自動導出する素。
+    birthdate: str = ""
     class_id: str = ""  # 所属クラス（任意・登録と同時に割り当てる＝名簿管理の1操作で完結）
     actor: str = ""
 
@@ -193,6 +195,52 @@ def _doc_filename(kind: str, entry: dict, ext: str) -> str:
     else:
         stem = f"保育日誌_{entry.get('date') or ''}".rstrip("_")
     return f"{stem or '書類'}.{ext}"
+
+
+def _period_end_date(period: str) -> date | None:
+    """期間の自由記述（例 "2026-04〜2026-06"）の**末尾**の年月を月末日として返す（不明は None）。
+
+    保育経過記録の月齢は「期末（記入時点）」で数える（保育士確認済みの基準日）。区切りは自由記述なので
+    正規表現で年月を全部拾い最後を採る（"2026-04〜2026-06"→2026-06 / 単月 "2026-06"→2026-06）。
+    """
+    import calendar
+    import re
+
+    matches = re.findall(r"(\d{4})\s*[-/年]\s*(\d{1,2})", str(period or ""))
+    if not matches:
+        return None
+    year, month = int(matches[-1][0]), int(matches[-1][1])
+    if not (1 <= month <= 12):
+        return None
+    return date(year, month, calendar.monthrange(year, month)[1])
+
+
+def _fill_child_record_age_months(entry: dict, master: dict | None = None) -> None:
+    """保育経過記録 entry の age_months を児童マスタの生年月日から満年齢（○歳○か月）で決定的に充填する。
+
+    生年月日が登録済みの子だけ自動導出し、期末（記入時点）時点の満年齢で上書きする（生年月日が権威＝
+    保育士の手入力より正）。生年月日未登録（架空児・デモ含む）や期間が読めないときは entry をそのまま
+    にして従来の手入力にフォールバックする（§14 の架空児設計を壊さない）。計算実体は harness に1つ
+    （`record_store.age_months_label`）＝web は DB 解決と結線だけ（§5）。
+    """
+    child = str(entry.get("child_id") or "").strip()
+    if not child:
+        return
+    if master is None:
+        master = record_store.get_child(child)
+    raw_bd = (master or {}).get("birthdate")
+    if not raw_bd:
+        return
+    as_of = _period_end_date(str(entry.get("period") or ""))
+    if as_of is None:
+        return
+    try:
+        birthdate = date.fromisoformat(raw_bd)
+    except (ValueError, TypeError):
+        return
+    label = record_store.age_months_label(birthdate, as_of)
+    if label:
+        entry["age_months"] = label
 
 
 def _is_authed(request: Request) -> bool:
@@ -402,6 +450,10 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 doc_date = date.fromisoformat(req.doc_date)
             except ValueError:
                 doc_date = None
+        # 保育経過記録の「歳児」は児童マスタの生年月日から満年齢（○歳○か月）を決定的に充填する
+        # （登録済みの子だけ・未登録は手入力を温存）。検査・整形の前に当てて保存後の本文へ一貫して効かせる。
+        if req.kind == "child_record":
+            _fill_child_record_age_months(req.entry)
         result = finalize_entry(req.entry, kind=req.kind, doc_date=doc_date)
         return {
             "formatted": result.formatted,
@@ -433,6 +485,9 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 official_name = (master or {}).get("official_name") or None
                 if req.kind == "child_record":
                     past_entries = record_store.list_child_record_entries(child)
+                    # 帳票PDF の「歳児」も生年月日から満年齢で描く（保存前プレビューでも同じ値になる・
+                    # 未編集で export したケースの防御的補完。既に fetch した master を使い回す）。
+                    _fill_child_record_age_months(req.entry, master=master)
         try:
             pdf = render_pdf(req.kind, req.entry, past_entries, official_name=official_name)
         except ValueError as e:
@@ -669,6 +724,16 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return JSONResponse(
                 {"status": "error", "detail": f"性別が不正です: {req.gender!r}"}, status_code=400
             )
+        birthdate: date | None = None
+        raw_bd = (req.birthdate or "").strip()
+        if raw_bd:
+            try:
+                birthdate = date.fromisoformat(raw_bd)
+            except ValueError:
+                return JSONResponse(
+                    {"status": "error", "detail": f"生年月日が不正です: {req.birthdate!r}"},
+                    status_code=400,
+                )
         display_name = record_store.compose_display_name(given, gender)
         now = datetime.now()
         result = record_store.upsert_child(
@@ -676,6 +741,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             family_name=req.family_name,
             given_name=given,
             gender=gender or None,
+            birthdate=birthdate,
             now=now,
         )
         # 名簿管理からの登録は所属クラスを同時に割り当てられる（1操作で完結）。割当失敗は本流

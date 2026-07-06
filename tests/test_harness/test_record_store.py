@@ -416,6 +416,25 @@ def test_upsert_child_fills_missing_birthdate_on_existing_row(db):
     assert r["birthdate"] == "2021-09-03"
 
 
+def test_age_months_label_basic():
+    # 生年月日から期末（基準日）時点の満年齢を「○歳○か月」で返す（書式は下書き/シードと一致）。
+    assert rs.age_months_label(date(2021, 4, 10), date(2026, 6, 30)) == "5歳2か月"
+    assert rs.age_months_label(date(2024, 11, 20), date(2026, 6, 30)) == "1歳7か月"
+    # 0 か月・0 歳も明示する（例 "2歳0か月" / "0歳3か月"）。
+    assert rs.age_months_label(date(2024, 6, 25), date(2026, 6, 25)) == "2歳0か月"
+    assert rs.age_months_label(date(2026, 3, 1), date(2026, 6, 30)) == "0歳3か月"
+
+
+def test_age_months_label_day_boundary_rolls_back_month():
+    # 基準日の「日」が誕生日の「日」に満たなければ月を1つ繰り下げる（暦どおりの満年齢）。
+    assert rs.age_months_label(date(2024, 6, 25), date(2026, 6, 24)) == "1歳11か月"
+
+
+def test_age_months_label_before_birth_is_empty():
+    # 基準日が生年月日より前（まだ生まれていない）は空文字＝誤表示より無表示。
+    assert rs.age_months_label(date(2027, 1, 1), date(2026, 6, 30)) == ""
+
+
 def test_upsert_child_degrades(monkeypatch, db):
     assert rs.upsert_child("", now=_NOW)["status"] == "skipped"  # 空名
     monkeypatch.setattr(settings, "database_url", "")
