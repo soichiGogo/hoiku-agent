@@ -22,6 +22,7 @@ from fastapi import FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from ..config import settings
 from ..harness import notation_store, policy_store, record_store, template_store
@@ -32,6 +33,7 @@ from .chohyo_pdf import render_pdf
 from .docx_fill import fill_docx
 from .docx_fill import supported_kinds as docx_supported_kinds
 from .iap import verified_iap_email
+from .proofread import proofread_entry
 from .upload_parse import parse_uploaded_file
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
@@ -46,11 +48,12 @@ _COOKIE_NAME = "hoiku_demo"
 
 # LLM を回す（＝課金が発生する）口だけをパスコードで守る。読み取り・セッション作成は素通し。
 _GATED_EXACT = {"/run", "/run_sse", "/run_live"}
-# /api/improve（改善エージェント）／/api/parse-upload（アップロード取込＝ファイル解析に LLM を回す）。
-_GATED_PREFIX = ("/api/improve", "/api/parse-upload")
+# /api/improve（改善エージェント）／/api/parse-upload（アップロード取込）／/api/proofread（校正AI＝
+# 日本語チェック・言い換え提案）＝いずれも LLM を回す口なのでゲートする。
+_GATED_PREFIX = ("/api/improve", "/api/parse-upload", "/api/proofread")
 # 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
 # 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
-_GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children")
+_GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children", "/api/classes")
 
 
 class GateRequest(BaseModel):
@@ -130,7 +133,48 @@ class ChildAddRequest(BaseModel):
     given_name: str  # 名（＝呼び名・必須）
     family_name: str = ""  # 姓（氏名欄用・任意）
     gender: str = ""  # male / female（敬称導出・空は敬称なし）
+    class_id: str = ""  # 所属クラス（任意・登録と同時に割り当てる＝名簿管理の1操作で完結）
     actor: str = ""
+
+
+class ClassAddRequest(BaseModel):
+    """クラス（組）の定義（園の名簿管理・日誌 roster の素）。書込ゲート＝辞書荒らしと同枠。
+
+    同一性は (name, fiscal_year)＝進級で組名が再利用されても年度で分かれる（record_store が担保）。
+    age_band は 0-2/3-5（クラス選択で書類の年齢分岐を決めるキー）。
+    """
+
+    name: str  # 組名（例: ひまわり組・必須）
+    age_band: str  # 0-2 / 3-5（必須）
+    fiscal_year: str = ""  # 年度（例: 2026・任意）
+    actor: str = ""
+
+
+class ProofreadRequest(BaseModel):
+    """校正AI（日本語チェック・言い換え提案）のリクエスト（手入力フォームから・LLM 口＝ゲート）。
+
+    保育士が手入力した entry を渡すと、叙述文（プロース系）への提案を返す。提案のみ・採否はフロント。
+    """
+
+    kind: str = "diary"  # diary / monthly / class_monthly / child_record / nursery_record
+    entry: dict  # 校正対象の entry（DiaryEntry 等の dict）
+
+
+class ClassAssignRequest(BaseModel):
+    """児童のクラス割当/移動/解除（園の名簿管理）。class_id 空/None は未所属へ戻す。"""
+
+    child: str  # 対象児の表示名（呼び名＋敬称・必須）
+    class_id: str = ""  # 割り当て先クラス（空＝未所属へ）
+    actor: str = ""
+
+
+class UserProfileRequest(BaseModel):
+    """自分の表示名（display_name）の登録/編集（Phase 3・IAP サインイン前提）。
+
+    email は body で受けない＝サーバが IAP の検証済み値で解決する（偽装不可）。ここは表示名だけ。
+    """
+
+    display_name: str = ""
 
 
 def _doc_filename(kind: str, entry: dict, ext: str) -> str:
@@ -193,8 +237,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     async def web_config(request: Request) -> dict:
         """フロントの起動時設定。接続状況は env から導出（未接続は降格表示に使う）。
 
-        user_email は IAP（Phase 3）の検証済み identity（IAP 未配線/未認証は None＝従来表示）。
+        user_email / user_display_name は IAP（Phase 3）の検証済み identity。IAP 未配線/未認証は
+        None/空＝従来の自己申告表示へ降格。サインイン時は users へ auto-provision（登録画面を待たせない）。
         """
+        email = verified_iap_email(request)
+        display_name = ""
+        if email:
+            # サインイン済み＝users へ auto-provision し、設定済みなら表示名を返す（DB I/O は threadpool へ）。
+            user = await run_in_threadpool(record_store.touch_user, email, now=datetime.now())
+            display_name = str(user.get("display_name") or "")
         return {
             "app_name": APP_NAME,
             "default_user_id": DEFAULT_USER_ID,
@@ -203,7 +254,8 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "records_connected": bool(settings.database_url),
             "passcode_required": bool(settings.demo_passcode),
             "model": settings.gemini_model,
-            "user_email": verified_iap_email(request),
+            "user_email": email,
+            "user_display_name": display_name,
             # 園の実 Word 様式（.docx）流し込みに対応済みの kind＝UI が Word ダウンロードの出し分けに使う。
             "docx_kinds": docx_supported_kinds(),
             # レビュー巡回の上限（harness の SSOT）。UI は差し戻し時に「N巡目/最大M」を出す際の M に使う
@@ -447,6 +499,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         except ValueError as e:
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
 
+    @app.post("/api/proofread")
+    async def web_proofread(req: ProofreadRequest):
+        """手入力 entry の叙述文を校正AI に通し、採否用の提案（パス付き）を返す（LLM 口＝ゲート済み）。
+
+        提案のみ（採否はフロント）・事実は変えない。creds 無/LLM 失敗は 200＋error で正直に降格
+        （suggestions 空）＝そのまま保存できる（偽の緑を出さない）。
+        """
+        return await proofread_entry((req.kind or "diary").strip(), req.entry or {})
+
     # ── 書類アーカイブ（harness/record_store の中継・Phase 1）───────────────────────────
     # sync def＝FastAPI が threadpool で回す（同期 DB I/O でイベントループを塞がない）。
     # now の注入だけが runtime 境界（record_store は clock を持たない＝§5 の流儀）。
@@ -463,6 +524,22 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         user = record_store.touch_user(email, now=now)
         display = str(user.get("display_name") or "").strip()
         return f"{display}（{email}）" if display else email
+
+    @app.post("/api/user")
+    def web_set_user_profile(req: UserProfileRequest, request: Request):
+        """自分の表示名を登録/編集する（IAP の検証済み email に紐づけて users.display_name を設定）。
+
+        email は body でなく IAP 検証済み値で解決＝偽装不可。未サインイン（検証済み email なし）は
+        403（fail-closed）。IAP が認証する自己書込なのでパスコードゲートには載せない（_GATED_WRITE_PREFIX 外）。
+        決定的実体は harness/record_store（web は now 注入の中継のみ・§5）。DB 未接続は status:skipped で正直に。
+        """
+        email = verified_iap_email(request)
+        if not email:
+            return JSONResponse(
+                {"error": "サインインが必要です", "code": "auth_required"}, status_code=403
+            )
+        result = record_store.set_user_display_name(email, req.display_name, now=datetime.now())
+        return JSONResponse(result)
 
     @app.post("/api/records")
     def web_save_record(req: RecordSaveRequest, request: Request) -> dict:
@@ -593,14 +670,70 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 {"status": "error", "detail": f"性別が不正です: {req.gender!r}"}, status_code=400
             )
         display_name = record_store.compose_display_name(given, gender)
+        now = datetime.now()
         result = record_store.upsert_child(
             display_name,
             family_name=req.family_name,
             given_name=given,
             gender=gender or None,
-            now=datetime.now(),
+            now=now,
         )
+        # 名簿管理からの登録は所属クラスを同時に割り当てられる（1操作で完結）。割当失敗は本流
+        # （登録）を壊さず result に status を添えて正直に出す。
+        class_id = (req.class_id or "").strip()
+        if class_id and result.get("status") in ("created", "exists"):
+            assigned = record_store.assign_child_to_class(display_name, class_id, now=now)
+            result["assign"] = assigned.get("status")
+            if assigned.get("status") == "ok":
+                result["class_id"] = assigned.get("class_id")
+                result["class_name"] = assigned.get("class_name")
         result["display_name"] = display_name
+        result["store"] = record_store.store_status()
+        return result
+
+    @app.get("/api/classes")
+    def web_list_classes(fiscal_year: str | None = None) -> dict:
+        """クラス（組）一覧＋在籍児数（園の名簿管理・日誌のクラス選択）。未接続は空＝降格表示。"""
+        return {
+            "classes": record_store.list_classes(fiscal_year=fiscal_year),
+            "store": record_store.store_status(),
+        }
+
+    @app.get("/api/classes/roster")
+    def web_class_roster(class_id: str) -> dict:
+        """指定クラスの在籍児（日誌フォームの roster／名簿UIのクラス内一覧）。未接続/不在は空。"""
+        return {
+            "children": record_store.list_children_in_class(class_id),
+            "store": record_store.store_status(),
+        }
+
+    @app.post("/api/classes")
+    def web_add_class(req: ClassAddRequest):
+        """クラス（組）を定義する（書込ゲート）。組名/年齢帯は必須・age_band 不正は 400・降格は skipped。"""
+        name = (req.name or "").strip()
+        if not name:
+            return JSONResponse({"status": "error", "detail": "組名は必須です"}, status_code=400)
+        age_band = (req.age_band or "").strip()
+        if age_band not in record_store.AGE_BANDS:
+            return JSONResponse(
+                {"status": "error", "detail": f"年齢帯が不正です: {req.age_band!r}"},
+                status_code=400,
+            )
+        result = record_store.upsert_class(
+            name, age_band, (req.fiscal_year or "").strip(), now=datetime.now()
+        )
+        result["store"] = record_store.store_status()
+        return result
+
+    @app.post("/api/classes/assign")
+    def web_assign_child(req: ClassAssignRequest):
+        """児童をクラスへ割当/移動/解除する（書込ゲート）。対象児名は必須・不在は record_store が error。"""
+        child = (req.child or "").strip()
+        if not child:
+            return JSONResponse({"status": "error", "detail": "対象児は必須です"}, status_code=400)
+        result = record_store.assign_child_to_class(
+            child, (req.class_id or "").strip() or None, now=datetime.now()
+        )
         result["store"] = record_store.store_status()
         return result
 

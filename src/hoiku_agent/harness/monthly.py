@@ -96,7 +96,7 @@ def build_monthly_pipeline(
 ) -> SequentialAgent:
     """個別月案の型を保証する月案パイプラインを構築する（§3/§4/§10）。
 
-    日誌の build_document_pipeline と対称。先頭に DigestPrepAgent（L2 還流の決定的集計＝state-only）を
+    共用機構（authoring_loop→finalize）に対称。先頭に DigestPrepAgent（L2 還流の決定的集計＝state-only）を
     置き、巡回は build_authoring_loop（[monthly_author → reviewer → ApprovalGate]・日誌と共用。
     NEEDS_REVISION で monthly_author が再作成）、finalize は kind="monthly"。文書作成指針と前月集積は
     monthly_author/reviewer の InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。

@@ -24,6 +24,25 @@ export async function gate(passcode) {
   return r.ok;
 }
 
+// 自分の表示名（display_name）を登録/編集する（IAP サインイン前提）。email はサーバが検証済み値で
+// 解決する（body に載せない＝偽装不可）。未サインインは 403（auth_required）で正直に降格。
+// 成功は {status:"ok", email, display_name}／DB 未接続は {status:"skipped"}。
+export async function setUserProfile(displayName) {
+  try {
+    const r = await fetch("/api/user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: displayName }),
+    });
+    if (r.status === 403) return { status: "error", detail: "サインインが必要です" };
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { status: j.status || "error", detail: j.detail || `失敗 (${r.status})` };
+    return j;
+  } catch (e) {
+    return { status: "error", detail: e.message || String(e) };
+  }
+}
+
 // 育つ指針＝構造化カード＋変更履歴を読む（「指針を育てる」タブの閲覧）。
 // 旧 backend（{markdown} だけ）や未配線でも壊れないよう空＋unavailable に降格する（偽の緑を出さない）。
 export async function getPolicy() {
@@ -257,6 +276,75 @@ export async function addChild(payload) {
     return await r.json();
   } catch {
     return { status: "error", detail: "登録に失敗しました" };
+  }
+}
+
+// クラス（組）一覧＋在籍児数（園の名簿管理・日誌のクラス選択）。未設定/障害は空＝降格。
+export async function getClasses(fiscalYear) {
+  try {
+    const q = fiscalYear ? "?fiscal_year=" + encodeURIComponent(fiscalYear) : "";
+    const r = await fetch("/api/classes" + q);
+    if (!r.ok) return { classes: [], store: "unavailable" };
+    return await r.json();
+  } catch {
+    return { classes: [], store: "unavailable" };
+  }
+}
+
+// 指定クラスの在籍児（日誌フォームの roster／名簿UIのクラス内一覧）。未接続/不在は空。
+export async function getClassRoster(classId) {
+  try {
+    const r = await fetch("/api/classes/roster?class_id=" + encodeURIComponent(classId));
+    if (!r.ok) return [];
+    return (await r.json()).children || [];
+  } catch {
+    return [];
+  }
+}
+
+// クラス（組）を定義する（書込ゲート）。成功 {status:"created"/"exists", ...}／未認証は 401→needsGate。
+export async function addClass(payload) {
+  try {
+    const r = await fetch("/api/classes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
+    return await r.json();
+  } catch {
+    return { status: "error", detail: "クラスの作成に失敗しました" };
+  }
+}
+
+// 児童をクラスへ割当/移動/解除する（class_id 空＝未所属へ・書込ゲート）。
+export async function assignChild(child, classId) {
+  try {
+    const r = await fetch("/api/classes/assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ child, class_id: classId || "" }),
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
+    return await r.json();
+  } catch {
+    return { status: "error", detail: "割り当てに失敗しました" };
+  }
+}
+
+// 校正AI（日本語チェック・言い換え提案）。手入力 entry の叙述文への提案（パス付き）を返す。
+// LLM 口＝401 は needsGate。creds 無/失敗は 200＋error（suggestions 空）で正直に降格。
+export async function proofread(kind, entry) {
+  try {
+    const r = await fetch("/api/proofread", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, entry }),
+    });
+    if (r.status === 401) return { suggestions: [], needsGate: true };
+    return await r.json();
+  } catch {
+    return { suggestions: [], error: "校正の呼び出しに失敗しました" };
   }
 }
 

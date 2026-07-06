@@ -56,8 +56,10 @@
   `format_digest_for_prompt`（集積の人間可読テキスト・label で月案 L2＝前月／保育経過記録 L3＝期間を切替）/
   `child_record_digest` ＋ `format_record_digest_for_prompt`（保育要録 L4＝**日誌でなく最終年度の保育経過記録**を
   child_id 別・期順に集計）。要約生成は各 author に委ねる（§10/§19）。
-- `pipeline.py` … 日誌：authoring_loop（作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御
-  （旧 `workflow/document_pipeline.py`）。`build_authoring_loop` が author を巡回に包み NEEDS_REVISION で
+- `pipeline.py` … 作成パイプラインの**共用機構**（月案/クラス月案/保育経過記録/保育要録が使う）：authoring_loop
+  （作成→レビュー→ApprovalGate の巡回）→ 確定/HITL の順序制御。**保育日誌の AI 生成パイプライン（旧
+  `build_document_pipeline`）は退役**（日誌は手入力＝web の docedit→`finalize_entry`・ヒアリング 2026-07）。
+  `build_authoring_loop` が author を巡回に包み NEEDS_REVISION で
   再作成、APPROVED 早期終了の**判定**（ApprovalGate）はここ（制御＝決定的）、レビュー内容の**生成**は reviewer。
   `FinalizeAgent(kind=...)` で日誌/月案/保育経過記録/保育要録の確定を切替（実体は finalize.py）。**pipeline に prep 段は置かない**
   ＝文書作成指針は author/reviewer の InstructionProvider（`../agents/instructions.py`）が `policy_store.render_for_doc`
@@ -79,8 +81,9 @@
 - `youroku.py` … 保育要録（§19・L4）：`RecordDigestPrepAgent`（record_prep・**最終年度の保育経過記録**（record_entries）を
   `aggregate.child_record_digest` で集計→record_digest＝日誌でなく保育経過記録を集める・content 無し state-only）→ 要録 author の
   authoring_loop（共用）→ finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
-- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で日誌／月案／クラス月案／保育経過記録／保育要録を
-  振り分ける決定的分岐（root_agent の実体・既定＝保育日誌＝§3/§18/§19）。
+- `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で月案／クラス月案／保育経過記録／保育要録を
+  振り分ける決定的分岐（root_agent の実体・**既定＝クラス月案**＝§18）。**保育日誌は AI 生成を退役**したためルータに載らない
+  （日誌は手入力＝web）。
 - `policy_store.py` … 育つ指針＝構造化カードストアの決定的 CRUD・完全重複ガード・履歴・テキスト再生
   （全再生＝`render_to_text`（UI `/api/policy`・eval）／前置注入用＝`render_for_doc`（共通＋当該 scope のみ・
   履歴なし＝`../agents/instructions.py` の InstructionProvider が呼ぶ））・view（`/api/policy` 用）。**指針編集の決定的実体はここに1つ**
@@ -100,8 +103,11 @@
   列割当・年度の同定は描画側 web/chohyo_pdf の責務＝ここは引くだけ）／`get_document`（単一書類の現行版全文＝本文 entry・
   整形テキスト・確定/編集の区別＝「書類を見る」タブの閲覧・不在/不正 id/未接続は None）。**LLM もパイプラインも呼ばない**
   （永続化はフロント→web API→ここの明示フロー）。`DATABASE_URL` 未設定は降格（書込 skipped・読取 空）。
-  表示名→children.id（UUID）の解決はここに1つ。`users`＋`touch_user`（Phase 3）＝IAP の検証済み email を
-  初回アクセスで auto-provision（children と同じ流儀・display_name は後から DB で設定・認可は持たない）。
+  表示名→children.id（UUID）の解決はここに1つ。**クラス（組）マスタ＝`Class`＋`children.class_id`**（migration 0007）＝
+  園の名簿管理（`list_classes`/`upsert_class`/`assign_child_to_class`/`list_children_in_class`）で保育士がクラスを定義し
+  児童を割り当てる＝**日誌手入力フォームの roster・年齢帯自動決定・園児登録の受け皿**（同一性は name+fiscal_year・現在の所属1本）。
+  `users`＋`touch_user`／`set_user_display_name`（Phase 3）＝IAP の検証済み email を
+  初回アクセスで auto-provision（children と同じ流儀）・`set_user_display_name` で display_name を後から設定（自分の表示名・認可は持たない）。
   スキーマ適用は repo root の Alembic（`migrations/`）。clock は外部注入。
 
 ## スタブを埋めるとき

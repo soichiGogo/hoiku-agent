@@ -162,12 +162,11 @@ def test_review_provider_injects_reflections_for_class_monthly():
     assert out.rstrip().endswith("REVIEW-BASE")
 
 
-def test_review_provider_defaults_to_diary_when_doc_type_unset():
-    """doc_type 未設定（日誌が既定＝router）なら保育日誌 scope・集積なし。"""
+def test_review_provider_defaults_to_class_monthly_when_doc_type_unset():
+    """doc_type 未設定（既定＝クラス月案＝router）なら月案 scope を前置する（保育日誌は AI 生成退役）。"""
     prov = build_review_instruction("R")
     out = prov(_Ctx({}))
-    assert "### 保育日誌" in out
-    assert "### 月案 / 週案 / 日案" not in out
+    assert "### 月案 / 週案 / 日案" in out
 
 
 def test_review_provider_resolves_youroku_scope_and_record_digest():

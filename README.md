@@ -40,14 +40,14 @@
 
 ```
 src/hoiku_agent/
-├── agent.py            … ルートエージェント（root_agent）＝doc_type 分岐ルータ（日誌/個別月案/クラス月案/保育経過記録/保育要録・既定 日誌）
+├── agent.py            … ルートエージェント（root_agent）＝doc_type 分岐ルータ（個別月案/クラス月案/保育経過記録/保育要録・既定 クラス月案。保育日誌は手入力＝AI 生成を退役）
 ├── config.py           … 設定（GCPプロジェクト・モデル等。.env から）
 ├── harness/            … ① 型の保証（決定的）：必須欄・年齢分岐（0–2/3–5＝全年齢）・順序・集積（L2/L3/L4）・doc_type分岐・指針カードストア（policy_store）・表記正規化（notation_store＝ひらがな表記DX）・様式テンプレート（template_store＝本文レイアウトのデータ・§18）・書類アーカイブ（record_store＝Cloud SQL・確定書類/児童マスタ/監査証跡）
 ├── agents/             … ② 中身の決定（agentic）：作成AI（日誌/月案/保育経過記録/保育要録）/ レビューAI（+ prompts.py）
 ├── improver/           … ③ 回す（二階・別エントリ）：修正メモ→指針カードを提案・意味的競合を精査・保育士決定で即反映
 ├── tools/              … 4–8個のプリミティブ（記録/指針/RAG/メモリ/HITL/harness薄ラッパ）
 ├── schemas/            … 書類スキーマ（日誌/個別月案/クラス月案/保育経過記録/保育要録）・指針カード（policy）・年齢分岐・10の姿タグ（pydantic 集約）
-├── web/                … 層A 配布UI（保育士 SPA /app/）：日誌/クラス月案/保育経過記録/保育要録は ADK REST 直駆動・確認は園の実様式ルック（クラス月案＝区分×領域グリッド）・園の帳票PDF出力（chohyo_pdf）・園の実 Word 様式への流し込み出力（docx_fill＝templates/*.docx）・指針を育てる（improver）は SSE 中継・表記ルール辞書（notation.js＝/api/notation の CRUD）・書類アップロード取込（upload_extract＝PDF/Word/Excel を format 変換＋upload_parse＝抽出AIで既存スキーマへ・/api/parse-upload・「書類を見る」タブから）
+├── web/                … 層A 配布UI（保育士 SPA /app/・上位4タブ）：保育日誌は手入力フォーム（diaryform.js＝クラス在籍児を空欄で並べ AI 非経由）／クラス月案/保育経過記録/保育要録は ADK REST 直駆動・クラス・園児タブ（classes.js＝名簿管理）・確認は園の実様式ルック（クラス月案＝区分×領域グリッド）・園の帳票PDF出力（chohyo_pdf）・園の実 Word 様式への流し込み出力（docx_fill＝templates/*.docx）・指針を育てる（improver）は SSE 中継・表記ルール辞書（notation.js＝/api/notation の CRUD）・書類アップロード取込（upload_extract＝PDF/Word/Excel を format 変換＋upload_parse＝抽出AIで既存スキーマへ・/api/parse-upload・「書類を見る」タブから）
 knowledge/              … 育つ文書作成指針＝構造化カード（git・文書作成指針.json）＋ 保育所保育指針（RAGソース・gitignore）
 eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）＋ test_config.json / run_gate.py
 docs/                   … 設計コンテキスト.md（開発ハンドオフ）/ architecture.md（コード対応）
@@ -67,7 +67,7 @@ cp .env.example .env   # PROJECT_ID 等を記入
 gcloud auth application-default login
 
 # ローカル実行（ADK CLI）
-adk run src/hoiku_agent      # CLI 対話（日誌＝既定 doc_type。月案/保育経過記録は下の専用入口で seed）
+adk run src/hoiku_agent      # CLI 対話（既定＝クラス月案。月案/保育経過記録/要録は下の専用入口で seed。保育日誌は手入力＝配布UIで作成）
 adk web src                  # ブラウザ UI（agents dir = src/。root で叩くと dropdown に出ない）
 
 # 月案（L2 還流・前月日誌を seed して回す専用入口）

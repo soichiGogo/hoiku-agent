@@ -367,6 +367,34 @@ def test_touch_user_degrades(monkeypatch, db):
     assert rs.touch_user("sensei@example.com", now=_NOW)["status"] == "skipped"  # DB 未設定
 
 
+def test_set_user_display_name_provisions_and_updates(db):
+    # 未登録 email でも auto-provision して表示名を設定できる（touch_user 前でも作る）。
+    r1 = rs.set_user_display_name("sensei@example.com", "そうた先生", now=_NOW)
+    assert r1["status"] == "ok"
+    assert r1["email"] == "sensei@example.com"
+    assert r1["display_name"] == "そうた先生"
+    # 以後 touch_user が設定済みの表示名を返す＝actor 証跡・/api/config に乗る。
+    assert rs.touch_user("sensei@example.com", now=_NOW)["display_name"] == "そうた先生"
+    # 空白のみはクリアを許す（表示名を消すと actor は email に戻る）。重複行は作らない。
+    r2 = rs.set_user_display_name("sensei@example.com", "  ", now=_NOW)
+    assert r2["display_name"] == ""
+    with rs.Session(rs._engine()) as session:
+        emails = [u.email for u in session.scalars(rs.sa.select(rs.User))]
+    assert emails == ["sensei@example.com"]
+    # 列上限（100）へ clamp。
+    long = rs.set_user_display_name("long@example.com", "あ" * 150, now=_NOW)
+    assert len(long["display_name"]) == 100
+
+
+def test_set_user_display_name_degrades(monkeypatch, db):
+    assert rs.set_user_display_name("", "名前", now=_NOW)["status"] == "skipped"  # 空 email
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert (
+        rs.set_user_display_name("s@example.com", "名前", now=_NOW)["status"] == "skipped"
+    )  # DB 未設定
+
+
 def test_upsert_child_creates_fills_birthdate_and_is_idempotent(db):
     r1 = rs.upsert_child("つむぎちゃん", birthdate=date(2021, 11, 18), now=_NOW)
     assert r1["status"] == "created"
@@ -462,3 +490,80 @@ def test_period_date_range_parses_month_span_or_none():
     # 期制は園差＝自由記述。月〜月以外は None（黙って誤解釈せず呼び出し側がサンプルへ降格）。
     assert rs.period_date_range("1学期") is None
     assert rs.period_date_range("2026-06〜2026-04") is None  # 逆転も None
+
+
+# ──────────────────────────── クラス（組）マスタ・所属（名簿管理・日誌 roster の素） ────────────────────────────
+
+
+def test_upsert_class_creates_and_is_idempotent_by_name_and_year(db):
+    r = rs.upsert_class("ひまわり組", "3-5", "2026", now=_NOW)
+    assert r["status"] == "created"
+    assert (r["name"], r["age_band"], r["fiscal_year"]) == ("ひまわり組", "3-5", "2026")
+    # 同じ組名＋年度は既存（重複を作らない）。
+    r2 = rs.upsert_class("ひまわり組", "3-5", "2026", now=_NOW)
+    assert r2["status"] == "exists"
+    # 同じ組名でも年度違いは別クラス（進級で組名を再利用できる）。
+    r3 = rs.upsert_class("ひまわり組", "3-5", "2027", now=_NOW)
+    assert r3["status"] == "created" and r3["id"] != r["id"]
+    names = [(c["name"], c["fiscal_year"]) for c in rs.list_classes(active_only=True)]
+    assert ("ひまわり組", "2026") in names and ("ひまわり組", "2027") in names
+
+
+def test_upsert_class_updates_age_band_but_keeps_identity(db):
+    r = rs.upsert_class("たんぽぽ組", "0-2", "2026", now=_NOW)
+    r2 = rs.upsert_class("たんぽぽ組", "3-5", "2026", now=_NOW)  # 年齢帯だけ直す
+    assert r2["status"] == "exists" and r2["id"] == r["id"] and r2["age_band"] == "3-5"
+
+
+def test_upsert_class_validates_age_band_and_degrades(monkeypatch, db):
+    assert rs.upsert_class("ばら組", "9-9", "2026", now=_NOW)["status"] == "error"  # 不正な年齢帯
+    assert rs.upsert_class("", "0-2", "2026", now=_NOW)["status"] == "skipped"  # 空名
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.upsert_class("ばら組", "0-2", "2026", now=_NOW)["status"] == "skipped"  # 未接続
+
+
+def test_assign_child_to_class_and_roster(db):
+    cid = rs.upsert_class("さくら組", "3-5", "2026", now=_NOW)["id"]
+    rs.upsert_child("はるとくん", given_name="はると", gender="male", now=_NOW)
+    rs.upsert_child("ゆいちゃん", given_name="ゆい", gender="female", now=_NOW)
+    assert rs.assign_child_to_class("はるとくん", cid, now=_NOW)["status"] == "ok"
+    assert rs.assign_child_to_class("ゆいちゃん", cid, now=_NOW)["status"] == "ok"
+    # roster＝クラスの在籍児（表示名順）＋年齢帯（日誌フォームの roster/年齢帯決定の素）。
+    roster = rs.list_children_in_class(cid)
+    assert [c["display_name"] for c in roster] == ["はるとくん", "ゆいちゃん"]
+    assert roster[0]["class_name"] == "さくら組" and roster[0]["class_age_band"] == "3-5"
+    # list_children にも所属が乗る（名簿UIのグループ化）。
+    haruto = next(c for c in rs.list_children() if c["display_name"] == "はるとくん")
+    assert haruto["class_id"] == cid and haruto["class_name"] == "さくら組"
+    # 在籍児数の集計。
+    assert next(c for c in rs.list_classes() if c["id"] == cid)["child_count"] == 2
+
+
+def test_assign_child_unassign_and_error_paths(db):
+    cid = rs.upsert_class("もも組", "0-2", "2026", now=_NOW)["id"]
+    rs.upsert_child("そうたくん", given_name="そうた", gender="male", now=_NOW)
+    rs.assign_child_to_class("そうたくん", cid, now=_NOW)
+    # None/"" で未所属へ戻す。
+    assert rs.assign_child_to_class("そうたくん", None, now=_NOW)["status"] == "ok"
+    assert (
+        next(c for c in rs.list_children() if c["display_name"] == "そうたくん")["class_id"] is None
+    )
+    # 不正 id・未登録児・不在クラスは error（黙って握りつぶさない）。
+    assert rs.assign_child_to_class("そうたくん", "not-a-uuid", now=_NOW)["status"] == "error"
+    assert rs.assign_child_to_class("いないくん", cid, now=_NOW)["status"] == "error"
+    assert (
+        rs.assign_child_to_class("そうたくん", "00000000-0000-0000-0000-000000000000", now=_NOW)[
+            "status"
+        ]
+        == "error"
+    )
+
+
+def test_class_reads_degrade_when_url_unset(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.list_classes() == []
+    assert rs.list_children_in_class("x") == []
+    assert rs.upsert_class("ひまわり組", "0-2", "2026", now=_NOW)["status"] == "skipped"
+    assert rs.assign_child_to_class("はるとくん", None, now=_NOW)["status"] == "skipped"

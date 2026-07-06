@@ -5,8 +5,10 @@
 
 ## 立ち位置（4つ目の責務ではない）
 
-- **薄い presentation 層**。日誌/月案/保育経過記録の生成は ADK の `get_fast_api_app` が出す**ネイティブ REST**
-  （`/run_sse`・`/apps/{app}/users/{u}/sessions`・`PATCH …/sessions`）をフロント SPA が直接叩く＝
+- **薄い presentation 層**。**保育日誌は手入力フォーム**（`diaryform.js`＝AI を通さない・ヒアリング 2026-07：日誌は
+  自分の言葉で打つ一次情報の蓄積口）＝クラスの在籍児を空欄で並べ docedit→`/api/finalize-edit`→`/api/records`で保存
+  （ADK セッション不使用）。月案（クラス月案）/保育経過記録/要録の生成は ADK の `get_fast_api_app` が出す
+  **ネイティブ REST**（`/run_sse`・`/apps/{app}/users/{u}/sessions`・`PATCH …/sessions`）をフロント SPA が直接叩く＝
   **自前 Runner を組まない**（server.py の方針・§9）。harness/agents/schemas は不変のまま動く。
 - improver（二階）だけは discoverable app でない（root_agent を持たない＝improver/CLAUDE.md）ため、
   `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動する（run_improver.py と同型・
@@ -25,8 +27,8 @@
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
 - **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`・
-  **`/api/parse-upload`**＝アップロード取込のファイル解析）と
-  **書類アーカイブの書込（POST `/api/records*`＝DB へのゴミデータ・偽承認証跡の防止）**を
+  **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）と
+  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**を
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
 - **アップロード取込（「書類を見る」タブ）は中継のみ**：既存ファイル（PDF/Word/Excel）を既存スキーマへ
   取り込む。フォルダ（種別）から kind、（personal 種別なら）子どもフォルダから child が場所で決まる（別建ての
@@ -40,6 +42,10 @@
   **IAP（Phase 3）配下では `iap.py` の検証済み Google アカウント email が actor に優先**され
   （`IAP_AUDIENCE` 設定時のみ JWT 署名検証・users へ auto-provision＝`record_store.touch_user`・
   表示名設定済みなら「表示名（email）」）、未設定は完全降格＝ヘッダを信用しない（fail-closed）。
+  **サインイン時はヘッダの担当者欄が「自分の表示名」編集欄**になり、`POST /api/user`（`adk.setUserProfile`）で
+  `record_store.set_user_display_name` を叩いて display_name を DB に登録/編集する（email は body でなく IAP 検証済み値で
+  解決＝偽装不可・未サインインは 403・IAP が認証ゆえパスコードゲート外）。表示は `/api/config` の user_email／user_display_name
+  （未登録は email をプレースホルダに出して登録を促す・未サインインは従来の自己申告＋localStorage）。
   **アーカイブの失敗で本流（state 保存・承認）を壊さない**が、skipped/error は表示行で正直に出す（偽の緑を出さない）。
   子ども選択肢は入力式コンボボックス（`app.js` の `childCombo`＝前方一致の候補＋Tab/Enter/クリックで補完・
   30人規模でもスケール。チップ全列挙は廃止）。候補ソースは `/api/children`（児童マスタ）があればそこから
@@ -112,7 +118,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
   リテラル路 diary-entries/diary-meta より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
-  **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
+  **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`POST /api/user`**（サインイン中
+  ユーザー自身の表示名を **IAP 検証済み email に紐づけて**設定＝`record_store.set_user_display_name` 中継・email は body 由来を使わず偽装不可・
+  未サインインは 403・IAP が認証ゆえ **パスコードゲート外**）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
   辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
@@ -140,10 +148,16 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `upload_parse.py` … アップロード取込の実体（`parse_uploaded_file`）。extract →（`build_upload_parser_agent` を
   InMemoryRunner で1パス駆動＝improver_stream と同型・SSE 無しの一発）→ 対象キー/child/age_band を保育士入力で
   **権威的に上書き**→ `finalize.extract_json_block`→`finalize_entry` で検査・整形（決定的実体は harness）。creds 無/LLM 失敗は正直に error 降格。
-- `static/` … 保育士 SPA。**上位タブは3つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
-  種別を切替。フロー本体は共通で入力欄と seed だけ切替・対象児コンボは共有・結果エリアは種別ごとに保持・生成中は種別切替をロック。
-  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1。**月案セグメントはクラス月案に一本化**＝flow kind=class_monthly・年齢帯（クラス）で回す＝
-  クラス単位なので対象児コンボは非表示・前月サンプルは複数児。個別月案はバックエンド/アーカイブ閲覧で温存）／**育てる**／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
+- `proofread.py` … 校正AI（日本語チェック・言い換え提案）の実体（`proofread_entry`／`collect_items`）。手入力 entry から
+  **叙述文（プロース系）だけ**を id/パス/ラベル付きで集め（数量的な生活記録・仮名・タグ・日付は渡さない＝AI に事実を
+  触らせない・§14）、`build_proofreader_agent` を InMemoryRunner で1パス駆動→```json フェンスの提案を復元→**id→entry の
+  パスへ写像**して返す（元と同一/空/対象外 id は落とす安全網）。中継のみ（採否・反映は front・提案の実体は agents）。
+  `/api/proofread`＝LLM 口＝`_GATED_PREFIX` でパスコードゲート・creds 無/LLM 失敗は 200＋error で正直に降格（そのまま保存できる）。
+- `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
+  種別を切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
+  クラス未登録/DB 未接続は年齢帯チップへ降格・記録日は既定=今日）／月案/経過記録/要録は共通の ADK フロー（`docflow.js`）。
+  バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1〔日誌は載らない〕。**月案セグメントはクラス月案に一本化**）／**育てる**／
+  **クラス・園児**（園の名簿管理＝`classes.js`・クラス定義＋園児登録/割当・日誌 roster の素）／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
   「指針を育てる」（agentic な勘所）｜「表記ルール」（決定的な統一）**。仕組みは分離のまま（policy_store と notation_store・§5）で、
   保育士から見た「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。**「指針を育てる」には対象書類セレクタ**（`app.js` の
   `POLICY_TARGETS`＝すべて/共通/日誌/月案/保育経過記録/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（いまの指針カード）を「共通＋その書類」に

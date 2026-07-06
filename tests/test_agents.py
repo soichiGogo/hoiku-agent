@@ -18,13 +18,12 @@ def _tool_names(agent) -> set[str]:
 def test_continuity_tool_wiring_author_and_reviewer():
     """継続把握は recall_child_history に一本化、search_past_documents は agent から外す（§9・B）。"""
     pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync で有効化）")
-    from hoiku_agent.agents.author_agent import build_author_agent
+    # 保育日誌の作成AI（build_author_agent）は退役（手入力＝AI 生成を通さない）ため対象外。
     from hoiku_agent.agents.child_record_author_agent import build_child_record_author_agent
     from hoiku_agent.agents.monthly_author_agent import build_monthly_author_agent
     from hoiku_agent.agents.review_agent import build_review_agent
 
     for build in (
-        build_author_agent,
         build_monthly_author_agent,
         build_child_record_author_agent,
         build_review_agent,

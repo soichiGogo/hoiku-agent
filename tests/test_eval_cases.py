@@ -80,8 +80,10 @@ def test_evalset_files_exist():
 
 
 def test_case_count_meets_minimum():
-    """§12：15ケース以上（v0 は 15–30 で十分・数より質）。"""
-    assert len(_all_cases()) >= 15
+    """§12：ケースの下限（数より質）。保育日誌の AI 生成を退役したため eval は下流文書中心
+    （保育経過記録6＋要録3＝9件）。母集団が痩せていないかの安全網＝8件以上を要求する
+    （現場データが増えたら引き上げる。クラス月案の evalset 追加は残課題）。"""
+    assert len(_all_cases()) >= 8
 
 
 def test_eval_ids_are_unique():
