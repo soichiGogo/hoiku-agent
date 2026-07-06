@@ -233,6 +233,25 @@ _engine = db.engine
 reset_engine_cache = db.reset_engine_cache
 
 
+def _write_error(exc: Exception) -> dict:
+    """書込系の例外を安定した error dict へ。
+
+    テーブル/カラム不在（＝migration 未適用の典型・§ prod-db-migration-drift）は生の psycopg 文字列を
+    UI に出さず、専用コード＋対処を返す（record_store は fail-loud だが、露出する文言は保育士に意味が
+    通るものにする）。それ以外は従来どおり詳細を返す。分類は harness/db に1つ。
+    """
+    if db.is_missing_schema_error(exc):
+        return {
+            "status": "error",
+            "code": "db_schema_unready",
+            "detail": (
+                "書類アーカイブのデータベースが未整備です（DB migration 未適用の可能性）。"
+                "本番 DB に alembic upgrade head を適用してください。"
+            ),
+        }
+    return {"status": "error", "detail": str(exc)}
+
+
 def store_status() -> str:
     """ストアの状態を正直に返す（UI が偽の永続を出さないため・policy_store.store_status と同じ哲学）。
 
@@ -486,7 +505,7 @@ def save_document(
                 "doc_status": doc.status,
             }
     except (ValueError, SQLAlchemyError) as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 def touch_user(email: str, *, now: datetime) -> dict:
@@ -514,7 +533,7 @@ def touch_user(email: str, *, now: datetime) -> dict:
                 "active": user.active,
             }
     except SQLAlchemyError as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 def set_user_display_name(email: str, display_name: str, *, now: datetime) -> dict:
@@ -547,7 +566,7 @@ def set_user_display_name(email: str, display_name: str, *, now: datetime) -> di
                 "active": user.active,
             }
     except SQLAlchemyError as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 def upsert_child(
@@ -593,7 +612,7 @@ def upsert_child(
                 child.updated_at = now
             return {"status": "created" if created else "exists", **_child_view(child)}
     except SQLAlchemyError as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 def upsert_class(name: str, age_band: str, fiscal_year: str = "", *, now: datetime) -> dict:
@@ -634,7 +653,7 @@ def upsert_class(name: str, age_band: str, fiscal_year: str = "", *, now: dateti
                     cls.updated_at = now
             return {"status": "created" if created else "exists", **_class_view(cls)}
     except SQLAlchemyError as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 def assign_child_to_class(child_display_name: str, class_id: str | None, *, now: datetime) -> dict:
@@ -667,7 +686,7 @@ def assign_child_to_class(child_display_name: str, class_id: str | None, *, now:
             session.flush()
             return {"status": "ok", **_child_view(child, cls)}
     except SQLAlchemyError as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 def get_child(display_name: str) -> dict | None:
@@ -704,7 +723,7 @@ def approve_document(kind: str, entry: dict, *, actor: str, now: datetime) -> di
             )
             return {"status": "approved", "document_id": str(doc.id)}
     except (ValueError, SQLAlchemyError) as e:
-        return {"status": "error", "detail": str(e)}
+        return _write_error(e)
 
 
 # ──────────────────────────── 読取 API（降格＝空・L2/L3 seed の取得元） ────────────────────────────

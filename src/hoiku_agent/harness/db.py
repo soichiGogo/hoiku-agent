@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase
@@ -48,3 +50,57 @@ def reset_engine_cache() -> None:
     for eng in _ENGINES.values():
         eng.dispose()
     _ENGINES.clear()
+
+
+# --- スキーマ整合の観測（migration drift の可視化・§ prod-db-migration-drift） -------------------
+# ここはドメインロジックではなく接続基盤の観測：新しい migration を本番 DB に上げ忘れると（CD が
+# 自動適用しても手動 gcloud 等で経路が外れると）テーブル欠落が record_store を fail-loud で落とし、
+# 保育士に生の 500 を見せる。それを「起動時に気づける」「素の stack trace でなく明快な応答にする」ための
+# 純粋な補助。判定ロジックは決定的で、tests/test_harness から creds 不要にテストできる。
+
+
+def is_missing_schema_error(exc: BaseException | None) -> bool:
+    """例外が「テーブル/カラム不在」（＝migration 未適用の典型）かをドライバ非依存に判定する。
+
+    Postgres(psycopg) は `UndefinedTable`/`UndefinedColumn`、sqlite は "no such table/column"。
+    SQLAlchemy は DBAPI 例外を `.orig` に包むため orig/__cause__ の連鎖も辿る（循環は id で防ぐ）。
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if type(cur).__name__ in ("UndefinedTable", "UndefinedColumn"):
+            return True
+        msg = str(cur).lower()
+        if any(
+            k in msg
+            for k in ("no such table", "no such column", "undefinedtable", "undefinedcolumn")
+        ):
+            return True
+        cur = getattr(cur, "orig", None) or getattr(cur, "__cause__", None)
+    return False
+
+
+def missing_tables(existing: Iterable[str], expected: Iterable[str]) -> list[str]:
+    """期待テーブルのうち実 DB(existing) に無いものを整列して返す（純関数）。"""
+    have = set(existing)
+    return sorted(t for t in set(expected) if t not in have)
+
+
+def schema_drift() -> list[str]:
+    """DB 接続時、ORM 台帳(Base.metadata) に対し実 DB に不足するテーブル名を返す。
+
+    DATABASE_URL 未設定（降格）・到達不能・点検失敗時は空リスト（観測は best-effort＝起動を止めない）。
+    全ストアのモデルを import してから台帳を読む（遅延 import で循環回避）。
+    """
+    eng = engine()
+    if eng is None:
+        return []
+    # record_store / policy_store / notation_store / template_store のモデルを Base.metadata へ登録。
+    from . import notation_store, policy_store, record_store, template_store  # noqa: F401
+
+    try:
+        existing = sa.inspect(eng).get_table_names()
+    except Exception:
+        return []
+    return missing_tables(existing, Base.metadata.tables.keys())
