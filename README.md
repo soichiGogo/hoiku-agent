@@ -73,10 +73,10 @@ adk web src                  # ブラウザ UI（agents dir = src/。root で叩
 # 月案（L2 還流・前月日誌を seed して回す専用入口）
 uv run python scripts/run_monthly.py --child-id はるとくん --month 2026-07
 
-# クラス月案（園の実様式＝月間指導計画・L2 還流・前月のクラス日誌を seed して回す専用入口）
+# クラス月案（園の実様式＝月間指導計画・クラス児童の保育経過記録＋それまでのクラス月案＋未反映期間の日誌を seed して回す専用入口）
 uv run python scripts/run_class_monthly.py --age-band 0-2 --month 2026-07
 
-# 保育経過記録（L3 還流・期間日誌を seed して回す専用入口）
+# 保育経過記録（L3 還流・期間日誌＋前回までの保育経過記録を seed して回す専用入口）
 uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06
 
 # 本番入口（Cloud Run と同じ）／配信
