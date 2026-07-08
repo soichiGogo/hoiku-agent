@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     # 野放しになるのを防ぐ。空なら無効＝ローカル開放（src/hoiku_agent/web）。
     demo_passcode: str = ""
 
+    # 可観測性＝Cloud Trace へのスパンエクスポート（ADK ネイティブの trace_to_cloud を server.py が
+    # 中継）。true にすると agent 実行・LLM 呼び出し・ツール呼び出しの OTel スパンが Cloud Trace へ
+    # 送られ、1リクエストの軌跡（どのツールを呼び・どこで時間を食ったか）を Trace エクスプローラで
+    # 追える（GOOGLE_CLOUD_PROJECT ＋ 書込権限 roles/cloudtrace.agent が前提）。既定 false＝ローカル/
+    # CI/テストでは送らない（本番は deploy.yml が TRACE_TO_CLOUD=true を注入する）。ログ相関
+    # （logging_config の X-Cloud-Trace-Context）と対になる観測の両輪。
+    trace_to_cloud: bool = False
+
     # IAP for Cloud Run（Phase 3 認証）の JWT audience（IAP 設定画面/ドキュメントの値）。
     # 設定すると web が `x-goog-iap-jwt-assertion` ヘッダを署名検証し、検証済みの Google アカウント
     # email を actor（承認・編集の証跡）に使う。未設定は完全降格＝ヘッダを一切信用しない

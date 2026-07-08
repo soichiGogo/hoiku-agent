@@ -46,6 +46,9 @@ app = get_fast_api_app(
     agents_dir="src",
     memory_service_uri=settings.memory_service_uri,  # agentengine://<id> or None→InMemory
     session_service_uri=settings.session_service_uri,  # 同上：Cloud Run のインスタンス跨ぎでセッション保持
+    # agent 実行・LLM・ツール呼び出しのスパンを Cloud Trace へ（可観測性）。ADK ネイティブ配線に
+    # 委ねる（自前 OTel 手組みしない＝§9 と同型）。既定 false＝ローカル/CI は送らない（config.py）。
+    trace_to_cloud=settings.trace_to_cloud,
     web=True,
 )
 
