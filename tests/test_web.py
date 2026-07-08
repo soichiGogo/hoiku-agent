@@ -970,6 +970,88 @@ def test_get_record_missing_or_invalid_404(records_db) -> None:
     )
 
 
+def test_feedback_save_and_list_flow(records_db) -> None:
+    """👍👎＋ひとことを書類に紐付けて保存し、一覧で返す（version_seq・actor も添う）。"""
+    c = _client()
+    saved = c.post(
+        "/api/records", json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
+    ).json()
+    doc_id = saved["document_id"]
+    r = c.post(
+        "/api/records/feedback",
+        json={
+            "document_id": doc_id,
+            "verdict": "down",
+            "comment": "もう少し具体的に",
+            "actor": "保育士A",
+        },
+    ).json()
+    assert r["status"] == "saved" and r["version_seq"] == 1
+    # 一覧（GET）はリテラル路として {document_id} に飲まれず 200・保存済みを返す。
+    body = c.get("/api/records/feedback", params={"document_id": doc_id}).json()
+    assert body["store"] == "ok"
+    assert len(body["feedback"]) == 1
+    fb = body["feedback"][0]
+    assert fb["verdict"] == "down"
+    assert fb["comment"] == "もう少し具体的に"
+    assert fb["actor"] == "保育士A"
+    assert fb["version_seq"] == 1
+
+
+def test_feedback_write_gated_read_open(records_db, monkeypatch) -> None:
+    """フィードバックの書込はパスコードゲート（辞書荒らしと同枠）・読取は素通し。"""
+    monkeypatch.setattr(settings, "demo_passcode", "secret")
+    c = _client()
+    doc_id = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"},
+        headers={"X-Demo-Passcode": "secret"},
+    ).json()["document_id"]
+    payload = {"document_id": doc_id, "verdict": "up", "comment": "良い"}
+    assert c.post("/api/records/feedback", json=payload).status_code == 401  # 書込は要パスコード
+    assert (
+        c.get("/api/records/feedback", params={"document_id": doc_id}).status_code == 200
+    )  # 読取は素通し
+    ok = c.post("/api/records/feedback", json=payload, headers={"X-Demo-Passcode": "secret"})
+    assert ok.status_code == 200 and ok.json()["status"] == "saved"
+
+
+def test_feedback_iap_actor_precedence(records_db, monkeypatch) -> None:
+    """フィードバックの actor も IAP 検証済み email が自己申告に優先する（承認証跡と同じ流儀）。"""
+    from hoiku_agent.web import iap
+
+    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
+    monkeypatch.setattr(
+        iap,
+        "_verify_assertion",
+        lambda assertion, audience: {"email": "accounts.google.com:sensei@example.com"},
+    )
+    c = _client()
+    headers = {"x-goog-iap-jwt-assertion": "signed-jwt"}
+    doc_id = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"},
+        headers=headers,
+    ).json()["document_id"]
+    c.post(
+        "/api/records/feedback",
+        json={"document_id": doc_id, "verdict": "up", "comment": "x", "actor": "なりすまし名義"},
+        headers=headers,
+    )
+    body = c.get("/api/records/feedback", params={"document_id": doc_id}).json()
+    assert body["feedback"][0]["actor"] == "sensei@example.com"
+
+
+def test_feedback_degrades_when_db_unset(monkeypatch) -> None:
+    """DB 未接続はフィードバック保存 skipped・一覧空（本流を壊さない補助シグナル）。"""
+    monkeypatch.setattr(settings, "database_url", "")
+    record_store.reset_engine_cache()
+    c = _client()
+    r = c.post("/api/records/feedback", json={"document_id": "x", "verdict": "up", "comment": "y"})
+    assert r.json()["status"] == "skipped"
+    assert c.get("/api/records/feedback").json() == {"feedback": [], "store": "disabled"}
+
+
 def test_get_record_read_not_passcode_gated(records_db, monkeypatch) -> None:
     """単一書類の閲覧は読取＝非ゲート（保存はゲート・読み取りは素通し）。"""
     monkeypatch.setattr(settings, "demo_passcode", "secret")
