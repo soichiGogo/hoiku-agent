@@ -20,6 +20,8 @@
 #            RAG_CORPUS / AGENT_ENGINE_ID / CLOUDSQL_INSTANCE / IAP_AUDIENCE
 #            MAX_INSTANCES（インスタンス上限＝コスト/濫用の実質ストッパ・既定 4）
 #            DATABASE_URL_SECRET（Secret Manager のシークレット名＝推奨の DB 接続注入経路）
+#            TRACE_TO_CLOUD（Cloud Trace へのスパンエクスポート＝可観測性・既定 true。実行 SA に
+#              roles/cloudtrace.agent が必要＝docs/ライブ実行手順.md §1。切るなら false を設定）
 #      （未設定なら RAG/Memory/DB（アーカイブ＋指針）は降格＝§9/Phase 1/2）。
 #      任意 secret: DATABASE_URL（Secret Manager を使わない場合の後方互換フォールバック＝平文 env 注入。
 #        推奨は上の DATABASE_URL_SECRET（Secret Manager にパスワードを置き Cloud Run が参照）。
@@ -144,7 +146,13 @@ jobs:
           MODEL_LOCATION="${{ vars.MODEL_LOCATION }}"
           MODEL_LOCATION="${MODEL_LOCATION:-global}"
 
-          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,MODEL_LOCATION=$MODEL_LOCATION,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }}"
+          # Cloud Trace へのスパンエクスポート（可観測性・server.py の trace_to_cloud）。既定 true＝
+          # agent/LLM/ツール呼び出しの軌跡を Trace エクスプローラで追える。実行 SA に
+          # roles/cloudtrace.agent が要る（未付与でも app は落ちない＝export エラーがログに出るだけ）。
+          TRACE_TO_CLOUD="${{ vars.TRACE_TO_CLOUD }}"
+          TRACE_TO_CLOUD="${TRACE_TO_CLOUD:-true}"
+
+          ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,MODEL_LOCATION=$MODEL_LOCATION,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }},TRACE_TO_CLOUD=$TRACE_TO_CLOUD"
 
           # DEMO_PASSCODE（LLM を回す口のゲート）を設定時のみ注入する。未設定なら注入しない
           # （＝ゲート無効）。IAP 有効環境でも二重防御として維持できる（§ Phase 3）。
