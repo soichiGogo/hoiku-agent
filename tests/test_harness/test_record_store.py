@@ -724,3 +724,55 @@ def test_class_reads_degrade_when_url_unset(monkeypatch):
     assert rs.list_children_in_class("x") == []
     assert rs.upsert_class("ひまわり組", "0-2", "2026", now=_NOW)["status"] == "skipped"
     assert rs.assign_child_to_class("はるとくん", None, now=_NOW)["status"] == "skipped"
+
+
+# ──────────────────────────── フィードバック（👍👎＋ひとこと） ────────────────────────────
+
+
+def test_save_feedback_links_to_document_and_current_version(db):
+    """👍👎＋ひとことは対象書類＋送信時点の現行版に紐付いて保存される（version_seq を返す）。"""
+    entry = _diary_entry("2026-07-01")
+    saved = rs.save_document("diary", entry, author_kind="ai", now=_NOW)
+    doc_id = saved["document_id"]
+    r = rs.save_feedback(doc_id, "down", "もう少し具体的に", actor="保育士A", now=_NOW)
+    assert r["status"] == "saved"
+    assert r["document_id"] == doc_id
+    assert r["version_seq"] == 1  # AI 確定版（seq 1）への評価
+    fbs = rs.list_feedback(doc_id)
+    assert len(fbs) == 1
+    assert fbs[0]["verdict"] == "down"
+    assert fbs[0]["comment"] == "もう少し具体的に"
+    assert fbs[0]["actor"] == "保育士A"
+    assert fbs[0]["version_seq"] == 1
+
+
+def test_save_feedback_tracks_the_version_seen(db):
+    """後で編集して版が進んでも、フィードバックは評価した版（seq）に紐付いたまま残る。"""
+    later = datetime(2026, 7, 5, 18, 5, 0)  # 2つ目の送信は別時刻（新しい順の並びを決定的に）
+    entry = _diary_entry("2026-07-02")
+    doc_id = rs.save_document("diary", entry, author_kind="ai", now=_NOW)["document_id"]
+    rs.save_feedback(doc_id, "up", "この観察が良い", now=_NOW)  # seq 1 への 👍
+    rs.save_document(
+        "diary", dict(entry, daily_aim="修正後"), author_kind="caregiver", now=_NOW
+    )  # seq 2
+    rs.save_feedback(doc_id, "down", "まだ気になる", now=later)  # seq 2 への 👎
+    fbs = rs.list_feedback(doc_id)  # 新しい順
+    assert [f["version_seq"] for f in fbs] == [2, 1]
+    assert [f["verdict"] for f in fbs] == ["down", "up"]
+
+
+def test_save_feedback_rejects_bad_verdict_and_missing_document(db):
+    entry = _diary_entry("2026-07-03")
+    doc_id = rs.save_document("diary", entry, author_kind="ai", now=_NOW)["document_id"]
+    assert rs.save_feedback(doc_id, "meh", "", now=_NOW)["status"] == "error"  # verdict 語彙外
+    assert rs.save_feedback("not-a-uuid", "up", "", now=_NOW)["status"] == "error"  # 不正 id
+    missing = "00000000-0000-0000-0000-000000000000"
+    assert rs.save_feedback(missing, "up", "", now=_NOW)["status"] == "error"  # 対象不在
+
+
+def test_feedback_degrades_when_url_unset(monkeypatch):
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    # DB 未接続でも保存は本流を壊さず skipped（改善フロー自体は別途動く）・読取は空。
+    assert rs.save_feedback("x", "up", "コメント", now=_NOW)["status"] == "skipped"
+    assert rs.list_feedback() == []

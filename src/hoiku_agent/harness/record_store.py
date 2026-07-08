@@ -50,6 +50,10 @@ AUTHOR_KINDS = ("ai", "caregiver", "imported")
 AUDIT_ACTIONS = ("finalize", "edit", "approve", "import")
 # 版の来歴 → 監査アクションの対応（save_document が積む版の action）。
 _AUTHOR_KIND_ACTION = {"ai": "finalize", "caregiver": "edit", "imported": "import"}
+# 書類フィードバックの評定：up（👍＝良かった）/ down（👎＝直したい）。保育士が確定/承認画面から
+# 送る軽量シグナル（§8「回す」の一次入力＋§12 eval 質的拡充の原資）。audit_events（操作の証跡）とは
+# 関心事が別なので独立テーブルに持つ（同じ関心事を別の場所で二重に表現しない）。
+FEEDBACK_VERDICTS = ("up", "down")
 
 # 性別→敬称（男→くん / 女→ちゃん 固定）。敬称は列で持たず gender を単一ソースにする（呼び名に付けて
 # 表示名＝child_id を合成する）。園の実運用でも保育士が性別を選ぶだけで敬称のゆれ・重複児を防ぐ。
@@ -225,6 +229,32 @@ class User(Base):
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
+
+
+class Feedback(Base):
+    """書類への保育士フィードバック（👍👎＋ひとこと）。確定/承認画面から送る軽量シグナル。
+
+    「回す（改善サイクル）」の一次入力＝保育士が生成物を評価した生ログ（§4/§8 の入力＝「修正メモ・👍👎」）。
+    ひとことは改善エージェント（improver）が指針カード化を判断する材料になり、👍👎 の生ログと修正差分は
+    eval ケースの質的拡充の原資でもある（§12・別系統・自動注入はしない）。
+
+    紐付けは **document（文書）＋ version（その時の版）** の両方。承認失効や後続編集で本文が変わっても
+    「どの版への評価か」を曖昧にしない（版は document_versions.id・現行版をサーバ側で解決して埋める）。
+    audit_events（誰が finalize/edit/approve/import したかの証跡）とは意味論が別なので独立テーブルにする。
+    """
+
+    __tablename__ = "feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(sa.ForeignKey("documents.id"), index=True)
+    # 評価対象の版（送信時点の現行版）。版が引けない稀な状態でも保存は落とさない＝nullable。
+    version_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("document_versions.id"))
+    verdict: Mapped[str] = mapped_column(sa.String(4))  # up / down
+    comment: Mapped[str] = mapped_column(sa.Text, default="")  # ひとこと（任意）
+    actor: Mapped[str] = mapped_column(
+        sa.String(100), default=""
+    )  # 担当者（IAP 検証済み ＞ 自己申告）
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
 
 
 # ──────────────────────────── engine（実体は harness/db.py・config が唯一の出所） ────────────────────────────
@@ -726,6 +756,68 @@ def approve_document(kind: str, entry: dict, *, actor: str, now: datetime) -> di
         return _write_error(e)
 
 
+def save_feedback(
+    document_id: str,
+    verdict: str,
+    comment: str = "",
+    *,
+    actor: str = "",
+    now: datetime,
+) -> dict:
+    """書類への 👍👎（＋ひとこと）を、その文書と**現行版**に紐付けて保存する（§8「回す」の一次入力）。
+
+    - 対象は document_id（確定画面／「書類を見る」タブが持つ書類 id）。版は保存時点の
+      `current_version_id` をサーバ側で解決して埋める（「どの版への評価か」を固定＝frontend に版 id を
+      扱わせない）。verdict は up/down のみ（それ以外は error）。comment（ひとこと）は任意。
+    - 降格：`DATABASE_URL` 未設定は {"status": "skipped"}（フィードバックは保存の本流ではない補助シグナル
+      なので、未接続でも改善フロー自体は別途動く）。不正 id/対象不在/DB 障害は {"status": "error"}。
+
+    Returns:
+        {"status": "saved", "feedback_id", "document_id", "version_seq"} ／
+        {"status": "skipped"} ／ {"status": "error", "detail"}
+    """
+    eng = _engine()
+    if eng is None:
+        return {"status": "skipped", "reason": "DATABASE_URL 未設定（フィードバック降格）"}
+    v = (verdict or "").strip()
+    if v not in FEEDBACK_VERDICTS:
+        return {
+            "status": "error",
+            "detail": f"verdict は {FEEDBACK_VERDICTS} のいずれか: {verdict!r}",
+        }
+    try:
+        doc_uuid = uuid.UUID(document_id)
+    except (ValueError, TypeError):
+        return {"status": "error", "detail": f"document_id が不正です: {document_id!r}"}
+    try:
+        with Session(eng) as session, session.begin():
+            doc = session.get(DocumentRecord, doc_uuid)
+            if doc is None:
+                return {"status": "error", "detail": "対象の書類がアーカイブにありません"}
+            version_seq = 0
+            if doc.current_version_id is not None:
+                version = session.get(DocumentVersion, doc.current_version_id)
+                version_seq = version.seq if version else 0
+            fb = Feedback(
+                document_id=doc.id,
+                version_id=doc.current_version_id,
+                verdict=v,
+                comment=(comment or "").strip(),
+                actor=actor,
+                created_at=now,
+            )
+            session.add(fb)
+            session.flush()
+            return {
+                "status": "saved",
+                "feedback_id": str(fb.id),
+                "document_id": str(doc.id),
+                "version_seq": version_seq,
+            }
+    except (ValueError, SQLAlchemyError) as e:
+        return _write_error(e)
+
+
 # ──────────────────────────── 読取 API（降格＝空・L2/L3 seed の取得元） ────────────────────────────
 
 
@@ -1187,6 +1279,49 @@ def list_audit_events(document_id: str | None = None, limit: int = 100) -> list[
                     "at": e.at.isoformat(),
                 }
                 for e in session.scalars(q)
+            ]
+    except (ValueError, SQLAlchemyError):
+        return []
+
+
+def list_feedback(document_id: str | None = None, limit: int = 100) -> list[dict]:
+    """書類フィードバック（👍👎＋ひとこと）の一覧（新しい順）。
+
+    document_id を与えるとその書類の分だけ返す（確定画面／「書類を見る」タブで既存フィードバックを
+    表示する用）。version_seq も添える（どの版への評価か）。降格・障害・不正 id は空（読取は落とさない
+    ＝list_audit_events と同じ）。
+    """
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        with Session(eng) as session:
+            q = sa.select(Feedback).order_by(Feedback.created_at.desc()).limit(limit)
+            if document_id:
+                q = q.where(Feedback.document_id == uuid.UUID(document_id))
+            rows = list(session.scalars(q))
+            # 版 id → seq を1回で解決（N+1 を避ける）。版が引けないものは seq 0。
+            version_ids = {f.version_id for f in rows if f.version_id is not None}
+            seq_by_version: dict[uuid.UUID, int] = {}
+            if version_ids:
+                seq_by_version = dict(
+                    session.execute(
+                        sa.select(DocumentVersion.id, DocumentVersion.seq).where(
+                            DocumentVersion.id.in_(version_ids)
+                        )
+                    ).all()
+                )
+            return [
+                {
+                    "id": str(f.id),
+                    "document_id": str(f.document_id),
+                    "verdict": f.verdict,
+                    "comment": f.comment,
+                    "actor": f.actor,
+                    "version_seq": seq_by_version.get(f.version_id, 0),
+                    "at": f.created_at.isoformat(),
+                }
+                for f in rows
             ]
     except (ValueError, SQLAlchemyError):
         return []
