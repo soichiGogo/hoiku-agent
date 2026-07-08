@@ -164,6 +164,42 @@ export async function approveRecord(kind, entry, actor) {
   }
 }
 
+// 書類への 👍👎（＋ひとこと）を保存する（確定/承認画面の軽量フィードバック＝§8「回す」の一次入力）。
+// verdict は "up"/"down"。書込ゲート（401）は needsGate を添えて呼び出し側が gate を促す。
+// 未接続は status:"skipped"（本流を壊さない補助シグナル）・失敗は status:"error"。
+export async function saveFeedback(documentId, verdict, comment, actor) {
+  try {
+    const r = await fetch("/api/records/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        document_id: documentId || "",
+        verdict,
+        comment: comment || "",
+        actor: actor || "",
+      }),
+    });
+    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
+    if (!r.ok) return { status: "error", detail: "フィードバックの保存に失敗 (" + r.status + ")" };
+    return await r.json();
+  } catch (e) {
+    return { status: "error", detail: e.message };
+  }
+}
+
+// 書類フィードバックの一覧（新しい順）。未接続/障害は空＝呼び出し側が正直に降格する。
+export async function listFeedback(documentId) {
+  try {
+    const q = documentId ? "?document_id=" + encodeURIComponent(documentId) : "";
+    const r = await fetch("/api/records/feedback" + q);
+    if (!r.ok) return { feedback: [], store: "unavailable" };
+    const j = await r.json();
+    return { feedback: j.feedback || [], store: j.store || "unavailable" };
+  } catch {
+    return { feedback: [], store: "unavailable" };
+  }
+}
+
 // 期間内の日誌 entry（アーカイブの最新版）＝月案 L2／保育経過記録 L3 の seed。空＝呼び出し側がサンプルへ降格。
 export async function getDiaryEntries(dateFrom, dateTo) {
   try {
