@@ -67,6 +67,50 @@ const DOC_TYPES = [
 ];
 const DOC_TYPE_OF = Object.fromEntries(DOC_TYPES.map((d) => [d.key, d]));
 
+// 書類作成画面のカテゴリ別グループ表示（案A）。保育書類を4カテゴリ（指導計画/保育記録/保護者連携/
+// 園運営）に分けて一望させる。items の status＝"ready"（作成できる＝DOC_TYPES にフロー実体あり）／
+// "soon"（今後対応予定＝灰色の非選択 placeholder・クリックで一言案内）。soon は生成させない＝
+// ロードマップの提示（対応済みと未対応を1画面で見せる）。ready item の label/icon は DOC_TYPES から引く
+// （二重管理しない）ので key のみ、soon item は自前 label/icon を持つ。
+const DOC_CATEGORIES = [
+  {
+    key: "plan",
+    label: "指導計画",
+    icon: "calendar",
+    items: [
+      { key: "annual", status: "soon", label: "年間指導計画", icon: "calendar" },
+      { key: "monthly", status: "ready" },
+      { key: "weekly", status: "soon", label: "週案", icon: "calendar" },
+      { key: "daily", status: "soon", label: "日案", icon: "calendar" },
+    ],
+  },
+  {
+    key: "record",
+    label: "保育記録",
+    icon: "chart",
+    items: [
+      { key: "diary", status: "ready" },
+      { key: "record", status: "ready" },
+      { key: "youroku", status: "ready" },
+    ],
+  },
+  {
+    key: "parent",
+    label: "保護者連携",
+    icon: "caregiver",
+    items: [
+      { key: "renrakucho", status: "soon", label: "連絡帳", icon: "memo" },
+      { key: "otayori", status: "soon", label: "おたより", icon: "memo" },
+    ],
+  },
+  {
+    key: "ops",
+    label: "園運営",
+    icon: "users",
+    items: [{ key: "shift", status: "soon", label: "勤務シフト", icon: "clock" }],
+  },
+];
+
 // 表示名→誕生日（DB 接続時のみ・/api/children の birthdate を main() で流し込む）。年齢帯の自動判定に使う。
 const BIRTHDATE_OF = {};
 
@@ -438,6 +482,59 @@ function chipGroup(container, values, onPick, iconName, labelOf) {
   };
   getter.select = (v) => {
     if (chips.has(v)) activate(v);
+  };
+  return getter;
+}
+
+// 書類作成の種別セレクタ（案A：カテゴリ別グループ表示）。categories を歩いてカテゴリ見出し＋チップ行を描く。
+// ready チップは選択可（onPick）、soon チップは灰色の非選択 placeholder（クリックで onSoon＝一言案内・
+// 選択状態は変えない）。契約は chipGroup と同じ＝選択中の ready key を返すゲッター（.select(key) も持つ）。
+// setSegBusy が `#doc-kind .chip` の disabled を切るので、生成中は soon も含め全チップがロックされる。
+function renderDocMenu(container, categories, { onPick, onSoon } = {}) {
+  container.innerHTML = "";
+  let selected = null;
+  const chips = new Map(); // ready key -> chip 要素
+  const activate = (key) => {
+    container.querySelectorAll(".chip.is-active").forEach((c) => c.classList.remove("is-active"));
+    const c = chips.get(key);
+    if (c) c.classList.add("is-active");
+    selected = key;
+  };
+  for (const cat of categories) {
+    const group = el("div", "doc-cat");
+    group.appendChild(el("div", "doc-cat-head", iconHTML(cat.icon) + esc(cat.label)));
+    const row = el("div", "doc-cat-row");
+    for (const it of cat.items) {
+      const meta = DOC_TYPE_OF[it.key];
+      const ready = it.status === "ready";
+      const label = it.label || (meta && meta.label) || it.key;
+      const icon = it.icon || (meta && meta.icon) || cat.icon;
+      const chip = el(
+        "button",
+        "chip" + (ready ? "" : " is-soon"),
+        iconHTML(icon) + esc(label) + (ready ? "" : '<span class="chip-soon">近日</span>'),
+      );
+      chip.type = "button";
+      if (ready) {
+        chip.onclick = () => {
+          activate(it.key);
+          onPick && onPick(it.key);
+        };
+        chips.set(it.key, chip);
+      } else {
+        // 非選択だが click は拾って案内を出す（disabled にすると無反応になるため aria で伝える）。
+        chip.setAttribute("aria-disabled", "true");
+        chip.title = "この書類は今後対応予定です";
+        chip.onclick = () => onSoon && onSoon({ ...it, label });
+      }
+      row.appendChild(chip);
+    }
+    group.appendChild(row);
+    container.appendChild(group);
+  }
+  const getter = () => selected;
+  getter.select = (key) => {
+    if (chips.has(key)) activate(key);
   };
   return getter;
 }
@@ -1097,14 +1194,12 @@ async function main() {
   }
   const RUN = { diary: runDiary, monthly: runMonthly, record: runRecord, youroku: runYouroku };
 
-  // 種別セグメント：切替で入力欄・結果エリア・説明文・ボタンラベルを追従（結果エリアは種別ごとに保持）。
-  const docKind = chipGroup(
-    $("doc-kind"),
-    DOC_TYPES.map((d) => d.key),
-    (key) => switchDocType(key),
-    (key) => DOC_TYPE_OF[key].icon,
-    (key) => DOC_TYPE_OF[key].label,
-  );
+  // 種別セレクタ（カテゴリ別グループ表示・案A）：ready の切替で入力欄・結果エリア・説明文・ボタンラベルを
+  // 追従（結果エリアは種別ごとに保持）。soon（今後対応予定）はクリックで一言案内を出すだけ（選択は変えない）。
+  const docKind = renderDocMenu($("doc-kind"), DOC_CATEGORIES, {
+    onPick: (key) => switchDocType(key),
+    onSoon: (it) => showSoonNotice(it),
+  });
   function switchDocType(key) {
     for (const d of DOC_TYPES) {
       const on = d.key === key;
@@ -1117,9 +1212,17 @@ async function main() {
     const needsChild = t.needsChild !== false;
     $("doc-child-label").classList.toggle("hidden", !needsChild);
     $("doc-children").classList.toggle("hidden", !needsChild);
-    $("doc-desc").textContent = t.desc;
+    const dd = $("doc-desc");
+    dd.textContent = t.desc;
+    dd.classList.remove("is-soon-note"); // ready 選択で soon 案内をクリア
     $("doc-run-label").textContent = t.runLabel;
     status.clearPhase();
+  }
+  // soon 書類のクリック案内（無反応にしない）。ready 選択はそのまま＝説明文欄に一言だけ出す。
+  function showSoonNotice(it) {
+    const dd = $("doc-desc");
+    dd.textContent = `「${it.label}」は今後対応予定です。現在は作成できません。`;
+    dd.classList.add("is-soon-note");
   }
   // 生成中は種別セグメントを固定（切替ロック）。対象児コンボ・入力欄はロックしない。
   function setSegBusy(busy) {
@@ -1131,6 +1234,7 @@ async function main() {
       });
   }
   $("doc-run").onclick = () => RUN[docKind()]();
+  docKind.select("diary"); // 既定チップを点灯
   switchDocType("diary"); // 初期表示（既定＝保育日誌）
   onChildChange(docChild()); // 初期の seed 件数・年齢帯を対象児に合わせる
   onClassAgeChange(classAge()); // クラス月案の前月サンプル件数を初期表示（クラス＝年齢帯）
