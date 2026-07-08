@@ -123,6 +123,9 @@
   児童を割り当てる＝**日誌手入力フォームの roster・年齢帯自動決定・園児登録の受け皿**（同一性は name+fiscal_year・現在の所属1本）。
   `users`＋`touch_user`／`set_user_display_name`（Phase 3）＝IAP の検証済み email を
   初回アクセスで auto-provision（children と同じ流儀）・`set_user_display_name` で display_name を後から設定（自分の表示名・認可は持たない）。
+  **書類フィードバック＝`Feedback`（👍👎＝verdict up/down＋comment＋actor・migration 0008・`save_feedback`/`list_feedback`）**＝
+  確定/承認画面から送る軽量シグナルを document＋その版（送信時点の現行版）に紐付けて残す（§8「回す」の一次入力＋§12 eval 質的拡充の原資）。
+  audit_events（操作の証跡）とは関心事が別なので独立テーブル（評価の生ログ・混ぜない・降格safe）。
   スキーマ適用は repo root の Alembic（`migrations/`）。clock は外部注入。
 
 ## スタブを埋めるとき

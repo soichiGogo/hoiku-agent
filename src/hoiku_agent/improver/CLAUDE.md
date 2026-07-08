@@ -9,6 +9,12 @@
 
 - **root_agent とは別エントリ。** 一階の `agent.py`（root_agent＝document_pipeline）に組み込まない・
   `improver` を import しない。**自動起動しない**（手動トリガ：専用スクリプト or Web の SSE 駆動）。
+  **確定/承認画面の 👍👎＋ひとことも同じ `/api/improve`（`feedback`＝valence を実値で載せる）を再利用する起動トリガ**
+  ＝新しい生成経路を作らず別エントリの原則を保つ（保存＝record_store は harness の別フロー・§5）。
+- **毎回カードを作らない（「必要がありそうなら」の判断は improver の責務）。** 👍👎 起点で回る以上、まず
+  「一般化できる勘所か」を判断し、特定の書類・場面に固有で一般化できない気づきなら指針を変えず終える
+  （`IMPROVER_INSTRUCTION`／`_build_input`〔web/scripts 両方・二重定義に注意〕に分岐あり）。フィードバックは
+  record_store に別途保存済みなので情報は失われない。
 - **番人＝意味的競合精査＋保育士の決定で即反映。** 4ツールで回す：`read_policy_cards`（既存カードを読む）→
   `propose_policy_card`（追加/改訂案＋意味的競合の申告。完全重複は安全網が検出）→ 競合なら `ask_caregiver`
   で**該当カードと新案を比較相談**（無くても反映可否を確認）→ `commit_policy_card`（保育士の決定で

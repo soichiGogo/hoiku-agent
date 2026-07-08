@@ -117,8 +117,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
   `/api/records/class-monthly-seed`（クラス月案 seed 3系統＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
   `/api/records/child-record-entries`（全期・`exclude_period` で作成対象の期を除外＝要録 L4／保育経過記録「前回まで」seed）／
+  `/api/records/feedback`（**書類フィードバック＝👍👎＋ひとこと**＝`record_store.save_feedback`/`list_feedback` の中継・POST 保存は
+  書込ゲート〔`_GATED_WRITE_PREFIX`〕・actor は `_resolve_actor`／GET 一覧は読取素通し・リテラル路なので `/api/records/{id}` より前に宣言）／
   `/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
-  リテラル路 diary-entries/diary-meta より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
+  リテラル路 diary-entries/diary-meta/feedback より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
   **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`POST /api/user`**（サインイン中
   ユーザー自身の表示名を **IAP 検証済み email に紐づけて**設定＝`record_store.set_user_display_name` 中継・email は body 由来を使わず偽装不可・
@@ -164,8 +166,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   保育士から見た「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。**「指針を育てる」には対象書類セレクタ**（`app.js` の
   `POLICY_TARGETS`＝すべて/共通/日誌/月案/保育経過記録/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（いまの指針カード）を「共通＋その書類」に
   絞り込み（`policy.setFilter`＝`render_for_doc` の前置注入範囲と一致）、`/api/improve` に `target_scope` を送って提案 scope の既定にする
-  （反映先の可視化・改善AIは既定として尊重しつつ内容的に共通と判断したら ask で提案＝勝手に変えない）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取）／`docflow.js`（日誌・月案・保育経過記録 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
-  `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」＋対応 kind のみ「Word様式でダウンロード」ボタン＝承認後も残す）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
+  （反映先の可視化・改善AIは既定として尊重しつつ内容的に共通と判断したら ask で提案＝勝手に変えない）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取＋`saveFeedback`/`listFeedback`）／`scopes.js`（doc kind→PolicyScope の唯一の対応表＝`POLICY_SCOPE_OF`・docflow の「指針を取り込む」絞りと feedback の target_scope で共用＝二重定義を作らない）／`feedback.js`（**確定/承認画面・アーカイブ詳細に置く 👍👎＋ひとことの軽量フィードバック導線**＝送信で `/api/records/feedback` に文書＋版で紐付け保存・ひとことがあれば「この気づきを指針に活かす」で**インラインに `makePolicy` を再インスタンス化**して改善エージェントを回す〔提案→比較相談→即反映＝育てるタブと同じ描画を再利用・二重実装しない〕・降格safe）／`docflow.js`（日誌・月案・保育経過記録 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
+  `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」＋対応 kind のみ「Word様式でダウンロード」ボタン＝承認後も残す・**`.doc-actions` に feedback バーを設置＋アーカイブ保存/編集/承認で document_id を保持**）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝
   欄ごと入力・タグ多選択・collect()→entry。**本文セクションの順序/ラベルは `/api/doc-template`（様式テンプレート）から駆動**＝ヘッダ・widget・collect はコード・
   未取得は既定順フォールバック。**クラス月案（buildClassMonthly）は非線形の園の実様式ルック**＝罫線の区分×領域グリッドを実 `<table>`＋
   セル内テキストエリアで描き〔養護/教育を rowspan・グリッド定義は `CLASS_GRID_ROWS`＝schemas の GRID_ROWS と同順〕、
