@@ -247,8 +247,26 @@ a{color:var(--primary-d)}
 /* 種別セグメント（書類を作る＝日誌/月案/保育経過記録の切替）＝均等割の少し大きめチップ */
 .seg{gap:var(--sp-2);margin-bottom:var(--sp-2)}
 .seg .chip{flex:1 1 0;justify-content:center;min-height:44px;padding:10px 14px;font-weight:600}
+
+/* 種別メニュー（案A：カテゴリ別グループ表示）＝カテゴリ見出し＋自然幅チップの折返し行。
+   書類が増えても破綻しないよう seg の均等割 fill は使わず wrap で流す。 */
+.doc-menu{display:flex;flex-direction:column;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+.doc-cat-head{display:flex;align-items:center;gap:6px;font-size:var(--fs-caption);font-weight:700;
+  color:var(--muted);letter-spacing:.04em;margin-bottom:var(--sp-2)}
+.doc-cat-head .ic{width:14px;height:14px;color:var(--muted)}
+.doc-cat-row{display:flex;flex-wrap:wrap;gap:7px}
+.doc-cat-row .chip{min-height:40px;font-weight:600}
+/* soon＝今後対応予定（破線＋くすみ・「近日」バッジ）。degraded トークンで「まだ」を意味付け（新色は足さない）。 */
+.chip.is-soon{border-style:dashed;border-color:var(--line-strong);color:var(--muted);cursor:default;font-weight:500}
+.chip.is-soon .ic{color:var(--muted)}
+.chip.is-soon:hover{border-color:var(--state-degraded)}
+.chip-soon{margin-left:2px;font-size:10px;font-weight:700;line-height:1;padding:2px 7px;border-radius:var(--r-pill);
+  background:var(--state-degraded-soft);color:var(--state-degraded-ink);border:1px solid var(--state-degraded)}
+
 /* 種別ごとの説明1行（hero の代替＝統合タブ内で選択中の書類を説明） */
 .doc-desc{margin:0 0 var(--sp-2);font-size:var(--fs-sm);color:var(--muted);line-height:1.6;max-width:62ch}
+/* soon 書類クリック時の一言案内（説明欄に degraded 色で出す） */
+.doc-desc.is-soon-note{color:var(--state-degraded-ink);font-weight:600}
 
 /* 対象児コンボボックス（前方一致＋Tab補完・30人規模でもスケールする入力式） */
 .combo{position:relative;max-width:340px}

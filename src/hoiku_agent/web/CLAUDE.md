@@ -157,8 +157,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   触らせない・§14）、`build_proofreader_agent` を InMemoryRunner で1パス駆動→```json フェンスの提案を復元→**id→entry の
   パスへ写像**して返す（元と同一/空/対象外 id は落とす安全網）。中継のみ（採否・反映は front・提案の実体は agents）。
   `/api/proofread`＝LLM 口＝`_GATED_PREFIX` でパスコードゲート・creds 無/LLM 失敗は 200＋error で正直に降格（そのまま保存できる）。
-- `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を種別セグメント（`app.js` の `DOC_TYPES`）で統合＝1タブ内で
-  種別を切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
+- `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を**カテゴリ別グループ表示の種別メニュー**
+  （`app.js` の `DOC_CATEGORIES`＋`renderDocMenu`）で1タブに統合＝4カテゴリ〔指導計画/保育記録/保護者連携/園運営〕に分け、対応済み（DOC_TYPES に
+  フロー実体あり）は選択可・**今後対応予定（年間指導計画/週案/日案/連絡帳/おたより/勤務シフト）は灰色の非選択 placeholder〔status="soon"・クリックで一言案内・
+  生成しない＝ロードマップ提示〕**。ready item の label/icon は DOC_TYPES から引く〔二重管理しない〕）で切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
   クラス未登録/DB 未接続は年齢帯チップへ降格・記録日は既定=今日）／月案/経過記録/要録は共通の ADK フロー（`docflow.js`）。
   バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1〔日誌は載らない〕。**月案セグメントはクラス月案に一本化**）／**育てる**／
   **クラス・園児**（園の名簿管理＝`classes.js`・クラス定義＋園児登録/割当・日誌 roster の素）／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
