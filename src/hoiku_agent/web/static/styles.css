@@ -837,6 +837,40 @@ select.de-input{appearance:auto;min-height:38px}
 .rup-msg.err{color:var(--state-fail-ink)}
 
 /* ============================================================
+   書類フィードバック（👍👎＋ひとこと）＝確定/承認画面・アーカイブ詳細に置く軽量導線
+   ============================================================ */
+.fbbar{margin-top:var(--sp-3);padding-top:var(--sp-3);border-top:1px dashed var(--line)}
+.de-body > .fbbar{margin:0 16px 14px}
+.fbbar-lead{display:flex;align-items:center;gap:6px;font-size:var(--fs-caption);font-weight:700;color:var(--ink-soft);margin-bottom:var(--sp-2)}
+.fbbar-lead .ic{width:15px;height:15px;color:var(--accent-d)}
+.fbbar-row{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.fb-thumbs{display:flex;gap:6px;flex:0 0 auto}
+.fb-thumb{display:inline-flex;align-items:center;gap:5px;min-height:38px;padding:0 12px;font:inherit;font-size:var(--fs-sm);
+  font-weight:700;color:var(--muted);background:var(--surface-2);border:1.5px solid var(--line-strong);
+  border-radius:var(--r-pill);cursor:pointer;transition:.15s;white-space:nowrap}
+.fb-thumb .ic{width:16px;height:16px}
+.fb-thumb:hover:not(.on){border-color:var(--primary)}
+.fb-up.on{color:var(--state-done-ink);background:var(--state-done-soft);border-color:var(--state-done)}
+.fb-down.on{color:var(--state-degraded-ink);background:var(--state-degraded-soft);border-color:var(--state-degraded)}
+.fb-comment{flex:1 1 220px;min-width:0;border:1.5px solid var(--line-strong);border-radius:var(--r-md);
+  padding:9px 12px;font:inherit;font-size:var(--fs-sm);color:var(--ink);background:var(--surface);resize:vertical;min-height:38px}
+.fb-comment:focus{border-color:var(--primary);outline:none}
+.fb-send{flex:0 0 auto}
+.fb-note{font-size:var(--fs-caption);color:var(--muted);margin-top:var(--sp-2);display:flex;align-items:flex-start;gap:5px}
+.fb-note:empty{display:none}
+.fb-note .ic{width:14px;height:14px;flex:0 0 auto;margin-top:2px}
+.fb-improve-wrap{margin-top:var(--sp-2)}
+.fb-improve-wrap:empty{display:none}
+.fb-improve-btn{color:var(--accent-d)}
+.fb-improve{margin-top:var(--sp-2);padding:var(--sp-3);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:var(--r-md);background:var(--surface-2)}
+.fb-improve:empty{display:none}
+.fb-improve-status{font-size:var(--fs-caption);color:var(--muted);margin:var(--sp-1) 0}
+.fb-improve-status:empty{display:none}
+/* 反映結果は flow の提案カードのラベル変化で示す＝全カードデッキは育てるタブに任せる（inline では隠す）。 */
+.fb-improve-grid,.fb-improve-history{display:none}
+
+/* ============================================================
    レスポンシブ
    ============================================================ */
 @media (max-width:680px){

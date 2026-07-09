@@ -7,6 +7,8 @@
 import * as adk from "./adk.js";
 import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner, actorName } from "./ui.js";
 import { renderEditableDoc } from "./docedit.js";
+import { makeFeedbackBar } from "./feedback.js";
+import { POLICY_SCOPE_OF } from "./scopes.js";
 
 const DOC_META = {
   diary: { title: "保育日誌", icon: "diary" },
@@ -16,10 +18,8 @@ const DOC_META = {
   nursery_record: { title: "保育要録", icon: "chart" },
 };
 
-// doc_type（フロントの kind）→ 指針カードの scope（harness の PolicyScope 値）。
-// 「指針を取り込む」ステップで共通＋当該書類のカードだけを絞って見せる（render_for_doc と同じ絞り）。
-// クラス月案は個別月案と同じ scope（月案）を流用する（勘所を共有＝§18）。
-const POLICY_SCOPE_OF = { diary: "保育日誌", monthly: "月案", class_monthly: "月案", child_record: "保育経過記録" };
+// doc_type（フロントの kind）→ 指針カードの scope は scopes.js の POLICY_SCOPE_OF を単一ソースに使う
+// （「指針を取り込む」ステップの絞り込み・👍👎→改善エージェントの target_scope で共通＝二重定義しない）。
 
 // 集計 prep を持つ doc_type の表示メタ（digest の state キー・見出し・稼働中フェーズ文言）。
 const PREP_META = {
@@ -405,6 +405,12 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const archNote = el("div", "persist-note archive-note");
     editor.panel._archNote = archNote;
     editor.panel._body.appendChild(archNote);
+    // 👍👎＋ひとこと（改善のヒント）＝承認後も残る場所に置く（editBar は承認時に clear されるため別行）。
+    // getDocId はアーカイブ保存で得た document_id（保存/編集/承認で更新）を返す＝紐付け先。
+    editor.panel._recordDocId = "";
+    editor.panel._body.appendChild(
+      makeFeedbackBar({ docKind, getDocId: () => editor.panel._recordDocId || "" }),
+    );
     area.appendChild(editor.panel);
 
     procStop();
@@ -412,7 +418,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     phase("保育士の確認・編集をお待ちしています", "waiting");
 
     // AI 確定版を書類アーカイブへ保存（Phase 1・author_kind=ai。表示より後＝UI をブロックしない）。
-    setArchiveNote(archNote, await adk.saveRecord(docKind, entry, doc, "ai", actorName()), "確定下書きの保存");
+    const aiSave = await adk.saveRecord(docKind, entry, doc, "ai", actorName());
+    if (aiSave.document_id) editor.panel._recordDocId = aiSave.document_id; // フィードバックの紐付け先
+    setArchiveNote(archNote, aiSave, "確定下書きの保存");
   }
 
   // アーカイブ（書類の永続保存）の結果表示。saved/approved＝済・skipped＝未接続降格・error＝失敗。
@@ -554,11 +562,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       if (preview._pre && res.formatted) preview._pre.textContent = res.formatted;
       // 編集内容を書類アーカイブにも版として積む（author_kind=caregiver＝AIとの修正差分が残る）。
       // アーカイブ失敗は本流（state 保存）を壊さず、表示行で正直に知らせる。
-      setArchiveNote(
-        editor.panel._archNote,
-        await adk.saveRecord(docKind, entry, res.formatted, "caregiver", actorName()),
-        "編集内容のアーカイブ保存",
-      );
+      const editSave = await adk.saveRecord(docKind, entry, res.formatted, "caregiver", actorName());
+      if (editSave.document_id) editor.panel._recordDocId = editSave.document_id; // フィードバック紐付け先
+      setArchiveNote(editor.panel._archNote, editSave, "編集内容のアーカイブ保存");
       return res;
     }
 
@@ -587,11 +593,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
         await save(); // 直前の編集を必ず保存・再検査してから承認する
         await adk.patchState(sessionId, { caregiver_approved: true });
         // 承認証跡をアーカイブに記録（誰が承認したか＝担当者名。ADK state の承認と並走）。
-        setArchiveNote(
-          editor.panel._archNote,
-          await adk.approveRecord(docKind, editor.collect(), actorName()),
-          "承認記録",
-        );
+        const apRes = await adk.approveRecord(docKind, editor.collect(), actorName());
+        if (apRes.document_id) editor.panel._recordDocId = apRes.document_id; // フィードバック紐付け先
+        setArchiveNote(editor.panel._archNote, apRes, "承認記録");
         lockEditor(editor.panel);
         clear(bar);
         bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));

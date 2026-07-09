@@ -15,6 +15,7 @@
 import * as adk from "./adk.js";
 import { renderEditableDoc } from "./docedit.js";
 import { actorName, banner, el, esc, iconHTML } from "./ui.js";
+import { makeFeedbackBar } from "./feedback.js";
 
 const KIND_LABEL = { diary: "保育日誌", monthly: "個別月案", class_monthly: "クラス月案", child_record: "保育経過記録", nursery_record: "保育要録" };
 const KIND_ICON = { diary: "diary", monthly: "calendar", class_monthly: "calendar", child_record: "chart", nursery_record: "chart" };
@@ -366,6 +367,9 @@ export function makeRecords(ui) {
     }
     act.append(msg);
     ui.detail.appendChild(act);
+
+    // 👍👎＋ひとこと（改善のヒント）。アーカイブ済み書類は id が安定＝そのまま紐付け先になる。
+    ui.detail.appendChild(makeFeedbackBar({ docKind: doc.doc_type, getDocId: () => doc.id }));
   }
 
   // ── アップロード取込（右ペインにフォームを描く） ──

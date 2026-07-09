@@ -319,7 +319,8 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   /* ---------- 実行 ---------- */
   // targetScope＝保育士が選んだ対象書類（PolicyScope 値・null＝すべて＝AI 判断）。改善エージェントの
   // scope の既定にする（backend は既定として尊重しつつ、内容的に共通と判断したら提案する＝勝手に変えない）。
-  async function run(memo, targetScope = null) {
+  // feedback＝👍👎 の valence（確定画面のフィードバック導線から起こすとき・育てるタブからは null）。
+  async function run(memo, targetScope = null, feedback = null) {
     clear(flow);
     cur = null;
     toolBadges = {};
@@ -338,7 +339,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     try {
       await adk.ssePost(
         "/api/improve",
-        { diff: memo, feedback: null, target_scope: targetScope, session_id: crypto.randomUUID() },
+        { diff: memo, feedback, target_scope: targetScope, session_id: crypto.randomUUID() },
         handleItem,
       );
     } catch (e) {

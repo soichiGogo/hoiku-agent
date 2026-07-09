@@ -123,6 +123,19 @@ class RecordApproveRequest(BaseModel):
     actor: str = ""
 
 
+class RecordFeedbackRequest(BaseModel):
+    """書類への 👍👎（＋ひとこと）＝確定/承認画面からの軽量フィードバック（§8「回す」の一次入力）。
+
+    対象書類は document_id（アーカイブ済み書類の id）。版はサーバ側で現行版を解決して紐付ける
+    （frontend に版 id を扱わせない）。実体は harness/record_store.save_feedback（web は now 注入の中継のみ）。
+    """
+
+    document_id: str
+    verdict: str  # up（👍）/ down（👎）
+    comment: str = ""  # ひとこと（任意）
+    actor: str = ""
+
+
 class ChildAddRequest(BaseModel):
     """新規児の登録（「書類を作る」で未登録名を選んだとき）。本名（姓/名）＋性別を受け取り、
     呼び名（名）＋敬称（性別導出）＝display_name を harness が合成して児童マスタへ upsert する。
@@ -707,6 +720,36 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 {"error": "month は YYYY-MM", "code": "invalid_request"}, status_code=400
             )
         return {**seed, "store": record_store.store_status()}
+
+    @app.post("/api/records/feedback")
+    def web_save_feedback(req: RecordFeedbackRequest, request: Request) -> dict:
+        """書類への 👍👎（＋ひとこと）を保存する（確定/承認画面の軽量フィードバック・§8「回す」の一次入力）。
+
+        書込なので `_GATED_WRITE_PREFIX`（/api/records 配下・非 GET）で自動ゲート（辞書荒らし・ゴミ投入
+        防止と同枠）。actor は承認証跡と同じ `_resolve_actor`（IAP 検証済み email ＞ 自己申告）。実体は
+        harness/record_store（web は now 注入の中継のみ）。DB 未接続は status:skipped を正直に返す
+        （フィードバックは本流ではない補助シグナル＝改善フロー自体は別途動く）。
+        """
+        now = datetime.now()
+        return record_store.save_feedback(
+            req.document_id,
+            req.verdict,
+            req.comment,
+            actor=_resolve_actor(request, req.actor, now),
+            now=now,
+        )
+
+    @app.get("/api/records/feedback")
+    def web_list_feedback(document_id: str | None = None) -> dict:
+        """書類フィードバックの一覧（新しい順）＝確定画面／「書類を見る」タブの既存フィードバック表示。
+
+        リテラル路なので `/api/records/{document_id}` より前に宣言する（"feedback" が id に食われない
+        よう順序で担保）。読取なので非ゲート。未接続/障害は空（偽の中身を出さない）。
+        """
+        return {
+            "feedback": record_store.list_feedback(document_id=document_id),
+            "store": record_store.store_status(),
+        }
 
     @app.get("/api/records/{document_id}")
     def web_get_record(document_id: str):
