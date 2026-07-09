@@ -52,29 +52,32 @@ DevOps × AI Agent Hackathon 2026 提出プロダクト
 ```mermaid
 flowchart TB
     subgraph floor1["一階：書類作成（Cloud Run）"]
-        direction TB
-        input["保育士の入力（手入力日誌・観察メモ）"] --> router["doc_type ルータ<br/>（harness・決定的）"]
-        router --> author["作成AI<br/>（Gemini / 単一 LlmAgent）"]
+        direction LR
+        input["保育士の入力"] --> router["doc_type ルータ<br/>（harness・決定的）"]
+        router --> author["作成AI<br/>（Gemini）"]
         author -->|draft| reviewer["レビューAI"]
-        reviewer -->|"NEEDS_REVISION（再作成）"| author
-        reviewer -->|APPROVED| finalize["確定処理（harness）<br/>必須欄検査・表記正規化・様式整形"]
-        finalize --> hitl["保育士が確認・編集・承認（HITL）"]
-        hitl --> archive[("書類アーカイブ<br/>Cloud SQL・版管理・承認証跡")]
+        reviewer -.->|NEEDS_REVISION| author
+        reviewer -->|APPROVED| finalize["確定処理<br/>（harness）"]
+        finalize --> hitl["保育士の確認・<br/>編集・承認（HITL）"]
+        hitl --> archive[("書類アーカイブ<br/>Cloud SQL・版管理")]
     end
 
-    rag[("Vertex AI RAG<br/>保育所保育指針")] -.->|検索| author
-    memory[("Agent Engine<br/>Memory Bank<br/>子どもの長期記憶")] -.->|参照| author
-    hitl -->|承認時のみ書き戻し| memory
-
-    subgraph floor2["二階：改善エージェント（回す）"]
-        direction TB
-        feedback["👍👎・ひとこと・修正メモ"] --> improver["改善エージェント<br/>一般化できる勘所かを精査"]
+    subgraph floor2["二階：改善エージェント＝回す"]
+        direction LR
+        feedback["👍👎・ひとこと・<br/>修正メモ"] --> improver["改善エージェント<br/>一般化できる勘所かを精査"]
         improver -->|意味的競合は比較相談| decide["保育士の決定"]
-        decide -->|即反映・履歴＝回した証拠| policy[("育つ文書作成指針<br/>構造化カード")]
+        decide -->|即反映| policy[("育つ文書作成指針<br/>構造化カード・履歴＝回した証拠")]
     end
 
-    hitl --> feedback
-    policy -.->|"prompt へ前置注入（決定的）"| author
+    subgraph knowledge["ナレッジ＆長期メモリ（Google Cloud）"]
+        direction LR
+        rag[("Vertex AI RAG<br/>保育所保育指針")] ~~~ memory[("Agent Engine Memory Bank<br/>子どもの長期記憶")]
+    end
+
+    knowledge -.->|"作成AIが自律参照（Agentic RAG）"| floor1
+    floor1 -->|保育士の承認時のみ書き戻し| knowledge
+    floor1 -->|確定・承認画面から| floor2
+    floor2 -.->|"育った指針を prompt へ前置注入（決定的）"| floor1
 ```
 
 | 責務 | コード | 役割 | 性質 |
