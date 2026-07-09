@@ -1,59 +1,147 @@
-# hoiku-agent（保育士 書類作成支援エージェント）
+<div align="center">
 
-> 作業リポジトリ名は仮。DevOps × AI Agent Hackathon 2026 提出プロダクトのコード本体。
-> 企画・設計ドキュメントは別ワークスペース（Obsidian vault `google-cloud-hackathon`）の `設計/プロダクト方針.md` を正とする。
+# HOIKUAGENT
 
-## これは何か
+**保育士の勘所を吸収して「回す」、保育書類作成支援 AI エージェント**
 
-保育士の書類作成業務を支援する AI エージェント。価値の核（北極星）は次の一点：
+[![CI](https://github.com/soichiGogo/hoiku-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/soichiGogo/hoiku-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)
+![Google ADK](https://img.shields.io/badge/Agent-Google%20ADK-4285F4?logo=google&logoColor=white)
+![Gemini](https://img.shields.io/badge/LLM-Gemini%20on%20Vertex%20AI-886FBF)
+![Cloud Run](https://img.shields.io/badge/Deploy-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white)
 
-> **「どんな文書にも対応できる」ではなく、保育士の勘所を吸収し、改善サイクルによる文書の高度化を通じて、保育士が手間をかけず子供と本気で向き合える環境を整備する。**
+DevOps × AI Agent Hackathon 2026 提出プロダクト
 
-ハッカソンの主論点は ①**AIエージェントによる価値創出**（ワークフローでなくエージェントの必然）と ②**テーマ「回す」の具現化**（改善サイクル）。競合優位性・ビジネス価値は主論点ではない。
+📄 Zenn 記事（準備中）｜🎬 デモ動画（準備中）
 
-## 設計の骨子（`docs/設計コンテキスト.md` より）
+</div>
 
-3つの責務に素直に分離する（多層マルチエージェントにはしない）。
+---
 
-- **harness（型の保証・決定的）**：書式・章立て・必須項目の充足・年齢分岐・順序を**決定的なコード**で保証。
-- **agents（中身の決定・agentic）**：作成AI（単一エージェント）が不足情報を自分で取りに行く（Agentic RAG）。
-  **作成AI ＋ レビューAI の二軸**で、レビューがOKを出すまで巡回し最終確定は保育士（HITL）。
-- **improver（回す・二階）**：先輩の勘所・園のルール・現場の修正を**育つ「文書作成指針」＝構造化カード**へ
-  吸収し続ける（＝「回す」の本体・`knowledge/文書作成指針.json`）。既存カードとの**意味的競合**を精査し、
-  競合は保育士に比較相談、**保育士の決定で即反映**（番人＝意味的競合精査＋保育士決定。eval は CI 専用に decouple）。
+## HOIKUAGENT とは
 
-詳細は `docs/設計コンテキスト.md` / `docs/architecture.md`、各層の `CLAUDE.md` を参照。
+保育士は毎日の保育のかたわらで、日誌・月案・保育経過記録・保育要録といった**書類の連なり**を書き続けています。HOIKUAGENT は、この書類作成を支援する AI エージェントです。価値の核（北極星）は次の一点：
 
-## 技術スタック（`docs/設計コンテキスト.md` §11）
+> **「どんな文書にも対応できる」ではなく、保育士の勘所を吸収し、改善サイクルによる文書の高度化を通じて、保育士が手間をかけず子どもと本気で向き合える環境を整備する。**
+
+合言葉は **「生成は土台、価値は改善サイクル＋個別化＋10の姿」**。書類を自動生成すること自体ではなく、現場のフィードバックで文書が育ち続ける仕組みに価値を置いています。
+
+## ハッカソン主論点への回答
+
+### ① なぜ「エージェント」でなければならないか
+
+保育書類の核心は「子どもの姿 → ねらい・評価文」への変換ですが、この判断手順は制度（保育所保育指針）に定義されていません。だから固定のワークフローでは書けず、**不足情報を自分で取りに行く動き**が要ります。
+
+- 作成AIが **保育所保育指針の該当箇所**（Vertex AI RAG）、**その子の育ちの履歴**（Agent Engine Memory Bank）、**園に蓄積された勘所**（育つ文書作成指針）を自律的に参照して下書きを作る
+- **作成AI × レビューAI の二軸**が APPROVED まで巡回し、最終確定は必ず保育士（Human-in-the-Loop）
+
+### ② テーマ「回す」の具現化
+
+書類を作るたびに、改善サイクルが自然に回ります。
+
+- 確定・承認画面の **👍👎＋ひとことフィードバック**や修正メモを、**改善エージェント**が「園として一般化できる勘所か」を精査して**育つ文書作成指針（構造化カード）**への追加・改訂として提案
+- 既存カードと意味的に競合すれば**保育士に比較相談**し、保育士の決定で**即反映**。カードの変更履歴が「回した証拠」
+- 反映されたカードは次の生成から **prompt に決定的に前置注入**される（作成AI・レビューAIの与件になる）
+- 別系統で **eval ゲート**（3軸 rubric judge・main 比の非劣化チェック）が CI として品質回帰を監視 — 現場のループと開発のループの**二重の「回す」**
+
+## アーキテクチャ
+
+一階（書類作成）と二階（改善）の**二階建て**。責務は3つに素直に分離し、多層マルチエージェントにはしません。
+
+```mermaid
+flowchart TB
+    subgraph floor1["一階：書類作成（Cloud Run）"]
+        direction TB
+        input["保育士の入力（手入力日誌・観察メモ）"] --> router["doc_type ルータ<br/>（harness・決定的）"]
+        router --> author["作成AI<br/>（Gemini / 単一 LlmAgent）"]
+        author -->|draft| reviewer["レビューAI"]
+        reviewer -->|"NEEDS_REVISION（再作成）"| author
+        reviewer -->|APPROVED| finalize["確定処理（harness）<br/>必須欄検査・表記正規化・様式整形"]
+        finalize --> hitl["保育士が確認・編集・承認（HITL）"]
+        hitl --> archive[("書類アーカイブ<br/>Cloud SQL・版管理・承認証跡")]
+    end
+
+    rag[("Vertex AI RAG<br/>保育所保育指針")] -.->|検索| author
+    memory[("Agent Engine<br/>Memory Bank<br/>子どもの長期記憶")] -.->|参照| author
+    hitl -->|承認時のみ書き戻し| memory
+
+    subgraph floor2["二階：改善エージェント（回す）"]
+        direction TB
+        feedback["👍👎・ひとこと・修正メモ"] --> improver["改善エージェント<br/>一般化できる勘所かを精査"]
+        improver -->|意味的競合は比較相談| decide["保育士の決定"]
+        decide -->|即反映・履歴＝回した証拠| policy[("育つ文書作成指針<br/>構造化カード")]
+    end
+
+    hitl --> feedback
+    policy -.->|"prompt へ前置注入（決定的）"| author
+```
+
+| 責務 | コード | 役割 | 性質 |
+|------|--------|------|------|
+| ① 型の保証 | `harness/` | 必須欄・年齢分岐（0–2/3–5）・巡回制御・集積・様式整形。決定ロジックの唯一の実装 | 決定的 |
+| ② 中身の決定 | `agents/` | 作成AI（書類別）＋レビューAI＋校正AI。不足情報を自分で取りに行く（Agentic RAG） | Agentic |
+| ③ 回す | `improver/` | フィードバック→育つ指針カードの提案。意味的競合は保育士に比較相談・決定で即反映 | Agentic |
+
+### 書類の集積階層 — 下流ほど AI の主戦場
+
+保育書類は単発ではなく、日々の記録が上位文書へ集積されていく構造を持ちます。HOIKUAGENT はこの階層をそのまま実装しています。
+
+```mermaid
+flowchart LR
+    diary["保育日誌<br/>（毎日・保育士の手入力）"] -->|L2 集積| class_plan["クラス月案<br/>（毎月・園の実様式）"]
+    diary -->|L3 集積| record["保育経過記録<br/>（期ごと・子ども別）"]
+    record --> class_plan
+    record -->|L4 集積| youroku["保育要録<br/>（年長・就学引き継ぎ）"]
+```
+
+- **保育日誌は保育士の手入力**（現場ヒアリングより：日誌は自分の言葉で書く一次情報。AI は校正AIとして日本語チェック・言い換え**提案のみ**を返す＝**AI は著者ではなく校正者**）
+- 下流の**クラス月案・保育経過記録・保育要録**が AI 生成の主戦場。過去の確定書類をアーカイブから自動集積して下書きを作る
+
+## 主な機能
+
+- **4種の書類パイプライン**：クラス月案（区分×領域グリッドの園実様式）／保育経過記録／保育要録＋手入力日誌。全年齢対応（0–2歳＝3つの視点／3–5歳＝5領域の年齢分岐）
+- **保育士向け配布 UI**（`/app/`）：書類を作る・育てる（指針＋表記ルール）・クラス・園児（名簿）・書類を見る（アーカイブ閲覧/編集/再承認）の4タブ
+- **園の帳票そのままの出力**：帳票 PDF（確認印欄つき・A4 縦/横）／園の実 Word 様式への流し込み .docx
+- **既存書類の取り込み**：PDF/Word/Excel を抽出AIで構造化し、以後の生成の集積元として活用（生ファイルは保存しない）
+- **ひらがな表記DX**：「子供→子ども」等の表記統一を確定時に決定的に適用（保育士が育てる編集辞書・取りこぼしゼロ）
+- **子どもの長期記憶**：Memory Bank への書き戻しは**保育士の明示承認＋型成立のときだけ**（真の承認ゲート）
+- **品質回帰 eval ゲート**：3軸 rubric（指針整合・10の姿・保護者向け表現）で採点し、main 比の非劣化を CI で担保
+- **本番運用ハードニング**：Cloud Run scale-to-zero・WIF 鍵レス CD・DB migration の自動適用・構造化 JSON ログ・Cloud Trace スパンエクスポート・IAP 認証
+
+## 技術スタック
 
 | 役割 | 採用 |
 |------|------|
 | エージェント実装 | **Google ADK**（Python, コードファースト） |
-| LLM | **Gemini**（Vertex AI 経由 / 一部 Claude を Model Garden 経由で併用検討） |
-| 独自ナレッジDB (B) | **Vertex RAG Engine / Vector Search**（保育所保育指針・10の姿） |
-| 長期メモリ・評価・実行基盤 | **Agent Engine**（Memory Bank / 評価 / Runtime） |
-| デプロイ | **Cloud Run**（scale-to-zero） |
+| LLM | **Gemini**（Vertex AI 経由） |
+| 独自ナレッジ検索 | **Vertex AI RAG Engine**（保育所保育指針・10の姿） |
+| 長期メモリ・セッション | **Agent Engine**（Memory Bank / Sessions） |
+| 書類アーカイブ・育つ指針 | **Cloud SQL**（PostgreSQL・版管理・承認証跡） |
+| デプロイ | **Cloud Run**（scale-to-zero・IAP） |
+| CI/CD・可観測性 | **GitHub Actions**（WIF 鍵レス）＋ **Cloud Trace** / Cloud Logging |
 
 ## ディレクトリ構成
 
-各ディレクトリの「Claude が何をするか」は当該 `CLAUDE.md`、レイヤ↔コードは `docs/architecture.md` を参照。
+各ディレクトリの詳細な責務は `docs/architecture.md`、各層の開発規約は当該 `CLAUDE.md` を参照。
 
 ```
 src/hoiku_agent/
-├── agent.py            … ルートエージェント（root_agent）＝doc_type 分岐ルータ（個別月案/クラス月案/保育経過記録/保育要録・既定 クラス月案。保育日誌は手入力＝AI 生成を退役）
-├── config.py           … 設定（GCPプロジェクト・モデル等。.env から）
-├── harness/            … ① 型の保証（決定的）：必須欄・年齢分岐（0–2/3–5＝全年齢）・順序・集積（L2/L3/L4）・doc_type分岐・指針カードストア（policy_store）・表記正規化（notation_store＝ひらがな表記DX）・様式テンプレート（template_store＝本文レイアウトのデータ・§18）・書類アーカイブ（record_store＝Cloud SQL・確定書類/児童マスタ/監査証跡）
-├── agents/             … ② 中身の決定（agentic）：作成AI（日誌/月案/保育経過記録/保育要録）/ レビューAI（+ prompts.py）
-├── improver/           … ③ 回す（二階・別エントリ）：修正メモ→指針カードを提案・意味的競合を精査・保育士決定で即反映
-├── tools/              … 4–8個のプリミティブ（記録/指針/RAG/メモリ/HITL/harness薄ラッパ）
-├── schemas/            … 書類スキーマ（日誌/個別月案/クラス月案/保育経過記録/保育要録）・指針カード（policy）・年齢分岐・10の姿タグ（pydantic 集約）
-├── web/                … 層A 配布UI（保育士 SPA /app/・上位4タブ）：保育日誌は手入力フォーム（diaryform.js＝クラス在籍児を空欄で並べ AI 非経由）／クラス月案/保育経過記録/保育要録は ADK REST 直駆動・クラス・園児タブ（classes.js＝名簿管理）・確認は園の実様式ルック（クラス月案＝区分×領域グリッド）・園の帳票PDF出力（chohyo_pdf）・園の実 Word 様式への流し込み出力（docx_fill＝templates/*.docx）・指針を育てる（improver）は SSE 中継・表記ルール辞書（notation.js＝/api/notation の CRUD）・書類アップロード取込（upload_extract＝PDF/Word/Excel を format 変換＋upload_parse＝抽出AIで既存スキーマへ・/api/parse-upload・「書類を見る」タブから）・👍👎＋ひとことの軽量フィードバック導線（feedback.js＝確定/承認画面で文書＋版に紐付け保存〔/api/records/feedback〕→ひとことがあればインラインで改善エージェントを回す＝書類作成を通して「回す」が進む）
-knowledge/              … 育つ文書作成指針＝構造化カード（git・文書作成指針.json）＋ 保育所保育指針（RAGソース・gitignore）
-eval/                   … 「回す」層B：評価セット（cases/）＋ 3軸 judge（judges/）＋ test_config.json / run_gate.py
-docs/                   … 設計コンテキスト.md（開発ハンドオフ）/ architecture.md（コード対応）
-migrations/             … 書類アーカイブ（record_store）の Alembic スキーマ移行（uv run alembic upgrade head）
-tests/                  … test_harness/（決定ロジック）/ test_e2e/（結合）/ test_eval*.py（層B）
-Dockerfile / .github/   … 配信（層A）：Cloud Run コンテナ ＋ CI（ci / deploy / eval-gate）
+├── agent.py       … root_agent＝doc_type 分岐ルータ（クラス月案/保育経過記録/保育要録）
+├── harness/       … ① 型の保証（決定的）：必須欄・年齢分岐・巡回制御・集積（L2/L3/L4）・
+│                     指針/表記/様式ストア・書類アーカイブ（Cloud SQL）
+├── agents/        … ② 中身の決定（agentic）：作成AI（書類別）・レビューAI・校正AI・抽出AI
+├── improver/      … ③ 回す（二階・別エントリ）：フィードバック→育つ指針カードの提案・即反映
+├── tools/         … エージェントのプリミティブ（RAG 検索・子ども記憶・HITL・自己点検）
+├── schemas/       … 書類スキーマ・指針カード・年齢分岐・10の姿タグ（pydantic 集約）
+└── web/           … 保育士向け配布 UI（SPA /app/）：手入力日誌・生成フロー・帳票PDF/Word・
+                      指針を育てる・アップロード取込・フィードバック導線
+knowledge/         … 育つ文書作成指針・表記ルール・様式テンプレート（シード）＋ RAG ソース（gitignore）
+eval/              … 品質回帰ゲート：評価セット＋3軸 rubric judge＋ゲート判定（run_gate.py）
+docs/              … 設計コンテキスト / architecture（コード対応） / ライブ実行手順
+migrations/        … 書類アーカイブの Alembic スキーマ移行
+tests/             … 決定ロジック単体 / 決定論E2E（FakeLlm 注入・LLM 非依存） / eval ゲート判定
+Dockerfile /.github… Cloud Run 配信 ＋ CI（決定論 ci / deploy / eval-gate）
 ```
 
 ## セットアップ
@@ -66,25 +154,42 @@ uv sync            # or: pip install -e .
 cp .env.example .env   # PROJECT_ID 等を記入
 gcloud auth application-default login
 
-# ローカル実行（ADK CLI）
-adk run src/hoiku_agent      # CLI 対話（既定＝クラス月案。月案/保育経過記録/要録は下の専用入口で seed。保育日誌は手入力＝配布UIで作成）
-adk web src                  # ブラウザ UI（agents dir = src/。root で叩くと dropdown に出ない）
+# 本番と同じ入口で起動（保育士UI = http://localhost:8000/app/）
+uvicorn server:app
+# AGENT_ENGINE_ID / RAG_CORPUS / DATABASE_URL が未設定でも安全に降格して動く
+# 配布リンクの LLM 課金を守るなら .env に DEMO_PASSCODE を設定
 
-# 月案（L2 還流・前月日誌を seed して回す専用入口）
-uv run python scripts/run_monthly.py --child-id はるとくん --month 2026-07
-
-# クラス月案（園の実様式＝月間指導計画・クラス児童の保育経過記録＋それまでのクラス月案＋未反映期間の日誌を seed して回す専用入口）
-uv run python scripts/run_class_monthly.py --age-band 0-2 --month 2026-07
-
-# 保育経過記録（L3 還流・期間日誌＋前回までの保育経過記録を seed して回す専用入口）
-uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06
-
-# 本番入口（Cloud Run と同じ）／配信
-uvicorn server:app           # get_fast_api_app。AGENT_ENGINE_ID 未設定は InMemory 降格
-# → 保育士UI（配布UI）= http://localhost:8000/app/（日誌/月案/回す を1枚で・ADK dev UI は /dev-ui/）
-# 配布リンクで Gemini 課金を守るなら .env に DEMO_PASSCODE を設定（LLM を回す口のみ要パスコード）
-# デプロイ＝Dockerfile（uvicorn server:app）＋ .github/workflows/deploy.yml（WIF・要 GCP 設定）
+# ADK CLI / dev UI で対話する場合
+adk run src/hoiku_agent      # CLI 対話（既定＝クラス月案）
+adk web src                  # ブラウザ UI（agents dir = src/）
 ```
 
-実 LLM で動かす詳細手順（Vertex AI / AI Studio APIキーの2経路・トラブルシュート）は
-[`docs/ライブ実行手順.md`](docs/ライブ実行手順.md) を参照（`.env` はルートに置きそこから起動）。
+書類別のデモ入口（アーカイブ未接続時はサンプル seed へ降格）：
+
+```bash
+uv run python scripts/run_class_monthly.py --age-band 0-2 --month 2026-07          # クラス月案
+uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06  # 保育経過記録
+uv run python scripts/run_youroku.py --child-id はるとくん --fiscal-year 2026       # 保育要録
+```
+
+テストは LLM/GCP 非依存の決定論で回ります：
+
+```bash
+uv run --extra dev pytest    # 決定ロジック単体＋決定論E2E（FakeLlm）＋eval ゲート判定
+ruff check .
+```
+
+実 LLM で動かす詳細手順（Vertex AI / AI Studio の2経路・GCP プロビジョニング・トラブルシュート）は
+[`docs/ライブ実行手順.md`](docs/ライブ実行手順.md) を参照。
+
+## ドキュメント
+
+| ドキュメント | 内容 |
+|------|------|
+| [`docs/設計コンテキスト.md`](docs/設計コンテキスト.md) | 設計判断の根拠（なぜそうするか）を残した開発ハンドオフ |
+| [`docs/architecture.md`](docs/architecture.md) | 設計↔コードの対応（レイヤ・関数レベルの索引） |
+| [`docs/ライブ実行手順.md`](docs/ライブ実行手順.md) | 実 LLM・GCP での実行手順とプロビジョニング |
+
+## ライセンス
+
+[MIT](LICENSE)
