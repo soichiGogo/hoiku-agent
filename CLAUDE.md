@@ -65,6 +65,9 @@
 - 可観測性: `src/hoiku_agent/logging_config.py`＝Cloud Run 向け構造化 JSON ログ（stdout 1行 JSON・severity・
   `X-Cloud-Trace-Context` 相関）。`server.py` 入口で `configure_logging()`＋`install_trace_middleware()`。
   Cloud Logging クライアントは手組みしない（マネージド昇格に委ねる）。ローカルは `K_SERVICE` 無しでテキスト降格（`LOG_FORMAT`/`LOG_LEVEL`）。
+  **スパン＝ADK ネイティブの `trace_to_cloud`**（`server.py` が `settings.trace_to_cloud`＝env `TRACE_TO_CLOUD` を中継・
+  自前 OTel 手組みしない）：agent/LLM/ツール呼び出しの軌跡を Cloud Trace へ（deploy.yml が本番 `TRACE_TO_CLOUD=true` を注入・
+  実行SAに `roles/cloudtrace.agent`）。既定 false＝ローカル/CI は送らない降格。
 - 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
   `uv run python scripts/run_improver.py --diff "…" [--feedback "…"]` で起こす（要 LLM 資格情報）。
   document_pipeline には組み込まない。
