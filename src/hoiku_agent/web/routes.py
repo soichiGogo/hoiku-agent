@@ -332,7 +332,7 @@ def _welcome_page(request: Request) -> HTMLResponse:
 
 def _is_public_auth_path(path: str) -> bool:
     """未ログインでも到達できるのは案内・Google callback・その表示資産だけ。"""
-    return path in {"/", "/auth/google"} or path.startswith("/public/")
+    return path in {"/", "/auth/google", "/privacy", "/terms"} or path.startswith("/public/")
 
 
 def _auth_denied(request: Request, *, unavailable: bool = False):
@@ -395,6 +395,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         signed_in = auth.current_google_user(request)
         email = signed_in.email if signed_in else None
         display_name = ""
+        workspace_id = ""
         if signed_in:
             # サインイン済み＝users へ auto-provision し、設定済みなら表示名を返す（DB I/O は threadpool へ）。
             user = await run_in_threadpool(
@@ -404,9 +405,11 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 now=datetime.now(),
             )
             display_name = str(user.get("display_name") or "")
+            workspace_id = str(user.get("workspace_id") or "")
         return {
             "app_name": APP_NAME,
-            "default_user_id": DEFAULT_USER_ID,
+            # ADK session の user_id も workspace に結び、Google account 間で会話 state を共有しない。
+            "default_user_id": f"workspace:{workspace_id}" if workspace_id else DEFAULT_USER_ID,
             "memory_connected": bool(settings.agent_engine_id),
             "rag_connected": bool(settings.rag_corpus),
             "records_connected": bool(settings.database_url),
@@ -423,14 +426,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         }
 
     @app.get("/api/policy")
-    async def web_policy() -> dict:
+    async def web_policy(request: Request) -> dict:
         """育つ文書作成指針＝構造化カード＋変更履歴（「指針を育てる」タブの閲覧・§8/§9）。
 
         ストア未配線/壊れは {cards:[], history:[], store:"unavailable"} で降格（偽の中身を出さない）。
         store は永続性を正直に示す（persistent / ephemeral=Cloud Run 揮発 / unavailable）。
         """
         try:
-            view = policy_store.book_view(policy_store.load_book())
+            book_id = f"workspace:{_workspace_id(request, datetime.now())}"
+            view = policy_store.book_view(policy_store.load_book(book_id=book_id))
             view["store"] = policy_store.store_status()
             return view
         except Exception:  # noqa: BLE001  未配線/壊れは閲覧降格（偽の中身を出さない）
@@ -441,26 +445,28 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     # 中継するだけ。LLM 非課金だが書込は公開デモの辞書荒らし防止でパスコードゲート（読取は素通し）。
     _NOTATION_KINDS = {k.value: k for k in NotationKind}
 
-    def _notation_view() -> dict:
-        view = notation_store.book_view(notation_store.load_book())
+    def _notation_view(request: Request) -> dict:
+        book_id = f"workspace:{_workspace_id(request, datetime.now())}"
+        view = notation_store.book_view(notation_store.load_book(book_id=book_id))
         view["store"] = notation_store.store_status()
         return view
 
-    def _commit_notation(mutate):
+    def _commit_notation(request: Request, mutate):
         """load→mutate(book)→save（version 楽観ロック）。ValueError は呼び出し側が 409 に変換。"""
-        book, version = notation_store.load_book_meta()
-        notation_store.save_book(mutate(book), if_version=version)
+        book_id = f"workspace:{_workspace_id(request, datetime.now())}"
+        book, version = notation_store.load_book_meta(book_id=book_id)
+        notation_store.save_book(mutate(book), if_version=version, book_id=book_id)
 
     @app.get("/api/notation")
-    def web_notation() -> dict:
+    def web_notation(request: Request) -> dict:
         """表記ルール一覧＋ストア永続性（未配線/壊れは空＋unavailable に降格＝偽の中身を出さない）。"""
         try:
-            return _notation_view()
+            return _notation_view(request)
         except Exception:  # noqa: BLE001
             return {"rules": [], "store": "unavailable"}
 
     @app.post("/api/notation")
-    def web_notation_add(req: NotationAddRequest):
+    def web_notation_add(req: NotationAddRequest, request: Request):
         """表記ルールを追加する（保育士の追加。空/重複は 409 で正直に返す）。"""
         kind = _NOTATION_KINDS.get((req.kind or "").strip())
         if kind is None:
@@ -483,13 +489,13 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return notation_store.add_rule(book, rule)
 
         try:
-            _commit_notation(_mutate)
+            _commit_notation(request, _mutate)
         except ValueError as e:
             return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
-        return {"status": "ok", **_notation_view()}
+        return {"status": "ok", **_notation_view(request)}
 
     @app.patch("/api/notation/{rule_id}")
-    def web_notation_update(rule_id: str, req: NotationUpdateRequest):
+    def web_notation_update(rule_id: str, req: NotationUpdateRequest, request: Request):
         """表記ルールを編集する（pattern/replacement/種別/理由/有効の変更・None は据え置き）。"""
         kind = None
         if req.kind is not None:
@@ -501,6 +507,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         now = datetime.now()
         try:
             _commit_notation(
+                request,
                 lambda book: notation_store.update_rule(
                     book,
                     rule_id=rule_id,
@@ -510,20 +517,22 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                     kind=kind,
                     note=req.note,
                     enabled=req.enabled,
-                )
+                ),
             )
         except ValueError as e:
             return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
-        return {"status": "ok", **_notation_view()}
+        return {"status": "ok", **_notation_view(request)}
 
     @app.delete("/api/notation/{rule_id}")
-    def web_notation_delete(rule_id: str):
+    def web_notation_delete(rule_id: str, request: Request):
         """表記ルールを削除する（対象不在/競合は 409）。"""
         try:
-            _commit_notation(lambda book: notation_store.remove_rule(book, rule_id=rule_id))
+            _commit_notation(
+                request, lambda book: notation_store.remove_rule(book, rule_id=rule_id)
+            )
         except ValueError as e:
             return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
-        return {"status": "ok", **_notation_view()}
+        return {"status": "ok", **_notation_view(request)}
 
     @app.get("/api/form-meta")
     async def web_form_meta() -> dict:
@@ -548,7 +557,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return {"templates": {}}
 
     @app.post("/api/finalize-edit")
-    def web_finalize_edit(req: FinalizeEditRequest):
+    def web_finalize_edit(req: FinalizeEditRequest, request: Request):
         """保育士が編集した書類エントリを harness で**再検査・再整形**する（編集UIの保存・§5/§11）。
 
         決定的ロジックは持ち込まず harness の finalize_entry を中継するだけ。state は書かず（フロントが
@@ -575,7 +584,13 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         # 保育経過記録の「歳児」は児童マスタの生年月日から満年齢（○歳○か月）を決定的に充填する
         # （登録済みの子だけ・未登録は手入力を温存）。検査・整形の前に当てて保存後の本文へ一貫して効かせる。
         if req.kind == "child_record":
-            _fill_child_record_age_months(req.entry)
+            _fill_child_record_age_months(
+                req.entry,
+                master=record_store.get_child(
+                    str(req.entry.get("child_id") or ""),
+                    workspace_id=_workspace_id(request, datetime.now()),
+                ),
+            )
         result = finalize_entry(req.entry, kind=req.kind, doc_date=doc_date)
         return {
             "formatted": result.formatted,
@@ -585,7 +600,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         }
 
     @app.post("/api/export-pdf")
-    def web_export_pdf(req: ExportPdfRequest):
+    def web_export_pdf(req: ExportPdfRequest, request: Request):
         """確定 entry を園の帳票PDFに描いて返す（現場でそのまま綴じる最終形・§11/§18）。
 
         sync def＝FastAPI が threadpool で回す（アーカイブ読取＋ReportLab 描画のブロッキングを
@@ -603,10 +618,13 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         if req.kind in ("child_record", "nursery_record"):
             child = str(req.entry.get("child_id") or "").strip()
             if child:
-                master = record_store.get_child(child)
+                workspace = _workspace_id(request, datetime.now())
+                master = record_store.get_child(child, workspace_id=workspace)
                 official_name = (master or {}).get("official_name") or None
                 if req.kind == "child_record":
-                    past_entries = record_store.list_child_record_entries(child)
+                    past_entries = record_store.list_child_record_entries(
+                        child, workspace_id=workspace
+                    )
                     # 帳票PDF の「歳児」も生年月日から満年齢で描く（保存前プレビューでも同じ値になる・
                     # 未編集で export したケースの防御的補完。既に fetch した master を使い回す）。
                     _fill_child_record_age_months(req.entry, master=master)
@@ -713,6 +731,18 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         display = str(user.get("display_name") or "").strip()
         return f"{display}（{signed_in.email}）" if display else signed_in.email
 
+    def _workspace_id(request: Request, now: datetime) -> str | None:
+        """認証済み Google subject に対応する個人 workspace を解決する。
+
+        Web の全アーカイブ read/write はこの値を record_store へ渡す。認証を無効にしたローカル開発
+        だけは None（record_store のローカル固定領域）へ降格し、本番で共有領域を作らない。
+        """
+        signed_in = auth.current_google_user(request)
+        if not signed_in:
+            return None
+        user = record_store.touch_user(signed_in.email, google_subject=signed_in.subject, now=now)
+        return str(user.get("workspace_id") or "") or None
+
     @app.post("/api/user")
     def web_set_user_profile(req: UserProfileRequest, request: Request):
         """自分の表示名を登録/編集する（Google の検証済み identity に users.display_name を紐づける）。
@@ -734,6 +764,19 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         )
         return JSONResponse(result)
 
+    @app.post("/api/account/deletion-request")
+    def web_request_account_deletion(request: Request):
+        """本人確認済み Google アカウントから、個人 workspace の削除を受け付ける。"""
+        signed_in = auth.current_google_user(request)
+        if not signed_in:
+            return JSONResponse(
+                {"error": "サインインが必要です", "code": "auth_required"}, status_code=403
+            )
+        result = record_store.request_workspace_deletion(
+            signed_in.email, google_subject=signed_in.subject, now=datetime.now()
+        )
+        return JSONResponse(result)
+
     @app.post("/api/records")
     def web_save_record(req: RecordSaveRequest, request: Request) -> dict:
         """確定書類をアーカイブへ保存（AI 確定＝finalize / 保育士編集＝edit の版を積む）。"""
@@ -744,6 +787,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             req.rendered_text,
             author_kind=req.author_kind,
             actor=_resolve_actor(request, req.actor, now),
+            workspace_id=_workspace_id(request, now),
             now=now,
         )
 
@@ -752,11 +796,16 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """書類を承認済みにし証跡を残す（actor＝Google 検証済み email ＞ 自己申告）。"""
         now = datetime.now()
         return record_store.approve_document(
-            req.kind, req.entry, actor=_resolve_actor(request, req.actor, now), now=now
+            req.kind,
+            req.entry,
+            actor=_resolve_actor(request, req.actor, now),
+            now=now,
+            workspace_id=_workspace_id(request, now),
         )
 
     @app.get("/api/records")
     def web_list_records(
+        request: Request,
         doc_type: str | None = None,
         date_from: str | None = None,
         date_to: str | None = None,
@@ -771,13 +820,16 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
         return {
             "documents": record_store.list_documents(
-                doc_type=doc_type, date_from=_parse(date_from), date_to=_parse(date_to)
+                doc_type=doc_type,
+                date_from=_parse(date_from),
+                date_to=_parse(date_to),
+                workspace_id=_workspace_id(request, datetime.now()),
             ),
             "store": record_store.store_status(),
         }
 
     @app.get("/api/records/diary-entries")
-    def web_list_diary_entries(date_from: str, date_to: str) -> dict:
+    def web_list_diary_entries(request: Request, date_from: str, date_to: str) -> dict:
         """期間内の日誌 entry（最新版 JSON）＝月案 L2／保育経過記録 L3 の seed 取得口。
 
         フロントは entries が空/未接続なら従来のサンプル seed へ降格する（黙って空 seed で回さない）。
@@ -790,12 +842,14 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 status_code=400,
             )
         return {
-            "entries": record_store.list_diary_entries(f, t),
+            "entries": record_store.list_diary_entries(
+                f, t, workspace_id=_workspace_id(request, datetime.now())
+            ),
             "store": record_store.store_status(),
         }
 
     @app.get("/api/records/diary-meta")
-    def web_list_diary_meta(date_from: str, date_to: str) -> dict:
+    def web_list_diary_meta(request: Request, date_from: str, date_to: str) -> dict:
         """期間内の日誌メタ（id・対象日・状態・評価充足）＝クラス月案作成時の「評価未記入」検出用。
 
         本文は載せない軽量メタ。フロントは evaluation_complete=false の日誌を「記入する」導線に出し、
@@ -809,12 +863,16 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 status_code=400,
             )
         return {
-            "entries": record_store.list_diary_meta(f, t),
+            "entries": record_store.list_diary_meta(
+                f, t, workspace_id=_workspace_id(request, datetime.now())
+            ),
             "store": record_store.store_status(),
         }
 
     @app.get("/api/records/child-record-entries")
-    def web_list_child_record_entries(child: str, exclude_period: str = "") -> dict:
+    def web_list_child_record_entries(
+        request: Request, child: str, exclude_period: str = ""
+    ) -> dict:
         """指定児の保育経過記録（最新版・期間順・全期）＝要録 L4／保育経過記録「前回まで」の seed 取得口。
 
         `exclude_period` を与えると当該期間の記録を除く（保育経過記録の作成時、作成対象の期そのものを
@@ -824,13 +882,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """
         return {
             "entries": record_store.list_child_record_entries(
-                child, exclude_period=exclude_period or None
+                child,
+                exclude_period=exclude_period or None,
+                workspace_id=_workspace_id(request, datetime.now()),
             ),
             "store": record_store.store_status(),
         }
 
     @app.get("/api/records/class-monthly-seed")
-    def web_class_monthly_seed(age_band: str, month: str) -> dict:
+    def web_class_monthly_seed(request: Request, age_band: str, month: str) -> dict:
         """クラス月案の seed 3系統（依存モデル 2026-07）＝アーカイブからの決定的合成の取得口。
 
         合成の実体は `record_store.class_monthly_seed_inputs`（①クラス児童の保育経過記録すべて
@@ -839,7 +899,9 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         しない）。未接続は全部空＝フロントがサンプル seed へ降格する。読取なので非ゲート。
         """
         try:
-            seed = record_store.class_monthly_seed_inputs(age_band, month)
+            seed = record_store.class_monthly_seed_inputs(
+                age_band, month, workspace_id=_workspace_id(request, datetime.now())
+            )
         except ValueError:
             return JSONResponse(
                 {"error": "month は YYYY-MM", "code": "invalid_request"}, status_code=400
@@ -861,29 +923,34 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             req.verdict,
             req.comment,
             actor=_resolve_actor(request, req.actor, now),
+            workspace_id=_workspace_id(request, now),
             now=now,
         )
 
     @app.get("/api/records/feedback")
-    def web_list_feedback(document_id: str | None = None) -> dict:
+    def web_list_feedback(request: Request, document_id: str | None = None) -> dict:
         """書類フィードバックの一覧（新しい順）＝確定画面／「書類を見る」タブの既存フィードバック表示。
 
         リテラル路なので `/api/records/{document_id}` より前に宣言する（"feedback" が id に食われない
         よう順序で担保）。読取なので非ゲート。未接続/障害は空（偽の中身を出さない）。
         """
         return {
-            "feedback": record_store.list_feedback(document_id=document_id),
+            "feedback": record_store.list_feedback(
+                document_id=document_id, workspace_id=_workspace_id(request, datetime.now())
+            ),
             "store": record_store.store_status(),
         }
 
     @app.get("/api/records/{document_id}")
-    def web_get_record(document_id: str):
+    def web_get_record(request: Request, document_id: str):
         """単一書類の全文（現行版の整形テキスト＋本文 entry）＝「書類を見る」タブの詳細。
 
         リテラル路（/api/records/diary-entries）より後に宣言し、そちらを優先させる（UUID なので実害は
         ないが順序で担保）。未接続/不在/不正 id は 404（偽の中身を出さない）。読取なので非ゲート。
         """
-        doc = record_store.get_document(document_id)
+        doc = record_store.get_document(
+            document_id, workspace_id=_workspace_id(request, datetime.now())
+        )
         if doc is None:
             return JSONResponse(
                 {"error": "書類が見つかりません", "code": "not_found"}, status_code=404
@@ -891,12 +958,17 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         return doc
 
     @app.get("/api/children")
-    def web_list_children() -> dict:
+    def web_list_children(request: Request) -> dict:
         """児童マスタ（アーカイブから auto-create された子）。未設定は空＝フロントは従来チップへ降格。"""
-        return {"children": record_store.list_children(), "store": record_store.store_status()}
+        return {
+            "children": record_store.list_children(
+                workspace_id=_workspace_id(request, datetime.now())
+            ),
+            "store": record_store.store_status(),
+        }
 
     @app.post("/api/children")
-    def web_add_child(req: ChildAddRequest):
+    def web_add_child(req: ChildAddRequest, request: Request):
         """新規児を児童マスタへ登録する（未登録名を選んだとき・書込ゲート＝辞書荒らしと同枠）。
 
         呼び名（名）＋敬称（性別導出）＝display_name を harness が合成し upsert する（合成の実体は
@@ -931,13 +1003,16 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             given_name=given,
             gender=gender or None,
             birthdate=birthdate,
+            workspace_id=_workspace_id(request, now),
             now=now,
         )
         # 名簿管理からの登録は所属クラスを同時に割り当てられる（1操作で完結）。割当失敗は本流
         # （登録）を壊さず result に status を添えて正直に出す。
         class_id = (req.class_id or "").strip()
         if class_id and result.get("status") in ("created", "exists"):
-            assigned = record_store.assign_child_to_class(display_name, class_id, now=now)
+            assigned = record_store.assign_child_to_class(
+                display_name, class_id, workspace_id=_workspace_id(request, now), now=now
+            )
             result["assign"] = assigned.get("status")
             if assigned.get("status") == "ok":
                 result["class_id"] = assigned.get("class_id")
@@ -947,41 +1022,51 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         return result
 
     @app.get("/api/classes")
-    def web_list_classes(fiscal_year: str | None = None) -> dict:
+    def web_list_classes(request: Request, fiscal_year: str | None = None) -> dict:
         """クラス（組）一覧＋在籍児数（園の名簿管理・日誌のクラス選択）。未接続は空＝降格表示。"""
         return {
-            "classes": record_store.list_classes(fiscal_year=fiscal_year),
+            "classes": record_store.list_classes(
+                fiscal_year=fiscal_year, workspace_id=_workspace_id(request, datetime.now())
+            ),
             "store": record_store.store_status(),
         }
 
     @app.get("/api/classes/roster")
-    def web_class_roster(class_id: str) -> dict:
+    def web_class_roster(request: Request, class_id: str) -> dict:
         """指定クラスの在籍児（日誌フォームの roster／名簿UIのクラス内一覧）。未接続/不在は空。"""
         return {
-            "children": record_store.list_children_in_class(class_id),
+            "children": record_store.list_children_in_class(
+                class_id, workspace_id=_workspace_id(request, datetime.now())
+            ),
             "store": record_store.store_status(),
         }
 
     @app.post("/api/classes")
-    def web_add_class(req: ClassAddRequest):
+    def web_add_class(req: ClassAddRequest, request: Request):
         """クラス（組）を定義する（書込ゲート）。組名は必須、年齢帯は在籍児から導出する。"""
         name = (req.name or "").strip()
         if not name:
             return JSONResponse({"status": "error", "detail": "組名は必須です"}, status_code=400)
         result = record_store.upsert_class(
-            name, (req.fiscal_year or "").strip(), now=datetime.now()
+            name,
+            (req.fiscal_year or "").strip(),
+            workspace_id=_workspace_id(request, datetime.now()),
+            now=datetime.now(),
         )
         result["store"] = record_store.store_status()
         return result
 
     @app.post("/api/classes/assign")
-    def web_assign_child(req: ClassAssignRequest):
+    def web_assign_child(req: ClassAssignRequest, request: Request):
         """児童をクラスへ割当/移動/解除する（書込ゲート）。対象児名は必須・不在は record_store が error。"""
         child = (req.child or "").strip()
         if not child:
             return JSONResponse({"status": "error", "detail": "対象児は必須です"}, status_code=400)
         result = record_store.assign_child_to_class(
-            child, (req.class_id or "").strip() or None, now=datetime.now()
+            child,
+            (req.class_id or "").strip() or None,
+            workspace_id=_workspace_id(request, datetime.now()),
+            now=datetime.now(),
         )
         result["store"] = record_store.store_status()
         return result
@@ -1075,6 +1160,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     @app.get("/public/welcome.css")
     async def _welcome_stylesheet():
         return FileResponse(_STATIC_DIR / "welcome.css", media_type="text/css")
+
+    @app.get("/privacy")
+    async def _privacy_policy():
+        """Google 同意画面からも到達できる公開プライバシーポリシー。"""
+        return FileResponse(_STATIC_DIR / "privacy.html", media_type="text/html")
+
+    @app.get("/terms")
+    async def _terms():
+        return FileResponse(_STATIC_DIR / "terms.html", media_type="text/html")
 
     @app.get("/app")
     async def _app_index_redirect():

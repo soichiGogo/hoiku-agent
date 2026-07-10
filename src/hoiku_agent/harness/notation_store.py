@@ -330,7 +330,7 @@ class NotationBookRecord(db.Base):
 
     __tablename__ = "notation_books"
 
-    id: Mapped[str] = mapped_column(sa.String(20), primary_key=True)
+    id: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
     book: Mapped[dict] = mapped_column(db.JSON_VARIANT)
     version: Mapped[int] = mapped_column(sa.Integer)
 
@@ -346,7 +346,9 @@ def _load_local(path: Path) -> NotationBook:
     return NotationBook.model_validate(data)
 
 
-def load_book_meta(path: Path | None = None) -> tuple[NotationBook, int | None]:
+def load_book_meta(
+    path: Path | None = None, *, book_id: str = _BOOK_ROW_ID
+) -> tuple[NotationBook, int | None]:
     """ルールストアと書き込み前提条件（version）を読む（policy_store.load_book_meta と対称）。
 
     DB（DATABASE_URL 設定・path 未指定）で行不在なら 0＝create-only＋ローカルシードを返す。
@@ -355,20 +357,24 @@ def load_book_meta(path: Path | None = None) -> tuple[NotationBook, int | None]:
     if _db_active(path):
         eng = db.engine()
         with Session(eng) as session:
-            row = session.get(NotationBookRecord, _BOOK_ROW_ID)
+            row = session.get(NotationBookRecord, book_id)
         if row is None:
             return _load_local(_NOTATION_PATH), 0
         return NotationBook.model_validate(row.book), row.version
     return _load_local(path or _NOTATION_PATH), None
 
 
-def load_book(path: Path | None = None) -> NotationBook:
+def load_book(path: Path | None = None, *, book_id: str = _BOOK_ROW_ID) -> NotationBook:
     """ルールストアを読む（読み手用。書き手は load_book_meta で version も取る）。"""
-    return load_book_meta(path)[0]
+    return load_book_meta(path, book_id=book_id)[0]
 
 
 def save_book(
-    book: NotationBook, path: Path | None = None, *, if_version: int | None = None
+    book: NotationBook,
+    path: Path | None = None,
+    *,
+    if_version: int | None = None,
+    book_id: str = _BOOK_ROW_ID,
 ) -> None:
     """ルールストアを書き出す（DB は if_version の compare-and-swap で楽観ロック＝policy と同一）。"""
     payload = book.model_dump(mode="json")
@@ -377,19 +383,19 @@ def save_book(
         try:
             with Session(eng) as session, session.begin():
                 if if_version is None:
-                    row = session.get(NotationBookRecord, _BOOK_ROW_ID)
+                    row = session.get(NotationBookRecord, book_id)
                     if row is None:
-                        session.add(NotationBookRecord(id=_BOOK_ROW_ID, book=payload, version=1))
+                        session.add(NotationBookRecord(id=book_id, book=payload, version=1))
                     else:
                         row.book = payload
                         row.version += 1
                 elif if_version == 0:
-                    session.add(NotationBookRecord(id=_BOOK_ROW_ID, book=payload, version=1))
+                    session.add(NotationBookRecord(id=book_id, book=payload, version=1))
                 else:
                     updated = session.execute(
                         sa.update(NotationBookRecord)
                         .where(
-                            NotationBookRecord.id == _BOOK_ROW_ID,
+                            NotationBookRecord.id == book_id,
                             NotationBookRecord.version == if_version,
                         )
                         .values(book=payload, version=if_version + 1)

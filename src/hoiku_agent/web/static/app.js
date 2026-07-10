@@ -876,6 +876,7 @@ function setupActor(cfg) {
   const field = inp.closest(".actor-field");
   const email = cfg && cfg.user_email;
   const logout = $("logout");
+  const deleteAccount = $("delete-account");
   if (email) {
     // サインイン済み＝表示名の登録/編集。値は DB（user_display_name）が正。未登録は email をプレースホルダに出して促す。
     inp.value = cfg.user_display_name || "";
@@ -901,6 +902,24 @@ function setupActor(cfg) {
     if (logout) {
       logout.classList.remove("hidden");
       logout.onclick = async () => {
+        await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
+        window.location.assign("/");
+      };
+    }
+    if (deleteAccount) {
+      deleteAccount.classList.remove("hidden");
+      deleteAccount.onclick = async () => {
+        const ok = window.confirm(
+          "このアカウントの書類・園児・クラス情報の削除を依頼します。受付から30日後に削除されます。続けますか？"
+        );
+        if (!ok) return;
+        const r = await fetch("/api/account/deletion-request", { method: "POST" });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.status !== "pending") {
+          window.alert(j.detail || "削除依頼を受け付けられませんでした。");
+          return;
+        }
+        window.alert(`削除依頼を受け付けました。削除予定: ${new Date(j.due_at).toLocaleDateString("ja-JP")}`);
         await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
         window.location.assign("/");
       };
