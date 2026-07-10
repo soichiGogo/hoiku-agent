@@ -1,0 +1,88 @@
+# プラットフォーム基盤の IaC（infra/・Terraform）。WIF（鍵レス）で専用 tf-admin SA を借用。
+# PR → plan（レビュー用）／ main マージ → apply（GitHub Environment "infra-prod" の手動承認ゲート）。
+# アプリのデプロイ（Cloud Run のイメージ/env）は deploy.yml が所有＝ここでは触らない（境界）。
+#
+# 前提（各自の GCP／GitHub 側で1度だけ・infra/README.md の bootstrap）:
+#   1. bootstrap をローカル owner 権限で1回実行（state バケット作成＋terraform apply で tf-admin 作成）。
+#      これで tf-admin の WIF 借用が有効化され、以後 CI が回せる（chicken-and-egg 解消）。
+#   2. リポジトリ変数（Settings > Variables）：TF_ADMIN_SA（tf-admin@<project>.iam.gserviceaccount.com）。
+#      既存の WIF_PROVIDER / GCP_PROJECT_ID を流用（deploy.yml と共有）。
+#   3. Environment "infra-prod" を作成し Required reviewers を設定（apply の手動承認）。
+#   未設定なら job は skip（誤発火・赤化を避ける）。
+
+name: Terraform (infra)
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+  id-token: write # WIF OIDC（鍵レス）
+  pull-requests: write # plan サマリを PR にコメント
+
+concurrency:
+  group: terraform-infra
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: terraform plan (PR)
+    if: ${{ github.event_name == 'pull_request' && vars.WIF_PROVIDER != '' && vars.TF_ADMIN_SA != '' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF / tf-admin)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TF_ADMIN_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - run: terraform init -input=false
+      - run: terraform fmt -check -recursive
+      - run: terraform validate
+      - name: terraform plan
+        run: terraform plan -input=false -no-color
+
+  apply:
+    name: terraform apply (main・手動承認)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.WIF_PROVIDER != '' && vars.TF_ADMIN_SA != '' }}
+    runs-on: ubuntu-latest
+    # Environment の Required reviewers が apply を手動承認ゲートする（誤 apply 防止）。
+    environment: infra-prod
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF / tf-admin)
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.TF_ADMIN_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - run: terraform init -input=false
+      - name: terraform apply
+        run: terraform apply -input=false -auto-approve

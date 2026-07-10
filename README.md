@@ -144,7 +144,8 @@ eval/              … 品質回帰ゲート：評価セット＋3軸 rubric jud
 docs/              … 設計コンテキスト / architecture（コード対応） / ライブ実行手順
 migrations/        … 書類アーカイブの Alembic スキーマ移行
 tests/             … 決定ロジック単体 / 決定論E2E（FakeLlm 注入・LLM 非依存） / eval ゲート判定
-Dockerfile /.github… Cloud Run 配信 ＋ CI（決定論 ci / deploy / eval-gate）
+infra/             … Terraform でプラットフォーム基盤を宣言化（API/SA・IAM/WIF・Cloud SQL・Secret 器・DNS・ドメインマッピング・AR）。アプリのデプロイは deploy.yml が所有＝境界（infra/README.md）
+Dockerfile /.github… Cloud Run 配信 ＋ CI（決定論 ci / deploy / eval-gate / infra=terraform）
 ```
 
 ## セットアップ
