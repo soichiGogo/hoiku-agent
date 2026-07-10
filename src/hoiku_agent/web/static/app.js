@@ -1,4 +1,4 @@
-// 保育士 UI のブートストラップ：アイコン展開・テーマ・ステータスライン・パスコードゲート・タブ・各フローの配線。
+// 保育士 UI のブートストラップ：アイコン展開・テーマ・ステータスライン・タブ・各フローの配線。
 import * as adk from "./adk.js";
 import { el, esc, iconHTML, hydrateIcons } from "./ui.js";
 import { makeDocFlow } from "./docflow.js";
@@ -404,8 +404,9 @@ function buildStatusline() {
   sl.innerHTML = "";
   const subject = el("span", "sl-item hidden");
   const phase = el("span", "sl-item hidden");
-  sl.append(subject, phase);
-  slEls = { dot: null, subject, phase };
+  const budget = el("span", "sl-item hidden");
+  sl.append(subject, phase, budget);
+  slEls = { dot: null, subject, phase, budget };
 }
 const status = {
   setSubject(name) {
@@ -428,6 +429,14 @@ const status = {
   clearPhase() {
     if (slEls.phase) slEls.phase.classList.add("hidden");
     if (slEls.dot) slEls.dot.classList.remove("live");
+  },
+  setBudget(budget) {
+    if (!slEls.budget || !budget || !budget.available) return;
+    slEls.budget.classList.remove("hidden");
+    const exhausted = budget.remaining_yen <= 0;
+    slEls.budget.innerHTML = `${iconHTML("sparkle")}AI利用枠 <b>${esc(String(budget.remaining_yen))}円</b> / ${esc(String(budget.limit_yen))}円`;
+    slEls.budget.classList.toggle("is-budget-limit", exhausted);
+    slEls.budget.title = exhausted ? "上限に達しました。次の時間帯に再開できます。" : "1時間ごとのAI利用可能額です。";
   },
 };
 
@@ -835,35 +844,6 @@ function sampleChips(container, samples, onPick) {
   });
 }
 
-function setupGate(cfg) {
-  const gate = $("gate");
-  const bg = () => document.querySelectorAll("header.app-header, main.container, footer.app-footer");
-  // モーダル表示中は背後を inert で不活性化（フォーカストラップ相当）＋入力欄へフォーカス。
-  const show = () => {
-    gate.classList.remove("hidden");
-    bg().forEach((n) => n.setAttribute("inert", ""));
-    requestAnimationFrame(() => $("gate-input").focus());
-  };
-  const dismiss = () => {
-    gate.classList.add("hidden");
-    bg().forEach((n) => n.removeAttribute("inert"));
-  };
-  window.__requireGate = show;
-  if (cfg.passcode_required) show();
-  $("gate-submit").onclick = async () => {
-    const ok = await adk.gate($("gate-input").value);
-    if (ok) {
-      dismiss();
-      $("gate-error").classList.add("hidden");
-    } else {
-      $("gate-error").classList.remove("hidden");
-    }
-  };
-  $("gate-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") $("gate-submit").click();
-  });
-}
-
 /* ============================================================
    起動
    ============================================================ */
@@ -962,7 +942,8 @@ async function main() {
     return;
   }
   buildStatusline();
-  setupGate(cfg);
+  status.setBudget(cfg.llm_budget);
+  window.addEventListener("llm-budget", (event) => status.setBudget(event.detail));
   setupActor(cfg); // config 後＝Google サインイン有無でモードを決める（表示名編集 / 自己申告）
 
   // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名ロスターに降格。
@@ -997,10 +978,6 @@ async function main() {
         return { ok: true, displayName: dn };
       }
       const res = await adk.addChild({ family_name, given_name, gender, birthdate });
-      if (res && res.needsGate) {
-        window.__requireGate && window.__requireGate();
-        return { ok: false, message: "パスコードを入力してから、もう一度追加してください。" };
-      }
       if (!res || res.status === "error") {
         return { ok: false, message: (res && res.detail) || "登録に失敗しました。" };
       }

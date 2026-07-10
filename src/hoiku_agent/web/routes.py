@@ -1,9 +1,8 @@
-"""保育士 Web UI の自前ルート＋簡易パスコードゲート（§11 配信）。
+"""保育士 Web UI の自前ルート＋Google user 別の LLM 利用枠（§11 配信）。
 
 ここに置くのは「ADK ネイティブ REST では賄えない最小限」だけ：
-- `GET /api/config`  … フロントが起動時に読む（app_name・既定ユーザ・接続状況・パスコード要否）。
+- `GET /api/config`  … フロントが起動時に読む（app_name・既定ユーザ・接続状況・AI利用枠）。
 - `GET /api/policy`  … 育つ指針＝構造化カード＋変更履歴（「指針を育てる」タブの閲覧・§8/§9）。
-- `POST /api/gate`   … 簡易パスコードの検証＋cookie 発行（配布リンクのコスト/濫用対策）。
 - `POST /api/improve`… improver（二階）を SSE 駆動（実体は `improver_stream` ＝別エントリの原則を保つ）。
 - `/api/records`・`/api/children` … 書類アーカイブ（確定書類・承認証跡・児童マスタ＝harness/record_store
   の中継・Phase 1）。now の解決だけが runtime 境界（決定的実体は harness に1つ・LLM 非課金で非ゲート）。
@@ -14,7 +13,6 @@
 
 from __future__ import annotations
 
-import hmac
 import html
 import os
 from datetime import date, datetime
@@ -29,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 from ..config import settings
-from ..harness import notation_store, policy_store, record_store, template_store
+from ..harness import llm_budget, notation_store, policy_store, record_store, template_store
 from ..harness.finalize import finalize_entry
 from ..harness.pipeline import MAX_REVIEW_ITERATIONS
 from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, ThreeViewpoint
@@ -54,20 +52,6 @@ _LOCAL_SESSION_SECRET = "local-development-only-not-for-production"
 # ADK の app_name＝agents_dir(src) 配下のパッケージ名（GET /list-apps と一致）。
 APP_NAME = "hoiku_agent"
 DEFAULT_USER_ID = "caregiver"
-_COOKIE_NAME = "hoiku_demo"
-
-# LLM を回す（＝課金が発生する）口だけをパスコードで守る。読み取り・セッション作成は素通し。
-_GATED_EXACT = {"/run", "/run_sse", "/run_live"}
-# /api/improve（改善エージェント）／/api/parse-upload（アップロード取込）／/api/proofread（校正AI＝
-# 日本語チェック・言い換え提案）＝いずれも LLM を回す口なのでゲートする。
-_GATED_PREFIX = ("/api/improve", "/api/parse-upload", "/api/proofread")
-# 書類アーカイブ・表記ルールの「書込」も守る（公開デモ URL からの DB へのゴミデータ・偽承認証跡・
-# 辞書荒らしの防止＝濫用対策の同枠）。読み取り（GET）は従来どおり素通し（コスト・改変リスクなし）。
-_GATED_WRITE_PREFIX = ("/api/records", "/api/notation", "/api/children", "/api/classes")
-
-
-class GateRequest(BaseModel):
-    passcode: str
 
 
 class NotationAddRequest(BaseModel):
@@ -104,7 +88,7 @@ class ExportPdfRequest(BaseModel):
     """帳票PDF 出力リクエスト（現場でそのまま綴じる最終形・§11/§18 presentation）。
 
     現在の（編集後の）確定 entry を園の様式に近い帳票PDFへ描くだけ。描画は web/chohyo_pdf に1つ、
-    型検査はしない（型の保証は harness の責務＝§5）。LLM 非課金なのでパスコード非ゲート。
+    型検査はしない（型の保証は harness の責務＝§5）。LLM 非課金なので利用枠は消費しない。
     """
 
     kind: str = "diary"  # diary / monthly / class_monthly / child_record / nursery_record
@@ -267,38 +251,11 @@ def _fill_child_record_age_months(entry: dict, master: dict | None = None) -> No
         entry["age_months"] = label
 
 
-def _passcode_matches(provided: str | None) -> bool:
-    """パスコードを定数時間比較する（== の短絡でプレフィックス一致長が漏れるのを防ぐ）。"""
-    if not provided:
-        return False
-    return hmac.compare_digest(provided, settings.demo_passcode)
-
-
-def _is_authed(request: Request) -> bool:
-    """パスコード未設定なら常に許可。設定時は cookie かヘッダで一致を要求する（定数時間比較）。"""
-    if not settings.demo_passcode:
-        return True
-    return _passcode_matches(request.cookies.get(_COOKIE_NAME)) or _passcode_matches(
-        request.headers.get("x-demo-passcode")
-    )
-
-
-def _needs_gate(path: str, method: str = "GET") -> bool:
-    if path in _GATED_EXACT or any(path.startswith(p) for p in _GATED_PREFIX):
-        return True
-    # `get_fast_api_app(web=True)` は ADK の dev/builder/memory 面を本番 app に登録する。これらは
-    # 公開到達後にもパスコード未入力で LLM を濫用できないよう、書込/実行系（非 GET）をゲート下に置く：
-    #  - /dev/*         … eval セット作成・run/run_eval・tests 実行＝**LLM 課金**／eval データ書込
-    #  - /builder/*     … エージェント定義ファイルへの書込（`/builder/save`・`/dev/apps/.../builder/save`）
-    #  - …/memory       … Memory Bank 直接書込（PATCH＝§9/§13 の「承認＋型成立でのみ書き戻す」承認ゲート迂回）
-    # 読取 GET（eval 結果閲覧・graph・trace・builder 状態＝dev-ui が使う）と、承認 PATCH（…/sessions）・
-    # セッション作成は従来どおり素通し。ローカル（passcode 未設定）は _passcode_guard 自体が無効＝影響なし。
-    if method != "GET" and (
+def _is_forbidden_dev_write(path: str, method: str) -> bool:
+    """配布アプリから開発・Memory直書き経路を閉じ、未計上のLLM実行を防ぐ。"""
+    return method != "GET" and (
         path.startswith("/dev/") or "/builder/" in path or path.endswith("/memory")
-    ):
-        return True
-    # アーカイブ・名簿・表記ルールは書込（POST 等）のみゲート（GET＝一覧/児童/seed は素通し）。
-    return method != "GET" and any(path.startswith(p) for p in _GATED_WRITE_PREFIX)
+    )
 
 
 def _safe_next(raw: str | None) -> str:
@@ -372,17 +329,39 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         return await call_next(request)
 
     @app.middleware("http")
-    async def _passcode_guard(request: Request, call_next):
-        # demo_passcode 設定時のみ・LLM を回す口だけをゲートする（静的UI・config・読み取りは素通し）。
-        if (
-            settings.demo_passcode
-            and _needs_gate(request.url.path, request.method)
-            and not _is_authed(request)
-        ):
+    async def _llm_budget_guard(request: Request, call_next):
+        if _is_forbidden_dev_write(request.url.path, request.method):
             return JSONResponse(
-                {"error": "パスコードが必要です", "code": "passcode_required"},
-                status_code=401,
+                {"error": "開発用APIは利用できません", "code": "dev_write_forbidden"},
+                status_code=403,
             )
+        kind = llm_budget.kind_for_path(request.url.path)
+        if kind is not None:
+            user = auth.current_google_user(request)
+            # Google Sign-In 無効のローカル開発は従来どおり開放。本番では先行する認証middlewareが止める。
+            if settings.google_signin_enabled and user is None:
+                return JSONResponse(
+                    {"error": "ログインが必要です", "code": "auth_required"}, status_code=401
+                )
+            if user is not None:
+                decision = await run_in_threadpool(
+                    llm_budget.reserve, user.subject, request.url.path
+                )
+                if not decision.allowed:
+                    if decision.code == "user_hourly_limit":
+                        message = "AI利用枠に達しました。次の時間帯に再開できます。"
+                    elif decision.code == "global_daily_limit":
+                        message = "本日のAI利用枠に達しました。明日になってから再開できます。"
+                    else:
+                        message = "AI利用枠を確認できないため実行できません。"
+                    return JSONResponse(
+                        {
+                            "error": message,
+                            "code": decision.code,
+                            "reserved_yen": decision.reserved_yen,
+                        },
+                        status_code=429 if decision.code.endswith("_limit") else 503,
+                    )
         response = await call_next(request)
         # 配布 SPA の静的資産（/app/ 配下の ES モジュール等）は常に再検証させる。StaticFiles は
         # Cache-Control を付けないためブラウザがヒューリスティックに古い JS をキャッシュし、UI 更新が
@@ -419,7 +398,16 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "memory_connected": bool(settings.agent_engine_id),
             "rag_connected": bool(settings.rag_corpus),
             "records_connected": bool(settings.database_url),
-            "passcode_required": bool(settings.demo_passcode),
+            "llm_budget": (
+                llm_budget.status(signed_in.subject)
+                if signed_in
+                else {
+                    "available": False,
+                    "limit_yen": settings.llm_user_hourly_limit_yen,
+                    "used_yen": 0,
+                    "remaining_yen": 0,
+                }
+            ),
             "auth_enabled": settings.google_signin_enabled,
             "model": settings.gemini_model,
             "user_email": email,
@@ -448,7 +436,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     # ── 表記ルール辞書（ひらがな表記DX＝harness/notation_store の中継・§5）─────────────────
     # 決定的実体は harness に1つ（CRUD＋正規化）。ここは now 注入＋楽観ロックの read-modify-write を
-    # 中継するだけ。LLM 非課金だが書込は公開デモの辞書荒らし防止でパスコードゲート（読取は素通し）。
+    # 中継するだけ。LLM 非課金で、Google ログイン済みの workspace 内にだけ書き込む。
     _NOTATION_KINDS = {k.value: k for k in NotationKind}
 
     def _notation_view(request: Request) -> dict:
@@ -568,7 +556,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
         決定的ロジックは持ち込まず harness の finalize_entry を中継するだけ。state は書かず（フロントが
         ADK の PATCH で final_entry/final_document/validation を更新する）、結果だけ返す。LLM 非課金なので
-        パスコード非ゲート。sync def＝FastAPI が threadpool で回す（get_child・notation/template ストアの
+        利用枠非対象。sync def＝FastAPI が threadpool で回す（get_child・notation/template ストアの
         同期 DB I/O をイベントループに載せない＝アーカイブ系エンドポイントと同じ流儀）。
         """
         # 未知 kind を黙って diary として解釈しない（finalize_entry は else で DiaryEntry にフォールバック
@@ -674,7 +662,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     # ── アップロード取込（ファイル → LLM 解析 → 既存スキーマ・「書類を見る」タブ・§11）──────────
     # 種別（kind）は保育士がフォルダで選択済み＝1スキーマに固定。対象キー・child・age_band は与件
     # （フォームで指定）で、upload_parse が権威的に上書きしてから harness.finalize_entry で検査・整形する。
-    # LLM を回す口なのでパスコードゲート（_GATED_PREFIX に /api/parse-upload を追加済み）。保存は後段の
+    # LLM を回す口なので利用枠を予約する。保存は後段の
     # /api/records（record_store・author_kind="imported"）で行い、ここは解析結果を返すだけ（中継・§5）。
     @app.post("/api/parse-upload")
     async def web_parse_upload(
@@ -754,7 +742,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """自分の表示名を登録/編集する（Google の検証済み identity に users.display_name を紐づける）。
 
         email は body でなく Google 検証済み値で解決＝偽装不可。未サインイン（検証済み email なし）は
-        403（fail-closed）。Google 認証済みの自己書込なのでパスコードゲートには載せない（_GATED_WRITE_PREFIX 外）。
+        403（fail-closed）。Google 認証済みの自己書込であり、LLM 利用枠の対象外。
         決定的実体は harness/record_store（web は now 注入の中継のみ・§5）。DB 未接続は status:skipped で正直に。
         """
         signed_in = auth.current_google_user(request)
@@ -918,7 +906,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     def web_save_feedback(req: RecordFeedbackRequest, request: Request) -> dict:
         """書類への 👍👎（＋ひとこと）を保存する（確定/承認画面の軽量フィードバック・§8「回す」の一次入力）。
 
-        書込なので `_GATED_WRITE_PREFIX`（/api/records 配下・非 GET）で自動ゲート（辞書荒らし・ゴミ投入
+        Google 認証済み workspace への書込（辞書荒らし・ゴミ投入
         防止と同枠）。actor は承認証跡と同じ `_resolve_actor`（Google 検証済み email ＞ 自己申告）。実体は
         harness/record_store（web は now 注入の中継のみ）。DB 未接続は status:skipped を正直に返す
         （フィードバックは本流ではない補助シグナル＝改善フロー自体は別途動く）。
@@ -1077,23 +1065,6 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         result["store"] = record_store.store_status()
         return result
 
-    @app.post("/api/gate")
-    async def web_gate(req: GateRequest):
-        """簡易パスコード検証。一致で cookie を発行（共有1パスコード＝配布デモ用）。"""
-        if not settings.demo_passcode:
-            return {"ok": True, "required": False}
-        if _passcode_matches(req.passcode):
-            resp = JSONResponse({"ok": True})
-            resp.set_cookie(
-                _COOKIE_NAME,
-                settings.demo_passcode,
-                httponly=True,
-                samesite="lax",
-                max_age=86400,
-            )
-            return resp
-        return JSONResponse({"ok": False, "error": "パスコードが違います"}, status_code=401)
-
     @app.post("/auth/google", name="google_signin")
     async def google_signin(
         request: Request, credential: str = Form(""), g_csrf_token: str = Form("")
@@ -1140,11 +1111,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     register_improver_route(app)
 
-    # ADK の /run_live（WebSocket）を撤去する。パスコードゲートは HTTP ミドルウェア（Starlette
-    # BaseHTTPMiddleware）で、WebSocket スコープは素通しするため、_GATED_EXACT に列挙しても実際には
-    # ゲートできない＝セッション作成（非ゲート）→ ws 接続だけで DEMO_PASSCODE なしに live LLM（課金）を
-    # 回せてしまう。UI は /run_sse だけを使い /run_live を使わないので、GET / と同じ要領でルートごと除去する
-    # （自前 Runner を組まない方針とも矛盾しない）。
+    # WebSocket はHTTP利用枠middlewareを通らないため、未計上の課金口にしないよう撤去する。
     app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != "/run_live"]
     # 配布リンクの素の URL（/）は、Google Sign-In を明示開始する案内画面に着地させる。ADK 既定は
     # / → /dev-ui へ飛ばすので、その GET / 経路だけ差し替える（dev UI は /dev-ui/ に温存）。

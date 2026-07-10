@@ -38,10 +38,12 @@ class Settings(BaseSettings):
     # RAG_CORPUS / AGENT_ENGINE_ID と同じ「未設定は降格」パターン。
     database_url: str = ""
 
-    # 配布デモUI（B-full）の簡易共有パスコード。設定すると LLM を回す口（/run・/run_sse・
-    # /run_live・/api/improve）が要パスコードになり、無認証の公開リンクで Gemini 課金が
-    # 野放しになるのを防ぐ。空なら無効＝ローカル開放（src/hoiku_agent/web）。
-    demo_passcode: str = ""
+    # LLM 利用枠（Google Sign-In の不変 subject ごと／全体）。実測した標準のクラス月案フローは
+    # 入力15,109・出力2,237 token（約6.85円）だった。レビュー最大3巡と余裕を見て1実行35円を予約する。
+    # モデルを変更した場合は harness/llm_budget.py の単価・実測値を更新する。
+    llm_user_hourly_limit_yen: int = 1_000
+    llm_global_daily_limit_yen: int = 10_000
+    llm_usd_jpy_rate: int = 160
 
     # 可観測性＝Cloud Trace へのスパンエクスポート（ADK ネイティブの trace_to_cloud を server.py が
     # 中継）。true にすると agent 実行・LLM 呼び出し・ツール呼び出しの OTel スパンが Cloud Trace へ

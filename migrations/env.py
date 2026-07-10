@@ -17,7 +17,7 @@ from sqlalchemy import create_engine
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from hoiku_agent.config import settings  # noqa: E402
-from hoiku_agent.harness import policy_store  # noqa: E402, F401  Base.metadata へ policy_books を登録
+from hoiku_agent.harness import llm_budget, policy_store  # noqa: E402, F401  Base.metadata へ各テーブルを登録
 from hoiku_agent.harness.record_store import Base  # noqa: E402
 
 config = context.config

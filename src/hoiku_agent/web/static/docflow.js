@@ -216,12 +216,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       const session = await adk.createSession(seedState);
       await drive(session.id, adk.textMessage(messageText), null);
     } catch (e) {
-      if (e instanceof adk.PasscodeError) {
-        window.__requireGate && window.__requireGate();
-        banner(area, "info", "パスコードを入力してから、もう一度お試しください。");
-      } else {
-        banner(area, "err", "エラー: " + e.message);
-      }
+      banner(area, "err", "エラー: " + e.message);
       procStop();
       status.clearPhase();
     } finally {
@@ -333,16 +328,11 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
           pending.invId,
         );
       } catch (e) {
-        // 再開の失敗（パスコード切れ・セッション消失＝Cloud Run スケールダウン等）で回答を失わない：
+        // 再開の失敗（セッション消失＝Cloud Run スケールダウン等）で回答を失わない：
         // 質問カードを復元して再回答できるようにし、原因を正直に表示する（無反応で固まらせない）。
         procStop();
         askCard(sessionId, pending);
-        if (e instanceof adk.PasscodeError) {
-          window.__requireGate && window.__requireGate();
-          banner(area, "info", "パスコードを入力してから、もう一度回答してください。");
-        } else {
-          banner(area, "err", "再開に失敗しました（" + e.message + "）。もう一度回答してください。");
-        }
+        banner(area, "err", "再開に失敗しました（" + e.message + "）。もう一度回答してください。");
         phase("回答の再送をお待ちしています", "waiting");
       }
     };
