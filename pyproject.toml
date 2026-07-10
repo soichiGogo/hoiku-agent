@@ -36,6 +36,10 @@ dependencies = [
     # アップロードの multipart 受信（FastAPI UploadFile が依存）。google-adk 経由で間接的に入るが、
     # 取込エンドポイント（/api/parse-upload）が直接依存するので明示固定する（uvicorn と同じ流儀）。
     "python-multipart>=0.0.9",
+    # Google Sign-In の ID token をサーバ側で署名・audience・有効期限まで検証する。
+    "google-auth>=2.0",
+    # Google Sign-In 後の identity を改ざん不能な session cookie に保持する（Starlette の直接依存）。
+    "itsdangerous>=2.2",
     # Cloud Trace へのスパンエクスポート（可観測性・server.py の trace_to_cloud）。ADK は import する
     # だけで同梱しない（extras=gcp/all のみ）。現状 google-cloud-aiplatform[agent-engines] 経由で間接的に
     # 入るが、無いと TRACE_TO_CLOUD=true で起動時 ImportError になるため明示固定する（uvicorn と同じ流儀）。

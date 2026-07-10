@@ -525,7 +525,7 @@ def test_imported_author_kind_records_import_audit(db):
     assert not any(a in ("finalize", "edit") for a, _ in actions)
 
 
-# ──────────────────────────── users（IAP identity の auto-provision・Phase 3） ────────────────────────────
+# ──────────────────────────── users（Google identity の auto-provision・Phase 3） ────────────────────────────
 
 
 def test_touch_user_provisions_and_is_idempotent(db):
@@ -755,7 +755,7 @@ def test_write_error_generic_for_db_failure_but_detail_for_input(db):
 
 
 def test_actor_is_clamped_to_column_width(db):
-    """正当に長い担当者名（IAP 表示名＋email 等）でも VARCHAR(100) を超えず保存できる（PG で落ちない）。"""
+    """正当に長い担当者名（Google 表示名＋email 等）でも VARCHAR(100) を超えず保存できる（PG で落ちない）。"""
     long_actor = "あ" * 250
     entry = _diary_entry("2026-07-09")
     rs.save_document("diary", entry, author_kind="caregiver", actor=long_actor, now=_NOW)

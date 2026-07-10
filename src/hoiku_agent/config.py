@@ -51,11 +51,18 @@ class Settings(BaseSettings):
     # （logging_config の X-Cloud-Trace-Context）と対になる観測の両輪。
     trace_to_cloud: bool = False
 
-    # IAP for Cloud Run（Phase 3 認証）の JWT audience（IAP 設定画面/ドキュメントの値）。
-    # 設定すると web が `x-goog-iap-jwt-assertion` ヘッダを署名検証し、検証済みの Google アカウント
-    # email を actor（承認・編集の証跡）に使う。未設定は完全降格＝ヘッダを一切信用しない
-    # （actor は従来どおり自己申告。IAP を有効化していない面でヘッダ偽装を防ぐ fail-closed）。
-    iap_audience: str = ""
+    # Google Sign-In（Web）の OAuth クライアント ID。案内画面の公式ボタンが発行する ID token の
+    # audience をサーバが検証する。空ならローカル開発として認証を有効化しない。本番（K_SERVICE が
+    # ある環境）で空の場合は /app と API を fail-closed にする。
+    google_oauth_client_id: str = ""
+    # アプリの署名付きセッション cookie 用のランダムな秘密値（32 bytes 以上を推奨）。Google OAuth の
+    # client secret ではない。空なら Google Sign-In を有効化できない。
+    session_secret: str = ""
+
+    @property
+    def google_signin_enabled(self) -> bool:
+        """Google Sign-In に必要な公開 client ID とセッション署名鍵が揃っているか。"""
+        return bool(self.google_oauth_client_id and self.session_secret)
 
     @property
     def memory_service_uri(self) -> str | None:

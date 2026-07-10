@@ -15,15 +15,18 @@
 from __future__ import annotations
 
 import hmac
+import html
+import os
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+from starlette.middleware.sessions import SessionMiddleware
 
 from ..config import settings
 from ..harness import notation_store, policy_store, record_store, template_store
@@ -33,7 +36,7 @@ from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, Thre
 from .chohyo_pdf import render_pdf
 from .docx_fill import fill_docx
 from .docx_fill import supported_kinds as docx_supported_kinds
-from .iap import verified_iap_email
+from . import auth
 from .proofread import proofread_entry
 from . import upload_extract
 from .upload_parse import parse_uploaded_file
@@ -41,7 +44,12 @@ from .upload_parse import parse_uploaded_file
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _WEB_DIR / "static"
+_WELCOME_TEMPLATE_PATH = _STATIC_DIR / "welcome.html"
 _REPO_ROOT = _WEB_DIR.parents[2]
+
+# SessionMiddleware には必ず鍵が要る。Google Sign-In 無効のローカルテストでは認証情報を載せないため、
+# 固定の開発用値を使う。本番（K_SERVICE）では設定不足を fail-closed にする（middleware を参照）。
+_LOCAL_SESSION_SECRET = "local-development-only-not-for-production"
 
 # ADK の app_name＝agents_dir(src) 配下のパッケージ名（GET /list-apps と一致）。
 APP_NAME = "hoiku_agent"
@@ -107,7 +115,7 @@ class RecordSaveRequest(BaseModel):
     """確定書類のアーカイブ保存（AI 確定時と保育士の編集保存時にフロントが呼ぶ・Phase 1）。
 
     永続化の決定的実体は harness/record_store（ここは now を注入して中継するだけ）。
-    actor は担当者の自己申告（認証は Phase 3=IAP で users と突合）。
+    actor は担当者の自己申告（認証は Phase 3=Google Sign-In で users と突合）。
     """
 
     kind: str = "diary"
@@ -182,9 +190,9 @@ class ClassAssignRequest(BaseModel):
 
 
 class UserProfileRequest(BaseModel):
-    """自分の表示名（display_name）の登録/編集（Phase 3・IAP サインイン前提）。
+    """自分の表示名（display_name）の登録/編集（Phase 3・Google Sign-In 前提）。
 
-    email は body で受けない＝サーバが IAP の検証済み値で解決する（偽装不可）。ここは表示名だけ。
+    email は body で受けない＝サーバが Google の検証済み値で解決する（偽装不可）。ここは表示名だけ。
     """
 
     display_name: str = ""
@@ -279,7 +287,7 @@ def _needs_gate(path: str, method: str = "GET") -> bool:
     if path in _GATED_EXACT or any(path.startswith(p) for p in _GATED_PREFIX):
         return True
     # `get_fast_api_app(web=True)` は ADK の dev/builder/memory 面を本番 app に登録する。これらは
-    # 公開デモ（IAP 無し＋パスコード）で未認証のまま濫用できるため、書込/実行系（非 GET）をゲート下に置く：
+    # 公開到達後にもパスコード未入力で LLM を濫用できないよう、書込/実行系（非 GET）をゲート下に置く：
     #  - /dev/*         … eval セット作成・run/run_eval・tests 実行＝**LLM 課金**／eval データ書込
     #  - /builder/*     … エージェント定義ファイルへの書込（`/builder/save`・`/dev/apps/.../builder/save`）
     #  - …/memory       … Memory Bank 直接書込（PATCH＝§9/§13 の「承認＋型成立でのみ書き戻す」承認ゲート迂回）
@@ -293,8 +301,69 @@ def _needs_gate(path: str, method: str = "GET") -> bool:
     return method != "GET" and any(path.startswith(p) for p in _GATED_WRITE_PREFIX)
 
 
+def _safe_next(raw: str | None) -> str:
+    """ログイン後の遷移先を同一オリジンの相対パスに限定する（open redirect 防止）。"""
+    path = (raw or "").strip()
+    return path if path.startswith("/") and not path.startswith("//") else "/app/"
+
+
+def _login_control(request: Request) -> str:
+    """Google ブランド準拠の公式ボタン、または安全に設定不足を示す表示を返す。"""
+    if not settings.google_signin_enabled:
+        return (
+            '<p class="login-unavailable">ログインの準備中です。管理者に設定をご確認ください。</p>'
+        )
+    client_id = html.escape(settings.google_oauth_client_id, quote=True)
+    login_uri = html.escape(str(request.url_for("google_signin")), quote=True)
+    # 独自ボタンではなく Google Identity Services が生成する公式ボタンを使う。redirect UX は
+    # 利用者のクリック後にだけ Google のアカウント選択/同意画面へ進むため、案内画面を先に読める。
+    return f'''<div id="g_id_onload" data-client_id="{client_id}" data-login_uri="{login_uri}"
+      data-ux_mode="redirect" data-auto_prompt="false"></div>
+    <div class="google-login g_id_signin" data-type="standard" data-theme="outline" data-size="large"
+      data-text="continue_with" data-shape="rectangular" data-logo_alignment="left" data-locale="ja"></div>
+    <script src="https://accounts.google.com/gsi/client" async></script>'''
+
+
+def _welcome_page(request: Request) -> HTMLResponse:
+    """案内画面テンプレートへ Google client ID を最小限だけ差し込んで返す。"""
+    template = _WELCOME_TEMPLATE_PATH.read_text(encoding="utf-8")
+    return HTMLResponse(template.replace("{{LOGIN_CONTROL}}", _login_control(request)))
+
+
+def _is_public_auth_path(path: str) -> bool:
+    """未ログインでも到達できるのは案内・Google callback・その表示資産だけ。"""
+    return path in {"/", "/auth/google"} or path.startswith("/public/")
+
+
+def _auth_denied(request: Request, *, unavailable: bool = False):
+    """画面は案内へ戻し、API/実行口は HTML でなく機械可読な失敗を返す。"""
+    if request.url.path.startswith(("/api/", "/run", "/dev/", "/builder/", "/apps/", "/list-apps")):
+        code = "auth_unavailable" if unavailable else "auth_required"
+        message = "ログイン設定が不足しています" if unavailable else "ログインが必要です"
+        return JSONResponse(
+            {"error": message, "code": code}, status_code=503 if unavailable else 401
+        )
+    return RedirectResponse(f"/?next={quote(_safe_next(request.url.path))}")
+
+
 def register_web_ui(app: FastAPI) -> FastAPI:
     """`get_fast_api_app` が返した app に保育士 UI を同居させる（server.py から1回呼ぶ）。"""
+
+    @app.middleware("http")
+    async def _google_auth_guard(request: Request, call_next):
+        """Google ログイン済み session だけに保育士 UI・API・ADK 実行口を開く。"""
+        path = request.url.path
+        if _is_public_auth_path(path):
+            return await call_next(request)
+        if not settings.google_signin_enabled:
+            # ローカル/決定論テストは既存どおり開発しやすく保つ。一方、本番で環境変数を落とした
+            # デプロイは認証なしで公開しない（welcome は管理者への設定案内として残す）。
+            if os.environ.get("K_SERVICE"):
+                return _auth_denied(request, unavailable=True)
+            return await call_next(request)
+        if auth.current_google_user(request) is None:
+            return _auth_denied(request)
+        return await call_next(request)
 
     @app.middleware("http")
     async def _passcode_guard(request: Request, call_next):
@@ -320,14 +389,20 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     async def web_config(request: Request) -> dict:
         """フロントの起動時設定。接続状況は env から導出（未接続は降格表示に使う）。
 
-        user_email / user_display_name は IAP（Phase 3）の検証済み identity。IAP 未配線/未認証は
-        None/空＝従来の自己申告表示へ降格。サインイン時は users へ auto-provision（登録画面を待たせない）。
+        user_email / user_display_name は Google Sign-In の検証済み session identity。サインイン時は
+        users へ auto-provision（登録画面を待たせない）。ローカル（認証無効）だけは従来の自己申告へ降格する。
         """
-        email = verified_iap_email(request)
+        signed_in = auth.current_google_user(request)
+        email = signed_in.email if signed_in else None
         display_name = ""
-        if email:
+        if signed_in:
             # サインイン済み＝users へ auto-provision し、設定済みなら表示名を返す（DB I/O は threadpool へ）。
-            user = await run_in_threadpool(record_store.touch_user, email, now=datetime.now())
+            user = await run_in_threadpool(
+                record_store.touch_user,
+                signed_in.email,
+                google_subject=signed_in.subject,
+                now=datetime.now(),
+            )
             display_name = str(user.get("display_name") or "")
         return {
             "app_name": APP_NAME,
@@ -336,6 +411,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             "rag_connected": bool(settings.rag_corpus),
             "records_connected": bool(settings.database_url),
             "passcode_required": bool(settings.demo_passcode),
+            "auth_enabled": settings.google_signin_enabled,
             "model": settings.gemini_model,
             "user_email": email,
             "user_display_name": display_name,
@@ -625,32 +701,37 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     # now の注入だけが runtime 境界（record_store は clock を持たない＝§5 の流儀）。
 
     def _resolve_actor(request: Request, declared: str, now: datetime) -> str:
-        """証跡の actor を決める：IAP の検証済み email ＞ 自己申告（Phase 1 のつなぎ・Phase 3）。
+        """証跡の actor を決める：Google の検証済み email ＞ 自己申告（Phase 1 のつなぎ・Phase 3）。
 
-        IAP identity があれば users へ auto-provision し、display_name 設定済みなら
-        「表示名（email）」で残す＝読める証跡と偽装不可の identity を両立。IAP 未配線は従来どおり。
+        Google identity があれば users へ auto-provision し、display_name 設定済みなら
+        「表示名（email）」で残す＝読める証跡と偽装不可の identity を両立。ローカルだけ従来どおり。
         """
-        email = verified_iap_email(request)
-        if not email:
+        signed_in = auth.current_google_user(request)
+        if not signed_in:
             return declared
-        user = record_store.touch_user(email, now=now)
+        user = record_store.touch_user(signed_in.email, google_subject=signed_in.subject, now=now)
         display = str(user.get("display_name") or "").strip()
-        return f"{display}（{email}）" if display else email
+        return f"{display}（{signed_in.email}）" if display else signed_in.email
 
     @app.post("/api/user")
     def web_set_user_profile(req: UserProfileRequest, request: Request):
-        """自分の表示名を登録/編集する（IAP の検証済み email に紐づけて users.display_name を設定）。
+        """自分の表示名を登録/編集する（Google の検証済み identity に users.display_name を紐づける）。
 
-        email は body でなく IAP 検証済み値で解決＝偽装不可。未サインイン（検証済み email なし）は
-        403（fail-closed）。IAP が認証する自己書込なのでパスコードゲートには載せない（_GATED_WRITE_PREFIX 外）。
+        email は body でなく Google 検証済み値で解決＝偽装不可。未サインイン（検証済み email なし）は
+        403（fail-closed）。Google 認証済みの自己書込なのでパスコードゲートには載せない（_GATED_WRITE_PREFIX 外）。
         決定的実体は harness/record_store（web は now 注入の中継のみ・§5）。DB 未接続は status:skipped で正直に。
         """
-        email = verified_iap_email(request)
-        if not email:
+        signed_in = auth.current_google_user(request)
+        if not signed_in:
             return JSONResponse(
                 {"error": "サインインが必要です", "code": "auth_required"}, status_code=403
             )
-        result = record_store.set_user_display_name(email, req.display_name, now=datetime.now())
+        result = record_store.set_user_display_name(
+            signed_in.email,
+            req.display_name,
+            google_subject=signed_in.subject,
+            now=datetime.now(),
+        )
         return JSONResponse(result)
 
     @app.post("/api/records")
@@ -668,7 +749,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     @app.post("/api/records/approve")
     def web_approve_record(req: RecordApproveRequest, request: Request) -> dict:
-        """書類を承認済みにし証跡を残す（actor＝IAP の検証済み email ＞ 自己申告）。"""
+        """書類を承認済みにし証跡を残す（actor＝Google 検証済み email ＞ 自己申告）。"""
         now = datetime.now()
         return record_store.approve_document(
             req.kind, req.entry, actor=_resolve_actor(request, req.actor, now), now=now
@@ -770,7 +851,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """書類への 👍👎（＋ひとこと）を保存する（確定/承認画面の軽量フィードバック・§8「回す」の一次入力）。
 
         書込なので `_GATED_WRITE_PREFIX`（/api/records 配下・非 GET）で自動ゲート（辞書荒らし・ゴミ投入
-        防止と同枠）。actor は承認証跡と同じ `_resolve_actor`（IAP 検証済み email ＞ 自己申告）。実体は
+        防止と同枠）。actor は承認証跡と同じ `_resolve_actor`（Google 検証済み email ＞ 自己申告）。実体は
         harness/record_store（web は now 注入の中継のみ）。DB 未接続は status:skipped を正直に返す
         （フィードバックは本流ではない補助シグナル＝改善フロー自体は別途動く）。
         """
@@ -922,6 +1003,47 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return resp
         return JSONResponse({"ok": False, "error": "パスコードが違います"}, status_code=401)
 
+    @app.post("/auth/google", name="google_signin")
+    async def google_signin(
+        request: Request, credential: str = Form(""), g_csrf_token: str = Form("")
+    ):
+        """公式 Google ボタンの redirect POST を検証し、初回登録または既存 session を作る。"""
+        if not settings.google_signin_enabled:
+            return JSONResponse(
+                {"error": "ログイン設定が不足しています", "code": "auth_unavailable"},
+                status_code=503,
+            )
+        if not auth.csrf_matches(request, g_csrf_token):
+            return JSONResponse(
+                {"error": "ログインをもう一度お試しください", "code": "csrf_failed"},
+                status_code=400,
+            )
+        try:
+            user = auth.validate_google_credential(credential)
+        except ValueError:
+            # token・claims はログへ出さない（認証失敗の理由を利用者にも詳細開示しない）。
+            return JSONResponse(
+                {"error": "Google ログインを確認できませんでした", "code": "invalid_credential"},
+                status_code=401,
+            )
+        auth.sign_in(request, user)
+        # 初回は users へ作り、既存 IAP の email 行には Google subject を補完する。DB 未接続の降格は
+        # ログイン自体を妨げない（identity の検証済み session が証跡の正）。
+        await run_in_threadpool(
+            record_store.touch_user,
+            user.email,
+            google_subject=user.subject,
+            now=datetime.now(),
+        )
+        target = _safe_next(str(request.session.pop("post_login_path", "/app/")))
+        return RedirectResponse(target, status_code=303)
+
+    @app.post("/auth/logout")
+    async def google_logout(request: Request):
+        """アプリ内 session を破棄する。Google アカウントそのものはログアウトしない。"""
+        auth.sign_out(request)
+        return {"ok": True}
+
     # improver（二階）を SSE 駆動する口。別モジュールに実体（別エントリの原則・§8）。
     from .improver_stream import register_improver_route
 
@@ -933,8 +1055,8 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     # 回せてしまう。UI は /run_sse だけを使い /run_live を使わないので、GET / と同じ要領でルートごと除去する
     # （自前 Runner を組まない方針とも矛盾しない）。
     app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != "/run_live"]
-    # 配布リンクの素の URL（/）を保育士 UI に着地させる。ADK 既定は / → /dev-ui へ飛ばすので、
-    # その GET / 経路だけ差し替える（dev UI は /dev-ui/ に温存）。審査員がパスを打たずに済むように。
+    # 配布リンクの素の URL（/）は、Google Sign-In を明示開始する案内画面に着地させる。ADK 既定は
+    # / → /dev-ui へ飛ばすので、その GET / 経路だけ差し替える（dev UI は /dev-ui/ に温存）。
     app.router.routes = [
         r
         for r in app.router.routes
@@ -942,8 +1064,17 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     ]
 
     @app.get("/")
-    async def _root_to_app():
-        return RedirectResponse("/app/")
+    async def _root_welcome(request: Request):
+        # 初回は案内を読んで明示的にログインを始める。一方、署名済み session が残る再訪では
+        # 余計な Google ボタンを挟まず作業へ戻す（state restoration）。
+        if auth.current_google_user(request) is not None:
+            return RedirectResponse("/app/")
+        request.session["post_login_path"] = _safe_next(request.query_params.get("next"))
+        return _welcome_page(request)
+
+    @app.get("/public/welcome.css")
+    async def _welcome_stylesheet():
+        return FileResponse(_STATIC_DIR / "welcome.css", media_type="text/css")
 
     @app.get("/app")
     async def _app_index_redirect():
@@ -952,5 +1083,14 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     # 保育士 UI（自前 SPA）。html=True で /app/ が index.html を返す。static は src 配下＝Dockerfile 不変。
     app.mount("/app", StaticFiles(directory=str(_STATIC_DIR), html=True), name="hoiku-ui")
+    # SessionMiddleware を最後に追加して、上の認証 middleware から request.session を必ず参照できる
+    # 外側レイヤにする。鍵未設定の本番アクセスは _google_auth_guard が fail-closed にする。
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret or _LOCAL_SESSION_SECRET,
+        same_site="lax",
+        https_only=bool(os.environ.get("K_SERVICE")),
+        max_age=60 * 60 * 12,
+    )
 
     return app

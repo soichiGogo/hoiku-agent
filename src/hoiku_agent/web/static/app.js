@@ -867,7 +867,7 @@ function setupGate(cfg) {
 /* ============================================================
    起動
    ============================================================ */
-// ヘッダの担当者欄。IAP サインイン時は「自分の表示名（users.display_name）」を DB に登録/編集する欄になり
+// ヘッダの担当者欄。Google サインイン時は「自分の表示名（users.display_name）」を DB に登録/編集する欄になり
 // （証跡の actor はサーバが検証済み email＋この表示名で残す＝§13）、未サインイン時は従来の自己申告
 // （localStorage・認証導入までのつなぎ）。config を見てモードを切り替える（config 読込後に呼ぶ）。
 function setupActor(cfg) {
@@ -875,6 +875,7 @@ function setupActor(cfg) {
   if (!inp) return;
   const field = inp.closest(".actor-field");
   const email = cfg && cfg.user_email;
+  const logout = $("logout");
   if (email) {
     // サインイン済み＝表示名の登録/編集。値は DB（user_display_name）が正。未登録は email をプレースホルダに出して促す。
     inp.value = cfg.user_display_name || "";
@@ -897,6 +898,13 @@ function setupActor(cfg) {
         flashActor(field, r.detail || "保存に失敗しました", true);
       }
     });
+    if (logout) {
+      logout.classList.remove("hidden");
+      logout.onclick = async () => {
+        await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
+        window.location.assign("/");
+      };
+    }
   } else {
     // 未サインイン（ローカル/デモ）＝自己申告を localStorage に永続（従来動作）。
     inp.value = localStorage.getItem("hoiku_actor") || "";
@@ -936,7 +944,7 @@ async function main() {
   }
   buildStatusline();
   setupGate(cfg);
-  setupActor(cfg); // config 後＝IAP サインイン有無でモードを決める（表示名編集 / 自己申告）
+  setupActor(cfg); // config 後＝Google サインイン有無でモードを決める（表示名編集 / 自己申告）
 
   // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名ロスターに降格。
   // マスタの子が増えるとそのまま選択肢に出る（auto-create＝書類に登場した子・§14 実名はDBのみ）。

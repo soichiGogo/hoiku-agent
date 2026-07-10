@@ -110,7 +110,7 @@ flowchart LR
 - **ひらがな表記DX**：「子供→子ども」等の表記統一を確定時に決定的に適用（保育士が育てる編集辞書・取りこぼしゼロ）
 - **子どもの長期記憶**：Memory Bank への書き戻しは**保育士の明示承認＋型成立のときだけ**（真の承認ゲート）
 - **品質回帰 eval ゲート**：3軸 rubric（指針整合・10の姿・保護者向け表現）で採点し、main 比の非劣化を CI で担保
-- **本番運用ハードニング**：Cloud Run scale-to-zero・WIF 鍵レス CD・DB migration の自動適用・構造化 JSON ログ・Cloud Trace スパンエクスポート・IAP 認証
+- **本番運用ハードニング**：Cloud Run scale-to-zero・WIF 鍵レス CD・DB migration の自動適用・構造化 JSON ログ・Cloud Trace スパンエクスポート・アプリ内 Google ログイン
 
 ## 技術スタック
 
@@ -121,7 +121,7 @@ flowchart LR
 | 独自ナレッジ検索 | **Vertex AI RAG Engine**（保育所保育指針・10の姿） |
 | 長期メモリ・セッション | **Agent Engine**（Memory Bank / Sessions） |
 | 書類アーカイブ・育つ指針 | **Cloud SQL**（PostgreSQL・版管理・承認証跡） |
-| デプロイ | **Cloud Run**（scale-to-zero・IAP） |
+| デプロイ | **Cloud Run**（scale-to-zero・アプリ内 Google Sign-In） |
 | CI/CD・可観測性 | **GitHub Actions**（WIF 鍵レス）＋ **Cloud Trace** / Cloud Logging |
 
 ## ディレクトリ構成

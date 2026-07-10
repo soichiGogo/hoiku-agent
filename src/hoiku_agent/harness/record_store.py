@@ -13,7 +13,7 @@
   （doc_type / child / 対象期間 / status）だけ列に昇格する（射影テーブルは作らない＝二重表現しない）。
 - child_id の橋渡し：書類 JSON 内の child_id は表示名のまま（LLM/eval 側は不変）。children.id（UUID）
   への解決は保存時の display_name lookup/auto-create ＝ harness 境界に1つ。
-- clock は外部注入（policy_store と同じ）。actor（担当者）は呼び出し側が渡す（自己申告・認証は Phase 3=IAP）。
+- clock は外部注入（policy_store と同じ）。actor（担当者）は呼び出し側が渡す（自己申告・認証は Phase 3=Google Sign-In）。
 
 スキーマ適用は Alembic（repo root の `migrations/`・`uv run alembic upgrade head`）。テストは sqlite で
 `Base.metadata.create_all` を使い creds 不要・決定論で回す（tests/test_harness/test_record_store.py）。
@@ -64,7 +64,7 @@ FEEDBACK_VERDICTS = ("up", "down")
 GENDERS = ("male", "female")
 _HONORIFIC = {"male": "くん", "female": "ちゃん"}
 
-# actor（担当者名／IAP 表示名＋email）列は VARCHAR(100)。正当に長い表示名で PostgreSQL の書込が
+# actor（担当者名／Google 表示名＋email）列は VARCHAR(100)。正当に長い表示名で PostgreSQL の書込が
 # DataError にならないよう、書込境界で列上限に丸める（sqlite テストでは無害だが本番だけ落ちるのを防ぐ）。
 _ACTOR_MAX = 100
 
@@ -238,7 +238,7 @@ class DocumentVersion(Base):
 class AuditEvent(Base):
     """誰が・いつ・何をしたか（承認・編集・確定の証跡）。
 
-    actor は自己申告（Phase 1 のつなぎ）だが、IAP（Phase 3）配下では web が検証済みの Google
+    actor は自己申告（Phase 1 のつなぎ）だが、Google Sign-In（Phase 3）配下では web が検証済みの Google
     アカウント email を渡す＝偽装不可の証跡になる（どちらが来たかは users への登録有無で分かる）。
     """
 
@@ -253,9 +253,10 @@ class AuditEvent(Base):
 
 
 class User(Base):
-    """認証済みユーザー（IAP の Google アカウント・Phase 3）。
+    """認証済みユーザー（Google アカウント・Phase 3）。
 
-    IAP を通った email を初回アクセス時に auto-provision し（children と同じ流儀）、
+    Google Sign-In で検証した subject（Google の不変 ID）を初回アクセス時に auto-provision し、
+    email は表示・監査用の検証済み属性として紐づける（children と同じ流儀）。
     display_name（園内での呼び名）を後から DB で設定できるようにする。v0 では認可（ロール別の
     権限制御）は持たない＝identity の記録と表示名の対応だけ（承認フローの多段化は将来）。
     """
@@ -264,6 +265,7 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(sa.String(200), unique=True)
+    google_subject: Mapped[str | None] = mapped_column(sa.String(255), unique=True, nullable=True)
     display_name: Mapped[str] = mapped_column(sa.String(100), default="")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
@@ -292,7 +294,7 @@ class Feedback(Base):
     comment: Mapped[str] = mapped_column(sa.Text, default="")  # ひとこと（任意）
     actor: Mapped[str] = mapped_column(
         sa.String(100), default=""
-    )  # 担当者（IAP 検証済み ＞ 自己申告）
+    )  # 担当者（Google 検証済み ＞ 自己申告）
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
 
 
@@ -646,24 +648,44 @@ def save_document(
         return _write_error(e)
 
 
-def touch_user(email: str, *, now: datetime) -> dict:
-    """検証済みユーザー（IAP の email）を users へ auto-provision し、表示用情報を返す（Phase 3）。
+def touch_user(email: str, *, google_subject: str = "", now: datetime) -> dict:
+    """検証済み Google ユーザーを users へ auto-provision し、表示用情報を返す（Phase 3）。
 
     children と同じ流儀＝初回アクセス時に行を作る（登録画面を待たせない）。display_name は
     後から DB で設定でき、設定済みなら actor 表示に使える。降格・障害・空 email は
     {"status": "skipped"/"error"}（本流＝書類の保存・承認を壊さない）。
     """
     email = email.strip()
+    subject = google_subject.strip()
     eng = _engine()
     if eng is None or not email:
         return {"status": "skipped"}
     try:
         with Session(eng) as session, session.begin():
-            user = session.scalar(sa.select(User).where(User.email == email))
+            user = (
+                session.scalar(sa.select(User).where(User.google_subject == subject))
+                if subject
+                else None
+            )
             if user is None:
-                user = User(email=email, created_at=now, updated_at=now)
+                user = session.scalar(sa.select(User).where(User.email == email))
+            if user is None:
+                user = User(
+                    email=email,
+                    google_subject=subject or None,
+                    created_at=now,
+                    updated_at=now,
+                )
                 session.add(user)
                 session.flush()
+            elif subject and user.google_subject not in (None, subject):
+                # email が再利用・取り違えられても別 Google アカウントへ既存表示名を渡さない。
+                return {"status": "error", "detail": "Google アカウントの対応付けが一致しません"}
+            elif subject:
+                user.google_subject = subject
+                # Google の確認済み email は変更され得る。subject が同じ行だけ更新する。
+                user.email = email
+                user.updated_at = now
             return {
                 "status": "ok",
                 "email": user.email,
@@ -674,26 +696,45 @@ def touch_user(email: str, *, now: datetime) -> dict:
         return _write_error(e)
 
 
-def set_user_display_name(email: str, display_name: str, *, now: datetime) -> dict:
-    """検証済みユーザー（IAP の email）の display_name を設定する（Phase 3＝自分の表示名の登録/編集）。
+def set_user_display_name(
+    email: str, display_name: str, *, google_subject: str = "", now: datetime
+) -> dict:
+    """検証済み Google ユーザーの display_name を設定する（Phase 3＝自分の表示名の登録/編集）。
 
     `touch_user` と同じ upsert（無ければ作成）で display_name を更新する。設定済みなら
     `_resolve_actor` が監査証跡を「表示名（email）」で残す（表示名を消費する仕組みは既存）。
-    email は呼び出し元（web/routes）が **IAP の検証済み値**を渡す＝偽装不可（body 由来を使わない）。
+    email と subject は呼び出し元（web/routes）が **Google の検証済み値**を渡す＝偽装不可（body 由来を使わない）。
     空 email/未接続は {"status": "skipped"}、DB 障害は {"status": "error"}（本流を壊さない既存流儀）。
     display_name は列上限（100）に clamp。空文字は表示名クリア（actor は email へ戻る）を許す。
     """
     email = email.strip()
     name = display_name.strip()[:100]
+    subject = google_subject.strip()
     eng = _engine()
     if eng is None or not email:
         return {"status": "skipped"}
     try:
         with Session(eng) as session, session.begin():
-            user = session.scalar(sa.select(User).where(User.email == email))
+            user = (
+                session.scalar(sa.select(User).where(User.google_subject == subject))
+                if subject
+                else None
+            )
             if user is None:
-                user = User(email=email, created_at=now, updated_at=now)
+                user = session.scalar(sa.select(User).where(User.email == email))
+            if user is None:
+                user = User(
+                    email=email,
+                    google_subject=subject or None,
+                    created_at=now,
+                    updated_at=now,
+                )
                 session.add(user)
+            elif subject and user.google_subject not in (None, subject):
+                return {"status": "error", "detail": "Google アカウントの対応付けが一致しません"}
+            elif subject:
+                user.google_subject = subject
+                user.email = email
             user.display_name = name
             user.updated_at = now
             session.flush()

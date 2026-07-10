@@ -20,6 +20,25 @@ def _client() -> TestClient:
     return TestClient(server.app, follow_redirects=False)
 
 
+def _sign_in_with_google(c: TestClient, monkeypatch, *, email: str = "sensei@example.com") -> None:
+    """公式ボタンの POST を模して、検証済み Google session を作る（外部通信なし）。"""
+    from hoiku_agent.web import auth
+
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        auth,
+        "validate_google_credential",
+        lambda credential: auth.GoogleUser(subject="google-subject-123", email=email),
+    )
+    c.get("/?next=/app/")  # GIS callback 後の戻り先と session cookie を作る。
+    c.cookies.set("g_csrf_token", "csrf-token")
+    r = c.post("/auth/google", data={"credential": "signed-token", "g_csrf_token": "csrf-token"})
+    assert r.status_code == 303 and r.headers["location"] == "/app/"
+
+
 def test_config_shape() -> None:
     r = _client().get("/api/config")
     assert r.status_code == 200
@@ -67,11 +86,12 @@ def test_static_ui_served() -> None:
         assert c.get(f"/app/{asset}").status_code == 200, asset
 
 
-def test_root_lands_on_app() -> None:
-    # 配布リンクの素の URL（/）は保育士 UI（/app/）へ着地する（dev UI は /dev-ui/ に温存）。
+def test_root_shows_welcome() -> None:
+    # 配布リンクの素の URLは、強制遷移せず案内画面を表示する。
     r = _client().get("/")
-    assert r.status_code in (302, 307)
-    assert r.headers["location"] == "/app/"
+    assert r.status_code == 200
+    assert "保育の記録を" in r.text
+    assert "/public/welcome.css" in r.text
 
 
 def test_policy_route_returns_cards_and_history() -> None:
@@ -1096,27 +1116,17 @@ def test_feedback_write_gated_read_open(records_db, monkeypatch) -> None:
     assert ok.status_code == 200 and ok.json()["status"] == "saved"
 
 
-def test_feedback_iap_actor_precedence(records_db, monkeypatch) -> None:
-    """フィードバックの actor も IAP 検証済み email が自己申告に優先する（承認証跡と同じ流儀）。"""
-    from hoiku_agent.web import iap
-
-    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
-    monkeypatch.setattr(
-        iap,
-        "_verify_assertion",
-        lambda assertion, audience: {"email": "accounts.google.com:sensei@example.com"},
-    )
+def test_feedback_google_actor_precedence(records_db, monkeypatch) -> None:
+    """フィードバックの actor も Google 検証済み email が自己申告に優先する。"""
     c = _client()
-    headers = {"x-goog-iap-jwt-assertion": "signed-jwt"}
+    _sign_in_with_google(c, monkeypatch)
     doc_id = c.post(
         "/api/records",
         json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"},
-        headers=headers,
     ).json()["document_id"]
     c.post(
         "/api/records/feedback",
         json={"document_id": doc_id, "verdict": "up", "comment": "x", "actor": "なりすまし名義"},
-        headers=headers,
     )
     body = c.get("/api/records/feedback", params={"document_id": doc_id}).json()
     assert body["feedback"][0]["actor"] == "sensei@example.com"
@@ -1190,81 +1200,66 @@ def test_export_pdf_child_record_embeds_archived_periods(records_db) -> None:
     _assert_is_pdf(r)
 
 
-# ──────────────────── IAP identity（Phase 3・検証済み actor と users） ────────────────────
+# ──────────────────── Google Sign-In identity（Phase 3・検証済み actor と users） ────────────────────
 
 
-def test_iap_headers_ignored_when_audience_unset() -> None:
-    """IAP_AUDIENCE 未設定＝ヘッダを一切信用しない（IAP を経由しない面での偽装防止・fail-closed）。"""
-    r = _client().get("/api/config", headers={"x-goog-iap-jwt-assertion": "spoofed"})
-    assert r.json()["user_email"] is None
-
-
-def test_iap_verified_email_becomes_actor_and_provisions_user(records_db, monkeypatch) -> None:
-    """検証済み email が config に出て、証跡 actor は自己申告より優先され、users へ auto-provision される。"""
-    from hoiku_agent.web import iap
-
-    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
+def test_google_signin_protects_app_and_api(monkeypatch) -> None:
+    """認証を有効にすると、案内以外は session 無しに公開しない。"""
     monkeypatch.setattr(
-        iap,
-        "_verify_assertion",
-        lambda assertion, audience: {"email": "accounts.google.com:sensei@example.com"},
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
     )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
-    headers = {"x-goog-iap-jwt-assertion": "signed-jwt"}
-    assert c.get("/api/config", headers=headers).json()["user_email"] == "sensei@example.com"
+    assert c.get("/app/").headers["location"] == "/?next=/app/"
+    assert c.get("/api/config").status_code == 401
+    welcome = c.get("/")
+    assert "accounts.google.com/gsi/client" in welcome.text
+    assert "test-client.apps.googleusercontent.com" in welcome.text
+
+
+def test_google_verified_user_becomes_actor_and_provisions_user(records_db, monkeypatch) -> None:
+    """検証済み session の email/sub が config・証跡・users に反映される。"""
+    c = _client()
+    _sign_in_with_google(c, monkeypatch)
+    assert c.get("/").headers["location"] == "/app/"  # 再訪は案内を挟まず作業へ戻る。
+    assert c.get("/api/config").json()["user_email"] == "sensei@example.com"
     payload = {
         "kind": "diary",
         "entry": _edit_diary_entry(),
         "author_kind": "ai",
         "actor": "なりすまし名義",
     }
-    assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
+    assert c.post("/api/records", json=payload).json()["status"] == "saved"
     approve = {"kind": "diary", "entry": _edit_diary_entry(), "actor": "なりすまし名義"}
-    assert (
-        c.post("/api/records/approve", json=approve, headers=headers).json()["status"] == "approved"
-    )
+    assert c.post("/api/records/approve", json=approve).json()["status"] == "approved"
     assert {e["actor"] for e in record_store.list_audit_events()} == {"sensei@example.com"}
     # users へ auto-provision（表示名は後から DB で設定できる）
     with record_store.Session(record_store._engine()) as session:
         users = list(session.scalars(record_store.sa.select(record_store.User)))
     assert [u.email for u in users] == ["sensei@example.com"]
+    assert users[0].google_subject == "google-subject-123"
 
 
-def test_iap_verification_failure_falls_back_to_declared_actor(records_db, monkeypatch) -> None:
-    """署名検証に失敗したら匿名扱い＝actor は従来の自己申告（偽の認証を通さない・本流は壊さない）。"""
-    from hoiku_agent.web import iap
-
-    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
-
-    def _boom(assertion: str, audience: str) -> dict:
-        raise ValueError("bad signature")
-
-    monkeypatch.setattr(iap, "_verify_assertion", _boom)
+def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
+    """GIS callback は double-submit cookie が一致しなければ session を作らない。"""
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
-    headers = {"x-goog-iap-jwt-assertion": "tampered"}
-    assert c.get("/api/config", headers=headers).json()["user_email"] is None
-    payload = {
-        "kind": "diary",
-        "entry": _edit_diary_entry(),
-        "author_kind": "ai",
-        "actor": "保育士A",
-    }
-    assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
-    assert record_store.list_audit_events()[0]["actor"] == "保育士A"
+    c.cookies.set("g_csrf_token", "expected")
+    r = c.post("/auth/google", data={"credential": "token", "g_csrf_token": "wrong"})
+    assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
 
 
 def test_set_user_display_name_updates_config_and_actor(records_db, monkeypatch) -> None:
-    """POST /api/user＝IAP の検証済み email に表示名を紐づけ、config と証跡に反映される。"""
-    from hoiku_agent.web import iap
-
-    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
-    monkeypatch.setattr(iap, "_verify_assertion", lambda a, aud: {"email": "sensei@example.com"})
+    """POST /api/user＝Google の検証済み identity に表示名を紐づけ、証跡へ反映する。"""
     c = _client()
-    headers = {"x-goog-iap-jwt-assertion": "signed-jwt"}
-    r = c.post("/api/user", json={"display_name": "そうた先生"}, headers=headers)
+    _sign_in_with_google(c, monkeypatch)
+    r = c.post("/api/user", json={"display_name": "そうた先生"})
     assert r.status_code == 200 and r.json()["display_name"] == "そうた先生"
     # config に user_display_name として乗る（フロントが名前を表示できる）。
-    cfg = c.get("/api/config", headers=headers).json()
+    cfg = c.get("/api/config").json()
     assert cfg["user_email"] == "sensei@example.com"
     assert cfg["user_display_name"] == "そうた先生"
     # 以後の保存の証跡 actor は「表示名（email）」＝自己申告の名義は無視される。
@@ -1274,34 +1269,29 @@ def test_set_user_display_name_updates_config_and_actor(records_db, monkeypatch)
         "author_kind": "ai",
         "actor": "無視名義",
     }
-    assert c.post("/api/records", json=payload, headers=headers).json()["status"] == "saved"
+    assert c.post("/api/records", json=payload).json()["status"] == "saved"
     assert {e["actor"] for e in record_store.list_audit_events()} == {
         "そうた先生（sensei@example.com）"
     }
 
 
 def test_set_user_display_name_requires_signin(monkeypatch) -> None:
-    """未サインイン（検証済み email なし）は 403＝偽装ヘッダで他人の表示名を書けない（fail-closed）。"""
-    monkeypatch.setattr(settings, "iap_audience", "")  # IAP 未配線＝ヘッダを信用しない
+    """未サインイン（検証済み email なし）は 403＝他人の表示名を書けない（fail-closed）。"""
     r = _client().post(
         "/api/user",
         json={"display_name": "なりすまし"},
-        headers={"x-goog-iap-jwt-assertion": "spoofed"},
     )
     assert r.status_code == 403 and r.json()["code"] == "auth_required"
 
 
 def test_set_user_display_name_not_passcode_gated(records_db, monkeypatch) -> None:
     """/api/user はパスコードゲート外＝サインイン済みならパスコード無しで自分の表示名を保存できる。"""
-    from hoiku_agent.web import iap
-
     monkeypatch.setattr(settings, "demo_passcode", "secret")  # ゲート有効でも…
-    monkeypatch.setattr(settings, "iap_audience", "/projects/1/locations/l/services/s")
-    monkeypatch.setattr(iap, "_verify_assertion", lambda a, aud: {"email": "sensei@example.com"})
-    r = _client().post(
+    c = _client()
+    _sign_in_with_google(c, monkeypatch)
+    r = c.post(
         "/api/user",
         json={"display_name": "そうた先生"},
-        headers={"x-goog-iap-jwt-assertion": "signed-jwt"},
     )
     assert r.status_code == 200 and r.json()["status"] == "ok"  # パスコードで 401 にならない
 
