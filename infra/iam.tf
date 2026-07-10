@@ -1,4 +1,5 @@
-# サービスアカウント：hoiku-run（実行）/ github-deployer（CD）は既存＝import、tf-admin は新規。
+# サービスアカウント：hoiku-run（実行）/ github-deployer（CD）は既存＝import、
+# eval-runner（層B実採点）/ tf-admin（IaC）は Terraform 管理。
 resource "google_service_account" "hoiku_run" {
   account_id   = "hoiku-run"
   display_name = "hoiku-agent Cloud Run runtime"
@@ -7,6 +8,11 @@ resource "google_service_account" "hoiku_run" {
 resource "google_service_account" "github_deployer" {
   account_id   = "github-deployer"
   display_name = "GitHub Actions deployer (Cloud Run CD)"
+}
+
+resource "google_service_account" "eval_runner" {
+  account_id   = "eval-runner"
+  display_name = "GitHub Actions eval runner (Vertex AI only)"
 }
 
 resource "google_service_account" "tf_admin" {
@@ -28,6 +34,10 @@ locals {
     "roles/cloudsql.client",
     "roles/run.admin",
     "roles/storage.admin",
+  ]
+  # eval SA：エージェント生成＋Gemini judge の Vertex 推論だけ。CD/DB/Secret 権限を混ぜない。
+  eval_runner_roles = [
+    "roles/aiplatform.user",
   ]
   # tf-admin：フル基盤を管理する project スコープの admin 最小セット
   # （billing budget はスコープ外＝billing-account 権限を CI SA に渡さない。budget は手動運用）。
@@ -63,6 +73,13 @@ resource "google_project_iam_member" "github_deployer" {
   member   = "serviceAccount:${google_service_account.github_deployer.email}"
 }
 
+resource "google_project_iam_member" "eval_runner" {
+  for_each = toset(local.eval_runner_roles)
+  project  = var.project_id
+  role     = each.value
+  member   = "serviceAccount:${google_service_account.eval_runner.email}"
+}
+
 resource "google_project_iam_member" "tf_admin" {
   for_each = toset(local.tf_admin_roles)
   project  = var.project_id
@@ -77,7 +94,7 @@ resource "google_service_account_iam_member" "deployer_actas_runtime" {
   member             = "serviceAccount:${google_service_account.github_deployer.email}"
 }
 
-# WIF：自リポの Actions が CD SA / tf-admin SA を借用（鍵レス）。
+# WIF：自リポの Actions が CD SA / eval SA / tf-admin SA を借用（鍵レス）。
 resource "google_service_account_iam_member" "deployer_wif" {
   service_account_id = google_service_account.github_deployer.name
   role               = "roles/iam.workloadIdentityUser"
@@ -86,6 +103,12 @@ resource "google_service_account_iam_member" "deployer_wif" {
 
 resource "google_service_account_iam_member" "tf_admin_wif" {
   service_account_id = google_service_account.tf_admin.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = local.wif_repo_principal
+}
+
+resource "google_service_account_iam_member" "eval_runner_wif" {
+  service_account_id = google_service_account.eval_runner.name
   role               = "roles/iam.workloadIdentityUser"
   member             = local.wif_repo_principal
 }
