@@ -35,6 +35,49 @@ export function makeClasses(ui) {
   const childrenOf = (classId) => children.filter((c) => c.class_id === classId);
   const unassigned = () => children.filter((c) => !c.class_id);
 
+  // 未所属児の並び替えに使う満年齢。生年月日が無い児は推測せず「年齢不明」へ送る。
+  function ageInYears(birthdate) {
+    if (!birthdate) return null;
+    const birth = new Date(`${birthdate}T00:00:00`);
+    if (Number.isNaN(birth.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const birthdayPassed =
+      today.getMonth() > birth.getMonth() ||
+      (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+    if (!birthdayPassed) age -= 1;
+    return age >= 0 ? age : null;
+  }
+
+  function ageLabel(k) {
+    const age = ageInYears(k.birthdate);
+    return age == null ? "年齢不明" : `${age}歳`;
+  }
+
+  function enableDropTarget(target, classId) {
+    target.classList.add("cdrop-target");
+    target.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      target.classList.add("is-drag-over");
+    });
+    target.addEventListener("dragleave", (event) => {
+      if (!event.relatedTarget || !target.contains(event.relatedTarget)) {
+        target.classList.remove("is-drag-over");
+      }
+    });
+    target.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      target.classList.remove("is-drag-over");
+      const child = event.dataTransfer.getData("text/plain");
+      if (!child) return;
+      const source = children.find((k) => k.display_name === child);
+      if (source && (source.class_id || null) === (classId || null)) return;
+      const res = await adk.assignChild(child, classId || "");
+      if (applyWrite(res, classId ? "クラスを移動しました" : "未所属に戻しました")) await reload();
+    });
+  }
+
   // 書込結果を反映（needsGate はパスコード要求・失敗は正直に出す＝偽の緑を出さない）。成功なら true。
   function applyWrite(res, okMsg) {
     if (res && res.needsGate) {
@@ -93,6 +136,7 @@ export function makeClasses(ui) {
 
     // 在籍児（外すボタンつき）
     const roster = el("div", "croster");
+    enableDropTarget(roster, c.id);
     const kids = childrenOf(c.id);
     if (!kids.length) {
       roster.appendChild(el("p", "cempty-sm", "在籍児はまだいません。下から追加できます。"));
@@ -107,6 +151,15 @@ export function makeClasses(ui) {
 
   function childRow(k) {
     const row = el("div", "crow");
+    row.draggable = true;
+    row.dataset.child = k.display_name;
+    row.title = "ドラッグして所属を移動";
+    row.addEventListener("dragstart", (event) => {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", k.display_name);
+      row.classList.add("is-dragging");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("is-dragging"));
     const name = el("span", "cname", esc(k.display_name));
     if (k.official_name) name.title = k.official_name; // 本名（氏名欄用）はホバーで確認できる
     const off = el("button", "icon-btn", iconHTML("minus"));
@@ -215,8 +268,26 @@ export function makeClasses(ui) {
     card.appendChild(
       el("div", "ccard-head", `<div class="ctitle">未所属の園児<span class="cmeta">クラス未割当</span></div>`),
     );
-    const roster = el("div", "croster");
-    un.forEach((k) => roster.appendChild(el("div", "crow", `<span class="cname">${esc(k.display_name)}</span>`)));
+    const roster = el("div", "croster cunassigned-roster");
+    enableDropTarget(roster, "");
+    const groups = new Map();
+    un.forEach((k) => {
+      const label = ageLabel(k);
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(k);
+    });
+    [...groups.entries()]
+      .sort(([a], [b]) => {
+        if (a === "年齢不明") return 1;
+        if (b === "年齢不明") return -1;
+        return Number.parseInt(a, 10) - Number.parseInt(b, 10);
+      })
+      .forEach(([label, kids]) => {
+        const group = el("div", "cage-group");
+        group.appendChild(el("div", "cage-label", label));
+        kids.forEach((k) => group.appendChild(childRow(k)));
+        roster.appendChild(group);
+      });
     card.appendChild(roster);
     return card;
   }

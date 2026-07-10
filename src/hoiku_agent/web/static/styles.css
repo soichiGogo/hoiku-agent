@@ -709,7 +709,14 @@ select.de-input{appearance:auto;min-height:38px}
 .ccard-head .badge{margin-left:auto}
 .croster{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-2)}
 .crow{display:inline-flex;align-items:center;gap:6px;padding:4px 6px 4px 12px;border:1px solid var(--line);
-  border-radius:var(--r-pill);background:var(--surface)}
+  border-radius:var(--r-pill);background:var(--surface);cursor:grab;transition:.15s}
+.crow:active{cursor:grabbing}
+.crow.is-dragging{opacity:.45}
+.cdrop-target{min-height:42px;border-radius:var(--r-sm);transition:.15s}
+.cdrop-target.is-drag-over{background:var(--primary-soft);outline:2px dashed var(--primary);outline-offset:3px}
+.cage-group{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);width:100%}
+.cage-label{width:3.8em;color:var(--muted);font-size:var(--fs-caption);font-weight:800}
+.cunassigned-roster{display:flex;flex-direction:column;align-items:stretch;gap:var(--sp-2)}
 .cname{font-size:var(--fs-sm);font-weight:700;color:var(--ink)}
 .cadd-child{margin-top:2px}
 .cadd-child > summary{cursor:pointer;font-size:var(--fs-sm);font-weight:700;color:var(--primary-d);
