@@ -49,11 +49,8 @@ app = get_fast_api_app(
     # agent 実行・LLM・ツール呼び出しのスパンを Cloud Trace へ（可観測性）。ADK ネイティブ配線に
     # 委ねる（自前 OTel 手組みしない＝§9 と同型）。既定 false＝ローカル/CI は送らない（config.py）。
     trace_to_cloud=settings.trace_to_cloud,
-    # ADK は非同一Originの状態変更を既定で拒否する。Google Identity Services の redirect UX は
-    # https://accounts.google.com から callback へID tokenを POST するため、その**固定のGoogle Originだけ**を
-    # 明示許可する。callback 内ではさらに Google署名付きtoken検証＋double-submit CSRF検証を必須にする。
-    # 自アプリの同一Originは ADK の既定same-origin判定で引き続き許可され、任意の外部Originは拒否される。
-    allow_origins=["https://accounts.google.com"],
+    # Google Sign-In は popup callback からの同一Origin POST にしているため、ADK の既定same-origin
+    # 保護を緩めない。callback 内では Google署名付きtoken検証と session 発行 CSRF token を必須にする。
     web=True,
 )
 

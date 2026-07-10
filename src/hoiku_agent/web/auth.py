@@ -11,6 +11,7 @@ ID token をサーバ側で検証し、署名付きの同一オリジン session
 from __future__ import annotations
 
 import hmac
+import secrets
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,7 +19,7 @@ from fastapi import Request
 
 from ..config import settings
 
-_CSRF_COOKIE = "g_csrf_token"
+_LOGIN_CSRF_SESSION_KEY = "google_login_csrf"
 _SESSION_USER = "google_user"
 
 
@@ -55,10 +56,22 @@ def validate_google_credential(credential: str) -> GoogleUser:
     return GoogleUser(subject=subject, email=email, name=str(claims.get("name") or "").strip())
 
 
-def csrf_matches(request: Request, form_token: str) -> bool:
-    """GIS の double-submit cookie を定数時間比較する（Google 推奨の CSRF 対策）。"""
-    cookie_token = request.cookies.get(_CSRF_COOKIE, "")
-    return bool(cookie_token and form_token) and hmac.compare_digest(cookie_token, form_token)
+def issue_login_csrf(request: Request) -> str:
+    """案内画面で一度だけ使える、同一オリジンの Google ログイン用 CSRF token を発行する。"""
+    token = secrets.token_urlsafe(32)
+    request.session[_LOGIN_CSRF_SESSION_KEY] = token
+    return token
+
+
+def login_csrf_matches(request: Request, token: str) -> bool:
+    """popup callback の同一オリジン POST が案内画面から始まったことを確認する。"""
+    expected = request.session.get(_LOGIN_CSRF_SESSION_KEY)
+    return isinstance(expected, str) and bool(token) and hmac.compare_digest(expected, token)
+
+
+def consume_login_csrf(request: Request) -> None:
+    """ログイン成功後に CSRF token を使い捨てにする。"""
+    request.session.pop(_LOGIN_CSRF_SESSION_KEY, None)
 
 
 def current_google_user(request: Request) -> GoogleUser | None:
