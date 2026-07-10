@@ -271,14 +271,14 @@ def _safe_next(raw: str | None) -> str:
     return path if path.startswith("/") and not path.startswith("//") else "/app/"
 
 
-def _login_control(request: Request) -> str:
+def _login_control(csrf_token: str) -> str:
     """Google ブランド準拠の公式ボタン、または安全に設定不足を示す表示を返す。"""
     if not settings.google_signin_enabled:
         return (
             '<p class="login-unavailable">ログインの準備中です。管理者に設定をご確認ください。</p>'
         )
     client_id = html.escape(settings.google_oauth_client_id, quote=True)
-    csrf_token = json.dumps(auth.issue_login_csrf(request))
+    encoded_csrf_token = json.dumps(csrf_token)
     # redirect UX は Google Origin の POST を ADK のグローバル Origin guard が拒否し得る。公式ボタンは
     # 保ったまま popup callback にし、ID token を案内画面と同一Originの fetch で送る。
     return f'''<div id="g_id_onload" data-client_id="{client_id}" data-callback="handleGoogleCredential"
@@ -296,7 +296,7 @@ def _login_control(request: Request) -> str:
             credentials: "same-origin",
             headers: {{
               "Content-Type": "application/json",
-              "X-Google-Login-CSRF": {csrf_token}
+              "X-Google-Login-CSRF": {encoded_csrf_token}
             }},
             body: JSON.stringify({{credential: response.credential}})
           }});
@@ -315,7 +315,18 @@ def _login_control(request: Request) -> str:
 def _welcome_page(request: Request) -> HTMLResponse:
     """案内画面テンプレートへ Google client ID を最小限だけ差し込んで返す。"""
     template = _WELCOME_TEMPLATE_PATH.read_text(encoding="utf-8")
-    return HTMLResponse(template.replace("{{LOGIN_CONTROL}}", _login_control(request)))
+    csrf_token = auth.issue_login_csrf()
+    response = HTMLResponse(template.replace("{{LOGIN_CONTROL}}", _login_control(csrf_token)))
+    if settings.google_signin_enabled:
+        response.set_cookie(
+            auth.LOGIN_CSRF_COOKIE,
+            auth.login_csrf_cookie_value(csrf_token),
+            httponly=True,
+            secure=bool(os.environ.get("K_SERVICE")),
+            samesite="lax",
+            max_age=10 * 60,
+        )
+    return response
 
 
 def _is_public_auth_path(path: str) -> bool:
@@ -1112,7 +1123,6 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 status_code=401,
             )
         auth.sign_in(request, user)
-        auth.consume_login_csrf(request)
         # 初回は users へ作り、既存 IAP の email 行には Google subject を補完する。DB 未接続の降格は
         # ログイン自体を妨げない（identity の検証済み session が証跡の正）。
         await run_in_threadpool(
@@ -1122,7 +1132,14 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             now=datetime.now(),
         )
         target = _safe_next(str(request.session.pop("post_login_path", "/app/")))
-        return {"redirect": target}
+        response = JSONResponse({"redirect": target})
+        response.delete_cookie(
+            auth.LOGIN_CSRF_COOKIE,
+            httponly=True,
+            secure=bool(os.environ.get("K_SERVICE")),
+            samesite="lax",
+        )
+        return response
 
     @app.post("/auth/logout")
     async def google_logout(request: Request):
