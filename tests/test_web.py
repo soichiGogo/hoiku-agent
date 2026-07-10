@@ -1228,7 +1228,7 @@ def test_google_verified_user_becomes_actor_and_provisions_user(records_db, monk
 
 
 def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
-    """popup callback は案内画面が発行した session CSRF token が無ければ session を作らない。"""
+    """popup callback は案内画面が発行した CSRF cookie と header が違えば拒否する。"""
     monkeypatch.setattr(
         settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
     )
@@ -1239,6 +1239,38 @@ def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
         "/auth/google", json={"credential": "token"}, headers={"X-Google-Login-CSRF": "wrong"}
     )
     assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
+
+
+def test_google_callback_uses_double_submit_cookie_not_session(monkeypatch) -> None:
+    """本番同様に session cookie が復元できなくても専用CSRF cookieで検証できる。"""
+    from hoiku_agent.web import auth
+
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        auth,
+        "validate_google_credential",
+        lambda credential: auth.GoogleUser(
+            subject="google-subject-123", email="sensei@example.com"
+        ),
+    )
+    c = _client()
+    welcome = c.get("/")
+    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    assert c.cookies.get(auth.LOGIN_CSRF_COOKIE) == auth.login_csrf_cookie_value(csrf)
+    c.cookies.delete("session")
+
+    response = c.post(
+        "/auth/google",
+        json={"credential": "signed-token"},
+        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["redirect"] == "/app/"
+    assert auth.LOGIN_CSRF_COOKIE not in c.cookies
 
 
 def test_google_callback_rejects_cross_origin_post(monkeypatch) -> None:
