@@ -1,0 +1,6 @@
+project_id     = "hoiku-agent-hack-2026"
+project_number = "412724895317"
+region         = "us-central1"
+github_owner   = "soichiGogo"
+github_repo    = "soichiGogo/hoiku-agent"
+domain         = "hoiku-agent.app"

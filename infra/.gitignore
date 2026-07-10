@@ -1,0 +1,14 @@
+# Terraform 作業ファイル（コミットしない）
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# .terraform.lock.hcl はコミットする（provider 固定の再現性）
