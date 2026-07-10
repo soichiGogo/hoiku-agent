@@ -1,0 +1,157 @@
+<mxfile host="Electron" agent="Codex" version="26.0.16">
+  <diagram name="なぜAIエージェントか">
+    <mxGraphModel dx="1672" dy="941" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1672" pageHeight="941" background="#FFFFFF" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#2E7D32;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="W1" target="W2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#2E7D32;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="W2" target="W3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e3" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6D28D9;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="A0" target="A1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6D28D9;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="A1" target="A2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e5" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6D28D9;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="A2" target="A3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#6D28D9;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="A3" target="A4" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e7" value="承認" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#2E7D32;fontSize=11;fontStyle=1;fontFamily=Helvetica;" edge="1" source="A4" target="H1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e8" value="要修正" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#C2410C;fontSize=11;fontStyle=1;fontFamily=Helvetica;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" source="A4" target="A1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1230" y="595"/>
+              <mxPoint x="675" y="595"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="成立条件" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#2E7D32;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="W3" target="H1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="480" y="535"/>
+              <mxPoint x="1445" y="535"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" value="最終判断" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#E65100;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="H1" target="H2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#0369A1;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="H2" target="I1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1580" y="710"/>
+              <mxPoint x="220" y="710"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#0369A1;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="I1" target="I2" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#0369A1;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="I2" target="I3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#E65100;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="I3" target="H3" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;strokeWidth=2;strokeColor=#2E7D32;fontSize=12;fontStyle=1;fontFamily=Helvetica;" edge="1" source="H3" target="P1" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e16" value="次の作成・レビューへ前置" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;endArrow=block;endFill=1;dashed=1;dashPattern=6 4;strokeWidth=2;strokeColor=#2E7D32;fontSize=12;fontStyle=1;fontFamily=Helvetica;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" source="P1" target="A1" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1390" y="675"/>
+              <mxPoint x="675" y="675"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="G1" value="ワークフローで保証できる領域" style="shape=swimlane;horizontal=0;startSize=34;rounded=1;fillColor=#E8F5E9;swimlaneFillColor=none;strokeColor=#2E7D32;strokeWidth=2;fontColor=#166534;fontStyle=1;fontSize=18;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="30" y="125" width="500" height="500" as="geometry"/>
+        </mxCell>
+        <mxCell id="G2" value="AI エージェントが価値を生む領域" style="shape=swimlane;horizontal=0;startSize=34;rounded=1;fillColor=#EDE9FE;swimlaneFillColor=none;strokeColor=#6D28D9;strokeWidth=2;fontColor=#4C1D95;fontStyle=1;fontSize=18;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="555" y="125" width="790" height="500" as="geometry"/>
+        </mxCell>
+        <mxCell id="G3" value="保育士" style="shape=swimlane;horizontal=0;startSize=34;rounded=1;fillColor=#FFF3E0;swimlaneFillColor=none;strokeColor=#E65100;strokeWidth=2;fontColor=#9A3412;fontStyle=1;fontSize=18;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="125" width="270" height="500" as="geometry"/>
+        </mxCell>
+        <mxCell id="G4" value="勘所を育てる改善ループ" style="shape=swimlane;horizontal=0;startSize=34;rounded=1;fillColor=#E0F2FE;swimlaneFillColor=none;strokeColor=#0369A1;strokeWidth=2;fontColor=#075985;fontStyle=1;fontSize=18;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="30" y="665" width="1610" height="225" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="T1" value="なぜ AI エージェントなのか" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontColor=#0F2854;fontSize=32;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="350" y="22" width="970" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="T2" value="文書の型は決められる。しかし、観察した姿を次の保育へどうつなぐかに一意の手順はない。" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontColor=#475569;fontSize=17;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="270" y="72" width="1130" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="W1" value="国の方針・園の様式&#xa;何を、どの欄に、どんな順番で書くか" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#DCFCE7;strokeColor=#2E7D32;strokeWidth=2;fontColor=#166534;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="70" y="185" width="420" height="72" as="geometry"/>
+        </mxCell>
+        <mxCell id="W2" value="harness&#xa;必須欄・年齢分岐・集積・順序&#xa;様式・表記正規化・承認ゲート" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#DCFCE7;strokeColor=#2E7D32;strokeWidth=2;fontColor=#166534;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="70" y="300" width="420" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="W3" value="文書として成立させる&#xa;同じ入力なら同じ規則で検査" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#BBF7D0;strokeColor=#2E7D32;strokeWidth=2;fontColor=#14532D;fontSize=17;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="70" y="460" width="420" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="W4" value="ここは AI に自由判断させない" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#86EFAC;strokeWidth=1;fontColor=#166534;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="135" y="560" width="290" height="42" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="A0" value="観察した「子どもの姿」" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#F5F3FF;strokeColor=#6D28D9;strokeWidth=2;fontColor=#4C1D95;fontSize=17;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="600" y="185" width="240" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="A1" value="作成 AI&#xa;どの情報が必要かを判断" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EDE9FE;strokeColor=#6D28D9;strokeWidth=2;fontColor=#4C1D95;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="600" y="285" width="240" height="74" as="geometry"/>
+        </mxCell>
+        <mxCell id="A2" value="保育所保育指針を検索&#xa;過去書類・子どもの履歴を参照&#xa;不足時だけ保育士へ質問" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EDE9FE;strokeColor=#6D28D9;strokeWidth=2;fontColor=#4C1D95;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="875" y="275" width="260" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="A3" value="姿 → ねらい・援助・評価&#xa;その子・その園に合う中身へ変換" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#DDD6FE;strokeColor=#6D28D9;strokeWidth=2;fontColor=#4C1D95;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="875" y="430" width="300" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="A4" value="レビュー AI&#xa;指針・論理・表現を点検" style="rhombus;whiteSpace=wrap;html=0;fillColor=#FEF3C7;strokeColor=#F9A825;strokeWidth=2;fontColor=#92400E;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="420" width="135" height="105" as="geometry"/>
+        </mxCell>
+        <mxCell id="A5" value="制度に一意の変換手順はない&#xa;ここが保育士の勘所" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFF7ED;strokeColor=#EA580C;strokeWidth=2;fontColor=#9A3412;fontSize=15;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="600" y="430" width="240" height="82" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="H1" value="下書きを&#xa;確認・編集・承認" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFEDD5;strokeColor=#E65100;strokeWidth=2;fontColor=#9A3412;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="400" width="210" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="H2" value="確定書類&#xa;AI は最終決定しない" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FED7AA;strokeColor=#E65100;strokeWidth=2;fontColor=#9A3412;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="525" width="210" height="72" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="I1" value="修正・👍👎・ひとこと" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#E0F2FE;strokeColor=#0369A1;strokeWidth=2;fontColor=#075985;fontSize=15;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="70" y="755" width="220" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="I2" value="改善エージェント&#xa;再利用できる勘所か判断&#xa;意味的競合を精査" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#E0F2FE;strokeColor=#0369A1;strokeWidth=2;fontColor=#075985;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="345" y="735" width="240" height="98" as="geometry"/>
+        </mxCell>
+        <mxCell id="I3" value="指針カードを提案&#xa;固有の感想なら更新しない" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#E0F2FE;strokeColor=#0369A1;strokeWidth=2;fontColor=#075985;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="645" y="745" width="230" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="H3" value="保育士が比較し&#xa;反映を決定" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFEDD5;strokeColor=#E65100;strokeWidth=2;fontColor=#9A3412;fontSize=15;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="935" y="745" width="190" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="P1" value="育つ指針&#xa;園・保育士の勘所を蓄積&#xa;使うほど文書づくりが洗練" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#DCFCE7;strokeColor=#2E7D32;strokeWidth=2;fontColor=#166534;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="735" width="270" height="98" as="geometry"/>
+        </mxCell>
+        <mxCell id="N1" value="保育日誌は保育士が自分のことばで手入力。AI は次の書類への変換を支援する。" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;overflow=hidden;fontColor=#475569;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="850" width="530" height="28" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -4,6 +4,9 @@
 リポジトリ内の設計参照は `docs/設計コンテキスト.md`（開発ハンドオフ）。本ファイルはそれをコード構造に
 対応づけた索引。構造を変えたら本ファイルと `CLAUDE.md` を同じ変更内で更新する。
 
+README 掲載図の内容定義は `docs/diagram-specs.md`、編集可能な正本は `docs/system-architecture.drawio` と
+`docs/agent-workflow.drawio`。同名の PNG は掲載用の派生成果物で、責務境界・データフロー変更時に同期する。
+
 ## 3責務 ↔ コード（設計コンテキスト §5 責務境界）
 
 | 責務 | コード | 役割 | 性質 |
