@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import html
+import json
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -182,6 +183,12 @@ class UserProfileRequest(BaseModel):
     display_name: str = ""
 
 
+class GoogleSignInRequest(BaseModel):
+    """Google Identity Services の popup callback から送る、検証前の ID token。"""
+
+    credential: str = ""
+
+
 def _doc_filename(kind: str, entry: dict, ext: str) -> str:
     """書類のダウンロード名（日本語。RFC5987 で Content-Disposition に載せる）。ext は "pdf"/"docx"。"""
     if kind == "monthly":
@@ -271,19 +278,37 @@ def _login_control(request: Request) -> str:
             '<p class="login-unavailable">ログインの準備中です。管理者に設定をご確認ください。</p>'
         )
     client_id = html.escape(settings.google_oauth_client_id, quote=True)
-    callback_uri = request.url_for("google_signin")
-    # Cloud Run は TLS を終端してアプリへは HTTP として転送するため、request.url_for() の scheme は
-    # "http" になり得る。Google Identity Services の redirect login URI は HTTPS 必須なので、本番だけ
-    # 外側の公開 scheme を明示する。ローカルは http://localhost を許す Google の開発例に従いそのままにする。
-    if os.environ.get("K_SERVICE"):
-        callback_uri = callback_uri.replace(scheme="https")
-    login_uri = html.escape(str(callback_uri), quote=True)
-    # 独自ボタンではなく Google Identity Services が生成する公式ボタンを使う。redirect UX は
-    # 利用者のクリック後にだけ Google のアカウント選択/同意画面へ進むため、案内画面を先に読める。
-    return f'''<div id="g_id_onload" data-client_id="{client_id}" data-login_uri="{login_uri}"
-      data-ux_mode="redirect" data-auto_prompt="false"></div>
+    csrf_token = json.dumps(auth.issue_login_csrf(request))
+    # redirect UX は Google Origin の POST を ADK のグローバル Origin guard が拒否し得る。公式ボタンは
+    # 保ったまま popup callback にし、ID token を案内画面と同一Originの fetch で送る。
+    return f'''<div id="g_id_onload" data-client_id="{client_id}" data-callback="handleGoogleCredential"
+      data-auto_prompt="false"></div>
     <div class="google-login g_id_signin" data-type="standard" data-theme="outline" data-size="large"
       data-text="continue_with" data-shape="rectangular" data-logo_alignment="left" data-locale="ja"></div>
+    <p id="login-error" class="login-error" role="alert" hidden></p>
+    <script>
+      window.handleGoogleCredential = async function (response) {{
+        const error = document.getElementById("login-error");
+        error.hidden = true;
+        try {{
+          const result = await fetch("/auth/google", {{
+            method: "POST",
+            credentials: "same-origin",
+            headers: {{
+              "Content-Type": "application/json",
+              "X-Google-Login-CSRF": {csrf_token}
+            }},
+            body: JSON.stringify({{credential: response.credential}})
+          }});
+          const body = await result.json();
+          if (!result.ok) throw new Error(body.error || "Google ログインに失敗しました");
+          window.location.assign(body.redirect);
+        }} catch (cause) {{
+          error.textContent = cause instanceof Error ? cause.message : "Google ログインに失敗しました";
+          error.hidden = false;
+        }}
+      }};
+    </script>
     <script src="https://accounts.google.com/gsi/client" async></script>'''
 
 
@@ -1066,22 +1091,20 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         return result
 
     @app.post("/auth/google", name="google_signin")
-    async def google_signin(
-        request: Request, credential: str = Form(""), g_csrf_token: str = Form("")
-    ):
-        """公式 Google ボタンの redirect POST を検証し、初回登録または既存 session を作る。"""
+    async def google_signin(request: Request, payload: GoogleSignInRequest):
+        """公式 Google ボタンの同一Origin callback を検証し、初回登録または既存 session を作る。"""
         if not settings.google_signin_enabled:
             return JSONResponse(
                 {"error": "ログイン設定が不足しています", "code": "auth_unavailable"},
                 status_code=503,
             )
-        if not auth.csrf_matches(request, g_csrf_token):
+        if not auth.login_csrf_matches(request, request.headers.get("x-google-login-csrf", "")):
             return JSONResponse(
                 {"error": "ログインをもう一度お試しください", "code": "csrf_failed"},
                 status_code=400,
             )
         try:
-            user = auth.validate_google_credential(credential)
+            user = auth.validate_google_credential(payload.credential)
         except ValueError:
             # token・claims はログへ出さない（認証失敗の理由を利用者にも詳細開示しない）。
             return JSONResponse(
@@ -1089,6 +1112,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 status_code=401,
             )
         auth.sign_in(request, user)
+        auth.consume_login_csrf(request)
         # 初回は users へ作り、既存 IAP の email 行には Google subject を補完する。DB 未接続の降格は
         # ログイン自体を妨げない（identity の検証済み session が証跡の正）。
         await run_in_threadpool(
@@ -1098,7 +1122,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             now=datetime.now(),
         )
         target = _safe_next(str(request.session.pop("post_login_path", "/app/")))
-        return RedirectResponse(target, status_code=303)
+        return {"redirect": target}
 
     @app.post("/auth/logout")
     async def google_logout(request: Request):
