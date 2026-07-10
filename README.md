@@ -118,7 +118,7 @@ flowchart LR
 |------|------|
 | エージェント実装 | **Google ADK**（Python, コードファースト） |
 | LLM | **Gemini**（Vertex AI 経由） |
-| 独自ナレッジ検索 | **Vertex AI RAG Engine**（保育所保育指針・10の姿） |
+| 独自ナレッジ検索 | **Vertex AI RAG Engine**（保育所保育指針の告示・解説・10の姿・要録関係資料） |
 | 長期メモリ・セッション | **Agent Engine**（Memory Bank / Sessions） |
 | 書類アーカイブ・育つ指針 | **Cloud SQL**（PostgreSQL・版管理・承認証跡） |
 | デプロイ | **Cloud Run**（scale-to-zero・アプリ内 Google Sign-In） |

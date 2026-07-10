@@ -1,7 +1,8 @@
 """ツール：保育所保育指針・10の姿を RAG 検索（静的ナレッジ）。
 
-設計コンテキスト §6 ツール表 / §9。静的な参照知識（保育所保育指針解説・10の姿・3つの視点）は
-Vertex RAG に置き、作成AIが「中身を決定」する際に自分で取りに行く（Agentic RAG）。
+設計コンテキスト §6 ツール表 / §9。静的な参照知識（保育所保育指針の告示・解説、10の姿・
+3つの視点、保育所児童保育要録関係資料）は Vertex RAG に置き、作成AIが「中身を決定」する際に
+自分で取りに行く（Agentic RAG）。
 
 配線（v0）：config.rag_corpus が設定されていれば Vertex RAG Engine（`vertexai.rag`）へ問い合わせる。
 未設定・呼び出し失敗時は降格して無害なフォールバックを返す（稼働中パイプラインを落とさない）。
@@ -26,12 +27,13 @@ def _fallback(query: str, reason: str) -> list[dict]:
     ]
 
 
-def search_guideline(query: str, top_k: int = 4) -> list[dict]:
+def search_guideline(query: str, top_k: int = 6) -> list[dict]:
     """保育所保育指針・10の姿などの静的ナレッジを検索する。
 
     Args:
         query: 検索クエリ（例「3歳児 言葉 ねらい」）。
-        top_k: 取得件数。
+        top_k: 取得件数。公式資料8件・検索評価9件の比較で、`512 / 128` のチャンク設定では
+            6件が最良だったため既定値は6。
 
     Returns:
         ヒットしたチャンク（{"source", "text"} のリスト）。未接続時は降格メッセージ1件。

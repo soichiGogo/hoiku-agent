@@ -1,0 +1,56 @@
+[
+  {
+    "id": "under_three_individual_plan",
+    "query": "3歳未満児の指導計画は個別に作成する必要があるか",
+    "expected_source": "保育所保育指針_告示本文_平成30年度適用.pdf",
+    "required_terms": ["３歳未満児", "個別的な計画"]
+  },
+  {
+    "id": "three_viewpoints",
+    "query": "乳児保育で示される3つの視点は何か",
+    "expected_source": "保育所保育指針解説_第2章_1-2.pdf",
+    "required_terms": ["健やかに伸び伸びと育つ", "身近な人と気持ちが通じ合う"]
+  },
+  {
+    "id": "five_domains",
+    "query": "3歳以上児の保育内容における5領域を確認したい",
+    "expected_source": "保育所保育指針_告示本文_平成30年度適用.pdf",
+    "required_terms": ["健康", "人間関係", "環境"]
+  },
+  {
+    "id": "sleep_safety",
+    "query": "午睡の安全な睡眠環境について指針の根拠を知りたい",
+    "expected_source": "保育所保育指針_告示本文_平成30年度適用.pdf",
+    "required_terms": ["午睡", "安全な睡眠環境"]
+  },
+  {
+    "id": "ten_no_sugata",
+    "query": "幼児期の終わりまでに育ってほしい姿を小学校と共有する根拠は何か",
+    "expected_source": "保育所保育指針_告示本文_平成30年度適用.pdf",
+    "required_terms": ["幼児期の終わりまでに育ってほしい姿", "小学校との連携"]
+  },
+  {
+    "id": "record_final_year",
+    "query": "保育所児童保育要録の最終年度には何を記載するか",
+    "expected_source": "保育所児童保育要録_記載事項.pdf",
+    "required_terms": ["最終年度", "保育の過程と子どもの育ち"]
+  },
+  {
+    "id": "record_no_comparison",
+    "query": "要録で子どもを他児と比較した評価を書いてよいか",
+    "expected_source": "保育所児童保育要録_記載事項.pdf",
+    "required_terms": ["他の子どもとの比較", "評定"]
+  },
+  {
+    "id": "record_storage",
+    "query": "保育所児童保育要録はいつまで保存することが望ましいか",
+    "expected_source": "保育所児童保育要録_通知.pdf",
+    "required_terms": ["小学校を卒業するまで", "保存"]
+  },
+  {
+    "id": "record_reference_form",
+    "query": "保育所児童保育要録の参考様式にある保護者の記入欄を確認したい",
+    "expected_source": "保育所児童保育要録_参考様式.pdf",
+    "required_terms": ["保護者", "氏名"]
+  }
+]

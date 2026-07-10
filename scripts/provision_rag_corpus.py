@@ -1,9 +1,10 @@
 """Vertex RAG Engine（保育所保育指針コーパス）の作成・取り込みスクリプト（手動運用・要 GCP 資格情報）。
 
-設計コンテキスト §6 ツール表 / §9 メモリ3分類 / §11 技術スタック：静的ナレッジ（保育所保育指針解説・
-10の姿・3つの視点）は Vertex RAG に置き、作成AI／レビューAI が `search_guideline` で「中身を決定」する
-際に自分で取りに行く（Agentic RAG）。本スクリプトはその接続先コーパスを用意する、再現可能な
-provisioning エントリ（root_agent からは呼ばない。`provision_memory_bank.py` と対をなす運用ツール）。
+設計コンテキスト §6 ツール表 / §9 メモリ3分類 / §11 技術スタック：静的ナレッジ（保育所保育指針の
+告示・解説、10の姿・3つの視点、保育所児童保育要録関係資料）は Vertex RAG に置き、作成AI／レビューAI が
+`search_guideline` で「中身を決定」する際に自分で取りに行く（Agentic RAG）。本スクリプトはその接続先
+コーパスを用意する、再現可能な provisioning エントリ（root_agent からは呼ばない。
+`provision_memory_bank.py` と対をなす運用ツール）。
 
 何をするか:
 - RagCorpus を作成（または既存 `RAG_CORPUS` を再利用）し、`knowledge/保育所保育指針/` 配下の文書
@@ -13,8 +14,10 @@ provisioning エントリ（root_agent からは呼ばない。`provision_memory
   `--verify` で簡易検索して確認する。
 
 ソース文書（gitignore 済み・§14。実データではなく公的刊行物）:
-- `knowledge/保育所保育指針/` に保育所保育指針解説（厚労省/こども家庭庁の公表 PDF）等を置く。
-  告示本体は法令類（著作権法13条）で利用可、解説も無償公開物。リポジトリにはコミットしない。
+- `knowledge/保育所保育指針/` に、保育所保育指針の告示本文・全章の解説・保育所児童保育要録の
+  通知／記載事項／参考様式を置く。取得元とファイル名は `docs/ライブ実行手順.md` を正とする。
+  告示本体は法令類（著作権法13条）で利用可、解説・要録関係資料も公式の無償公開物。リポジトリには
+  コミットしない。
 
 使い方（要 ADC＝`gcloud auth application-default login` 済み・`.env` に PROJECT/LOCATION）:
     uv run python scripts/provision_rag_corpus.py --create     # 新規コーパス作成＋取り込み
@@ -38,7 +41,7 @@ from vertexai import rag
 
 from hoiku_agent.config import settings
 
-# 既定のソース文書置き場（gitignore 済み）。ここに保育所保育指針解説 PDF 等を置く。
+# 既定のソース文書置き場（gitignore 済み）。ここに告示・解説・要録関係 PDF 等を置く。
 _DEFAULT_SOURCE_DIR = Path(__file__).resolve().parents[1] / "knowledge" / "保育所保育指針"
 # 取り込み対象の拡張子（Vertex RAG がサーバ側でパースできる形式に限る）。
 _SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md", ".html", ".docx"}
@@ -124,7 +127,7 @@ def _create_corpus_with_retry(
         try:
             return rag.create_corpus(
                 display_name="hoiku-hoikushishin",
-                description="保育所保育指針解説・10の姿（静的ナレッジ／Agentic RAG ソース）",
+                description="保育所保育指針（告示・解説）・要録関係資料（静的ナレッジ／Agentic RAG ソース）",
                 backend_config=_backend_config(embedding_model),
             )
         except Exception as e:  # noqa: BLE001  SDK は InvalidArgument を RuntimeError に包む
@@ -198,7 +201,7 @@ def provision(
     return corpus.name
 
 
-def verify(query: str, top_k: int = 4) -> None:
+def verify(query: str, top_k: int = 6) -> None:
     """取り込み後の検索確認（search_guideline と同じ retrieval_query で往復を見る）。"""
     if not settings.rag_corpus:
         raise SystemExit("RAG_CORPUS 未設定（.env に設定してから --verify）。")
