@@ -67,8 +67,20 @@ def test_propose_declared_conflict_passthrough(store):
     assert r["declared_conflicts"][0]["id"] == "card-0001"
 
 
-def test_propose_invalid_scope(store):
-    assert propose_policy_card("不明", "x")["status"] == "error"
+def test_propose_unknown_conflict_id_is_surfaced_not_dropped(store):
+    """存在しない競合 id を申告したら黙って捨てず has_conflict=True＋unknown_conflict_ids で素通りさせない。"""
+    r = propose_policy_card("共通", "個人名は仮名で表す", conflicts_with="card-9999")
+    assert r["unknown_conflict_ids"] == ["card-9999"]
+    assert r["has_conflict"] is True  # 「競合なし」で ask をスキップさせない
+    assert r["declared_conflicts"] == []
+    assert "見つかりません" in r["guidance"]
+
+
+def test_propose_invalid_scope_lists_all_scopes(store):
+    """不正 scope のエラー文言は PolicyScope 全値（保育要録 含む）を enum から導出する（文言ドリフト防止）。"""
+    r = propose_policy_card("不明", "x")
+    assert r["status"] == "error"
+    assert "保育要録" in r["detail"]  # scope 追加に文言が追随している
 
 
 def test_commit_add_reflects_immediately(store):
