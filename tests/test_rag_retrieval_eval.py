@@ -53,8 +53,14 @@ def test_choose_winner_prefers_quality_then_smaller_context() -> None:
     base = {"source_hit_rate": 1.0, "mean_source_rr": 1.0, "mean_term_coverage": 1.0}
     winner = choose_winner(
         [
-            {"name": "long", "metrics": base | {"mean_score": 0.9, "mean_context_characters": 5000}},
-            {"name": "short", "metrics": base | {"mean_score": 0.9, "mean_context_characters": 3000}},
+            {
+                "name": "long",
+                "metrics": base | {"mean_score": 0.9, "mean_context_characters": 5000},
+            },
+            {
+                "name": "short",
+                "metrics": base | {"mean_score": 0.9, "mean_context_characters": 3000},
+            },
         ]
     )
 

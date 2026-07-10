@@ -76,7 +76,9 @@ def load_cases(path: Path) -> list[RetrievalCase]:
     if not cases or len(ids) != len(set(ids)):
         raise ValueError("検索評価ケースが空、または id が重複しています")
     if any(not case.query or not case.expected_source or not case.required_terms for case in cases):
-        raise ValueError("検索評価ケースに query / expected_source / required_terms の空欄があります")
+        raise ValueError(
+            "検索評価ケースに query / expected_source / required_terms の空欄があります"
+        )
     return cases
 
 
@@ -88,7 +90,11 @@ def _normalized(value: str) -> str:
 def score_case(case: RetrievalCase, results: list[RetrievedChunk]) -> dict[str, Any]:
     """1ケースを資料順位と根拠語の網羅率で決定的に採点する。"""
     expected_rank = next(
-        (index for index, result in enumerate(results, start=1) if result.source == case.expected_source),
+        (
+            index
+            for index, result in enumerate(results, start=1)
+            if result.source == case.expected_source
+        ),
         None,
     )
     source_rr = 1 / expected_rank if expected_rank else 0.0
@@ -142,7 +148,9 @@ def choose_winner(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _source_files(source_dir: Path) -> list[Path]:
     files = sorted(
-        path for path in source_dir.iterdir() if path.is_file() and path.suffix.lower() in _SUPPORTED_SUFFIXES
+        path
+        for path in source_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in _SUPPORTED_SUFFIXES
     )
     if not files:
         raise ValueError(f"投入できる公式資料がありません: {source_dir}")
@@ -234,7 +242,9 @@ def evaluate_profile(
         _wait_for_active(corpus_name, expected_count=len(files), timeout_seconds=timeout_seconds)
         evaluations: list[dict[str, Any]] = []
         for top_k in top_ks:
-            case_scores = [score_case(case, _retrieve(corpus_name, case.query, top_k)) for case in cases]
+            case_scores = [
+                score_case(case, _retrieve(corpus_name, case.query, top_k)) for case in cases
+            ]
             evaluations.append(
                 {
                     "profile": asdict(profile),
@@ -250,13 +260,17 @@ def evaluate_profile(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Vertex RAG のチャンク設定を公式資料の検索到達度で比較")
+    parser = argparse.ArgumentParser(
+        description="Vertex RAG のチャンク設定を公式資料の検索到達度で比較"
+    )
     parser.add_argument("--source-dir", type=Path, default=_DEFAULT_SOURCE_DIR)
     parser.add_argument("--case-path", type=Path, default=_DEFAULT_CASE_PATH)
     parser.add_argument("--top-k", type=int, nargs="+", default=[3, 4, 6])
     parser.add_argument("--timeout-seconds", type=int, default=600)
     parser.add_argument("--output", type=Path, help="比較結果JSONの出力先（省略時は標準出力）")
-    parser.add_argument("--keep-corpora", action="store_true", help="障害調査用に一時コーパスを削除しない")
+    parser.add_argument(
+        "--keep-corpora", action="store_true", help="障害調査用に一時コーパスを削除しない"
+    )
     args = parser.parse_args()
 
     if not settings.google_cloud_project:
