@@ -33,6 +33,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.platypus.doctemplate import LayoutError
 
 from ..harness.template_store import load_template
 from ..schemas import FiveDomains, ThreeViewpoint
@@ -84,6 +85,9 @@ def _section(label: str, content, width: float = _CONTENT_W) -> Table:
     tbl = Table(
         [[_P(label, _LABEL), content]],
         colWidths=[_LABEL_W, width - _LABEL_W],
+        # 1欄の本文が1ページ高を超えても行内で分割して次ページへ流す（既定 splitInRow=0 だと分割点が
+        # なく LayoutError で帳票生成が 500 になる）。長い総合所見・取込書類でも綴じられるようにする。
+        splitInRow=1,
     )
     tbl.setStyle(
         TableStyle(
@@ -162,6 +166,7 @@ def _child_block(note: dict, life_record_always: bool = True) -> KeepTogether:
             [_P("対応する姿・領域", _LABEL), _P(tag_text, _SMALL)],
         ],
         colWidths=[_LABEL_W, _CONTENT_W - _LABEL_W],
+        splitInRow=1,  # 長い「子どもの姿」もページ跨ぎで分割（LayoutError 回避）
     )
     inner.setStyle(
         TableStyle(
@@ -177,7 +182,7 @@ def _child_block(note: dict, life_record_always: bool = True) -> KeepTogether:
         )
     )
     parts = [
-        _P(f"◆ {_t(head)}", _CHILD),
+        _P(f"◆ {head}", _CHILD),  # _P が _t を1回かける（f-string 内で _t すると二重エスケープ）
         Spacer(1, 1.5 * mm),
         inner,
     ]
@@ -486,8 +491,8 @@ def _class_monthly_story(entry: dict) -> list:
     head = Table(
         [
             [
-                _P(f"年度・月　{_t(entry.get('month') or '')}", _BODY),
-                _P(f"クラス　{_t(class_name) or '　　　　'}", _BODY),
+                _P(f"年度・月　{entry.get('month') or ''}", _BODY),  # _P が _t を1回かける
+                _P(f"クラス　{class_name or '　　　　'}", _BODY),
                 _P("担任　　　　　印", _LABEL),
                 _P("園長　　　　　印", _LABEL),
                 _P("主任　　　　　印", _LABEL),
@@ -685,7 +690,9 @@ def _child_record_story(
                 _P("担任　　　　　　　　　印", _LABEL),
             ],
             [
-                _P(f"児童名　{_t(subject)}" + (f"（{_t(months)}）" if months else ""), _BODY),
+                _P(
+                    f"児童名　{subject}" + (f"（{months}）" if months else ""), _BODY
+                ),  # _P が _t を1回
                 _P("　　　　年　　月　　日 生まれ", _LABEL),
             ],
         ],
@@ -723,7 +730,8 @@ def _child_record_story(
             row.append(p)
         matrix.append(row)
 
-    tbl = Table(matrix, colWidths=[label_w] + [col_w] * 4)
+    # splitInRow=1＝1領域（行）の期セルが長文でも行内分割で次ページへ流す（LayoutError 回避）。
+    tbl = Table(matrix, colWidths=[label_w] + [col_w] * 4, splitInRow=1)
     tbl.hAlign = "LEFT"
     tbl.setStyle(
         TableStyle(
@@ -748,7 +756,7 @@ def _child_record_story(
     story: list = [
         head,
         Spacer(1, 2 * mm),
-        _P(f"今回の記入: {_t(period) or '（対象期間 未指定）'}{filled_note}", _META),
+        _P(f"今回の記入: {period or '（対象期間 未指定）'}{filled_note}", _META),  # _P が _t を1回
         Spacer(1, 1.5 * mm),
         tbl,
         Spacer(1, 3 * mm),
@@ -856,9 +864,15 @@ def render_pdf(
         }[kind],
     )
     if kind == "child_record":
-        doc.build(_child_record_story(entry, past_entries, official_name))
+        story = _child_record_story(entry, past_entries, official_name)
     elif kind == "nursery_record":
-        doc.build(_nursery_record_story(entry, official_name))
+        story = _nursery_record_story(entry, official_name)
     else:
-        doc.build(_BUILDERS[kind](entry))
+        story = _BUILDERS[kind](entry)
+    try:
+        doc.build(story)
+    except LayoutError as e:
+        # splitInRow で大半は次ページへ流れるが、単一セル本文が1ページ高を超える等の病的入力では
+        # なお LayoutError になりうる。生の 500 でなく意味の通る ValueError にして route が 400 化する。
+        raise ValueError("本文が長すぎて帳票の1ページに収まりません（内容を分けてください）") from e
     return buf.getvalue()
