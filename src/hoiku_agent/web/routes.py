@@ -314,7 +314,13 @@ def _login_control(request: Request) -> str:
             '<p class="login-unavailable">ログインの準備中です。管理者に設定をご確認ください。</p>'
         )
     client_id = html.escape(settings.google_oauth_client_id, quote=True)
-    login_uri = html.escape(str(request.url_for("google_signin")), quote=True)
+    callback_uri = request.url_for("google_signin")
+    # Cloud Run は TLS を終端してアプリへは HTTP として転送するため、request.url_for() の scheme は
+    # "http" になり得る。Google Identity Services の redirect login URI は HTTPS 必須なので、本番だけ
+    # 外側の公開 scheme を明示する。ローカルは http://localhost を許す Google の開発例に従いそのままにする。
+    if os.environ.get("K_SERVICE"):
+        callback_uri = callback_uri.replace(scheme="https")
+    login_uri = html.escape(str(callback_uri), quote=True)
     # 独自ボタンではなく Google Identity Services が生成する公式ボタンを使う。redirect UX は
     # 利用者のクリック後にだけ Google のアカウント選択/同意画面へ進むため、案内画面を先に読める。
     return f'''<div id="g_id_onload" data-client_id="{client_id}" data-login_uri="{login_uri}"
