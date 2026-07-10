@@ -27,4 +27,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     # 旧スキーマへ戻す場合の埋め値。年齢帯の真値は在籍児から再導出するため、旧列へは保存しない。
     with op.batch_alter_table("classes") as batch_op:
-        batch_op.add_column(sa.Column("age_band", sa.String(10), nullable=False, server_default="0-2"))
+        batch_op.add_column(
+            sa.Column("age_band", sa.String(10), nullable=False, server_default="0-2")
+        )

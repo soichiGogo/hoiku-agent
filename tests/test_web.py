@@ -747,7 +747,9 @@ def test_classes_crud_and_roster_flow(records_db) -> None:
     ).json()
     assert reg["status"] == "created" and reg.get("assign") == "ok"
     # 児童登録（後から assign）
-    c.post("/api/children", json={"given_name": "ゆい", "gender": "female", "birthdate": "2021-04-02"})
+    c.post(
+        "/api/children", json={"given_name": "ゆい", "gender": "female", "birthdate": "2021-04-02"}
+    )
     asg = c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": cid}).json()
     assert asg["status"] == "ok" and asg["class_name"] == "ひまわり組"
     # roster＝クラスの在籍児（日誌フォームの素）
@@ -782,10 +784,7 @@ def test_classes_degrade_when_db_unset(monkeypatch) -> None:
     c = _client()
     assert c.get("/api/classes").json() == {"classes": [], "store": "disabled"}
     assert c.get("/api/classes/roster", params={"class_id": "x"}).json()["children"] == []
-    assert (
-        c.post("/api/classes", json={"name": "ひまわり組"}).json()["status"]
-        == "skipped"
-    )
+    assert c.post("/api/classes", json={"name": "ひまわり組"}).json()["status"] == "skipped"
 
 
 def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:

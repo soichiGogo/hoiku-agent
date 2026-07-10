@@ -887,7 +887,9 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         name = (req.name or "").strip()
         if not name:
             return JSONResponse({"status": "error", "detail": "組名は必須です"}, status_code=400)
-        result = record_store.upsert_class(name, (req.fiscal_year or "").strip(), now=datetime.now())
+        result = record_store.upsert_class(
+            name, (req.fiscal_year or "").strip(), now=datetime.now()
+        )
         result["store"] = record_store.store_status()
         return result
 
