@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import inspect
+
 import json
 
 from hoiku_agent import config
@@ -54,6 +56,11 @@ def test_search_guideline_degrades_without_corpus(monkeypatch):
     out = search_guideline("3歳 言葉 ねらい")
     assert len(out) == 1
     assert "RAG未接続" in out[0]["source"]
+
+
+def test_search_guideline_default_top_k_is_retrieval_eval_winner():
+    """公式資料8件・検索評価9件で選んだ既定値を意図せず戻さない。"""
+    assert inspect.signature(search_guideline).parameters["top_k"].default == 6
 
 
 _VALID_DRAFT_JSON = """\

@@ -201,7 +201,7 @@ def provision(
     return corpus.name
 
 
-def verify(query: str, top_k: int = 4) -> None:
+def verify(query: str, top_k: int = 6) -> None:
     """取り込み後の検索確認（search_guideline と同じ retrieval_query で往復を見る）。"""
     if not settings.rag_corpus:
         raise SystemExit("RAG_CORPUS 未設定（.env に設定してから --verify）。")
