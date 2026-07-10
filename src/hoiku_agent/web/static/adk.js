@@ -487,7 +487,13 @@ export async function ssePost(url, body, onItem) {
     body: JSON.stringify(body),
   });
   if (r.status === 401) throw new PasscodeError();
-  if (!r.ok && !r.body) throw new Error(url + " 失敗 (" + r.status + ")");
+  // 非 OK 応答（4xx/5xx）は body を SSE として読まず即 throw する。fetch の Response.body は
+  // エラー応答でも ReadableStream として存在する（null になるのは 204/304 等のみ）ため、`!r.body`
+  // に頼ると 422/500 が握りつぶされ、呼び出し側がストリーム完了＝成功と誤認しスピナーが回り続ける。
+  if (!r.ok) {
+    const detail = await r.text().catch(() => "");
+    throw new Error(url + " 失敗 (" + r.status + (detail ? ": " + detail.slice(0, 200) : "") + ")");
+  }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
   let buf = "";

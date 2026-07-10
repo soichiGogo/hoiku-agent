@@ -238,7 +238,8 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   /* ---------- 反映の確定（即反映） ---------- */
   function onCommitted(result) {
     if (result.status !== "committed") {
-      banner(flow, "info", "反映されませんでした：" + esc(result.detail || result.status || "不明"));
+      // banner() が内部で esc() するので呼び出し側では素の文字列を渡す（二重エスケープ回避）。
+      banner(flow, "info", "反映されませんでした：" + (result.detail || result.status || "不明"));
       return;
     }
     if (proposedPanel) {
