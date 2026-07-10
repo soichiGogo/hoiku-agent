@@ -19,15 +19,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 
 import sqlalchemy as sa
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ..schemas.template import DocTemplate, TemplateBook
 from . import db
+
+_logger = logging.getLogger(__name__)
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TEMPLATE_PATH = _REPO_ROOT / "knowledge" / "様式テンプレート.json"
@@ -88,12 +92,16 @@ def load_book_meta(path: Path | None = None) -> tuple[TemplateBook, int | None]:
             eng = db.engine()
             with Session(eng) as session:
                 row = session.get(TemplateBookRecord, _BOOK_ROW_ID)
-        except SQLAlchemyError:
-            # DB 到達不能／テーブル未整備（migration 未適用）＝同梱シードへ降格し生成を止めない。
+            if row is None:
+                return _load_local(_TEMPLATE_PATH), 0
+            # 壊れ book（現行スキーマと不一致の行＝スキーマ改定後に旧形式が残る等）の ValidationError も
+            # 同梱シードへ降格する。ここで送出すると全 doc_type の write_*／帳票PDF／編集フォームが落ちる
+            # （SQLAlchemyError と同じ故障モード）。レイアウトは常にシード代替可＝降格が正しい（§5）。
+            return TemplateBook.model_validate(row.book), row.version
+        except (SQLAlchemyError, ValidationError):
+            # DB 到達不能／テーブル未整備（migration 未適用）／壊れ book＝同梱シードへ降格し生成を止めない。
+            _logger.warning("template_books の読取に失敗（同梱シードへ降格）", exc_info=True)
             return _load_local(_TEMPLATE_PATH), None
-        if row is None:
-            return _load_local(_TEMPLATE_PATH), 0
-        return TemplateBook.model_validate(row.book), row.version
     return _load_local(path or _TEMPLATE_PATH), None
 
 

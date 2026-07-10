@@ -29,6 +29,26 @@ from .enums import AgeBand
 _BlankableStr = Annotated[str, BeforeValidator(lambda v: "" if v is None else v)]
 
 
+def _canonical_month(v: object) -> object:
+    """対象月をゼロ詰め "YYYY-MM" に正規化する（"2026-7" → "2026-07"）。
+
+    月案・クラス月案の集積は month の**辞書順**を時系列前提にする（aggregate.class_plan_history_digest の
+    月順ソート・record_store の `target_month < before_month` 比較・dedupe_key）。LLM が非ゼロ詰めで echo
+    しても canonical に寄せ、全経路（author 出力／編集保存／archive JSON の再検証）で entry.month を
+    一貫させる。解釈不能な値・None・非文字列は素通し（schema_check が形式不備として可視化＝ハードクラッシュ
+    させない・型の成立判定は schema_check の責務＝§5/§10）。"""
+    if not isinstance(v, str):
+        return v
+    y_s, sep, m_s = v.strip().partition("-")
+    if sep and y_s.isdigit() and m_s.isdigit() and 1 <= int(m_s) <= 12:
+        return f"{int(y_s):04d}-{int(m_s):02d}"
+    return v.strip()
+
+
+# 対象月（YYYY-MM）＝ゼロ詰め正規化を通す str（月案・クラス月案で共用＝二重定義しない）。
+MonthStr = Annotated[str, BeforeValidator(_canonical_month)]
+
+
 class DocumentType(str, Enum):
     """対象書類。国が課す必須文書を土台に対象を絞る（§2/§3）。第1号は 月案・保育日誌。
 
@@ -193,7 +213,7 @@ class MonthlyPlan(BaseModel):
     「前月の子どもの姿」「評価・反省」へ流す（§4/§10）。欄名は推論を含む（§10）。園差で拡張可能に保つ。
     """
 
-    month: str = Field(description="対象月（YYYY-MM）")
+    month: MonthStr = Field(description="対象月（YYYY-MM・ゼロ詰め正規化）")
     age_band: AgeBand
     child_id: str  # 架空児のみ（§14）。0–2 個別＝個別月案
     # 月齢（◯歳◯か月・任意）。0–2 は月齢で発達を見るが架空児は生年月日が無く自動導出不可＝保育士編集。

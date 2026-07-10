@@ -21,6 +21,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Iterable
@@ -30,6 +31,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import db
+
+_logger = logging.getLogger(__name__)
 
 # ──────────────────────────── ORM モデル（テーブル定義の SSOT） ────────────────────────────
 
@@ -279,7 +282,19 @@ def _write_error(exc: Exception) -> dict:
                 "本番 DB に alembic upgrade head を適用してください。"
             ),
         }
-    return {"status": "error", "detail": str(exc)}
+    if isinstance(exc, ValueError):
+        # 入力検証エラー（欠落キー・不正 kind 等）＝こちらが生成した安全な文言（SQL/投入値を含まない）。
+        # 保育士が原因を直せるようそのまま返す。
+        return {"status": "error", "detail": str(exc)}
+    # それ以外の DB 障害（SQLAlchemyError）：str(exc) は [SQL: ...] [parameters: (...)] を含み、
+    # 内部スキーマ・SQL 構造に加え投入値（フィードバックのコメント・actor 名・entry 断片）まで
+    # API 応答へ露出する。詳細はサーバログにのみ残し、UI へは一般化した文言＋識別コードを返す。
+    _logger.exception("record_store 書込エラー")
+    return {
+        "status": "error",
+        "code": "db_write_failed",
+        "detail": "保存に失敗しました。時間をおいて再試行してください。",
+    }
 
 
 def store_status() -> str:
@@ -326,7 +341,11 @@ def period_date_range(period: str) -> tuple[date, date] | None:
     （呼び出し側がサンプル/手渡し seed へ降格する＝黙って誤解釈しない）。
     """
     raw = period.strip()
-    for sep in ("〜", "~", "−", "―"):
+    # 区切り候補：波ダッシュ U+301C・チルダ・全角チルダ U+FF5E（Windows IME 既定で最頻出）・
+    # マイナス記号 U+2212・全角ダッシュ U+2015・EN DASH U+2013。取込・手入力の表記ゆれ1つで当該期が
+    # covered_until/年間マトリクスに寄与しなくなるのを防ぐ。ハイフンマイナスは日付 YYYY-MM 内に
+    # 含まれ partition が誤分割するため区切りには入れない。
+    for sep in ("〜", "~", "～", "−", "―", "–"):
         if sep in raw:
             start_s, _, end_s = raw.partition(sep)
             try:
@@ -355,6 +374,22 @@ def covered_until(periods: Iterable[str]) -> date | None:
     return latest
 
 
+def normalize_month(month: str) -> str:
+    """ "YYYY-M"／"YYYY-MM" → ゼロ詰め "YYYY-MM" に正規化する（不正は ValueError＝fail-loud）。
+
+    下流（class_plan_history_digest の月順ソート・list_class_monthly_entries の `target_month < before_month`
+    文字列比較・dedupe_key）はゼロ詰め YYYY-MM を決定的前提にしている。LLM が "2026-7" と echo しても
+    "2026-07" と一致させ、辞書順比較・同一性キーの前提を構造的に守る（diary の date.fromisoformat と対称）。
+    """
+    y_s, sep, m_s = month.strip().partition("-")
+    if not sep:
+        raise ValueError(f"month は YYYY-MM 形式が必要です: {month!r}")
+    y, m = int(y_s), int(m_s)
+    if not 1 <= m <= 12:
+        raise ValueError(f"month の月が不正です: {month!r}")
+    return f"{y:04d}-{m:02d}"
+
+
 def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, str | None]:
     """entry から対象期間キー（target_date / target_month / target_period）を決定的に取り出す。
 
@@ -369,7 +404,8 @@ def _extract_target(kind: str, entry: dict) -> tuple[date | None, str | None, st
         month = str(entry.get("month") or "").strip()
         if not month:
             raise ValueError(f"{kind} entry に month（対象月）がありません")
-        return None, month, None
+        # ゼロ詰め正規化＝"2026-7" を "2026-07" に揃える（辞書順比較・dedupe_key の前提を守る）。
+        return None, normalize_month(month), None
     if kind == "child_record":
         period = str(entry.get("period") or "").strip()
         if not period:
@@ -733,10 +769,23 @@ def get_child(display_name: str) -> dict | None:
         return None
 
 
-def approve_document(kind: str, entry: dict, *, actor: str, now: datetime) -> dict:
+def approve_document(
+    kind: str,
+    entry: dict,
+    *,
+    actor: str,
+    now: datetime,
+    expected_version_seq: int | None = None,
+) -> dict:
     """書類を承認済み（approved）にし、証跡（audit action=approve）を残す。
 
     対象は dedupe_key で特定する（未保存なら error＝先に save_document）。
+
+    承認は「保育士が画面で見ていた版」に対する意思なので、`expected_version_seq` を渡すと現行版の seq と
+    突合し、不一致なら error を返す（並行編集で別の未レビュー版が積まれた後の取り違えを防ぐ＝編集→承認の
+    競合。逆方向の承認→編集は save_document の demote で守られている）。省略時は従来どおり現行版を承認する。
+    証跡（AuditEvent.detail）には承認した version_seq を必ず記録する（save_document と対称＝「どの版を
+    承認したか」を後から復元できる）。
     """
     eng = _engine()
     if eng is None:
@@ -746,12 +795,35 @@ def approve_document(kind: str, entry: dict, *, actor: str, now: datetime) -> di
             doc = _find_document(session, kind, entry)
             if doc is None:
                 return {"status": "error", "detail": "対象の書類がアーカイブにありません（未保存）"}
+            current_seq = 0
+            if doc.current_version_id is not None:
+                version = session.get(DocumentVersion, doc.current_version_id)
+                current_seq = version.seq if version else 0
+            if expected_version_seq is not None and expected_version_seq != current_seq:
+                return {
+                    "status": "error",
+                    "code": "version_conflict",
+                    "detail": (
+                        "先に別の編集が保存されています。最新の内容を読み込んでから承認してください。"
+                    ),
+                    "current_version_seq": current_seq,
+                }
             doc.status = "approved"
             doc.updated_at = now
             session.add(
-                AuditEvent(document_id=doc.id, actor=actor, action="approve", detail={}, at=now)
+                AuditEvent(
+                    document_id=doc.id,
+                    actor=actor,
+                    action="approve",
+                    detail={"version_seq": current_seq},
+                    at=now,
+                )
             )
-            return {"status": "approved", "document_id": str(doc.id)}
+            return {
+                "status": "approved",
+                "document_id": str(doc.id),
+                "version_seq": current_seq,
+            }
     except (ValueError, SQLAlchemyError) as e:
         return _write_error(e)
 
@@ -1106,7 +1178,13 @@ def list_class_monthly_entries(age_band: str, before_month: str | None = None) -
                 .order_by(DocumentRecord.target_month)
             )
             if before_month is not None and before_month.strip():
-                q = q.where(DocumentRecord.target_month < before_month.strip())
+                # 保存側 target_month はゼロ詰め正規化済み。比較境界も同じ正準形に揃える
+                # （"2026-7" のような非ゼロ詰めが辞書順比較を壊すのを防ぐ）。解釈不能はそのまま使う。
+                try:
+                    boundary_month = normalize_month(before_month)
+                except ValueError:
+                    boundary_month = before_month.strip()
+                q = q.where(DocumentRecord.target_month < boundary_month)
             entries: list[dict] = []
             for doc in session.scalars(q):
                 version = session.scalar(
@@ -1134,7 +1212,10 @@ def class_monthly_seed_inputs(age_band: str, month: str) -> dict:
     境界計算の実体は `covered_until` に1つ（呼び出し側で再実装しない）。month が不正なら ValueError
     （呼び出し側がサンプル降格/400 にする）。未接続は全部空（呼び出し側がサンプル降格）。
     """
-    _, prev_month_end = month_date_range(prev_month_of(month))  # 不正 month は ValueError
+    month = normalize_month(
+        month
+    )  # ゼロ詰め正準化（不正 month は ValueError＝呼び出し側が降格/400）
+    _, prev_month_end = month_date_range(prev_month_of(month))
     records = list_class_child_record_entries(age_band)
     boundary = covered_until(str(r.get("period") or "") for r in records)
     diary_from = boundary + timedelta(days=1) if boundary is not None else date.min

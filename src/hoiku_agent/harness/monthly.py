@@ -89,8 +89,9 @@ class DigestPrepAgent(BaseAgent):
         if self.uncovered_by_key:
             records = ctx.session.state.get(self.uncovered_by_key)
             boundary = covered_until(
-                str((r or {}).get("period") or "")
+                str(r.get("period") or "")
                 for r in (records if isinstance(records, list) else [])
+                if isinstance(r, dict)
             )
             if boundary is not None:
                 entries = [e for e in entries if e.date > boundary]

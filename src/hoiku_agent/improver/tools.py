@@ -173,8 +173,16 @@ def commit_policy_card(
         created_at=now,
         updated_at=now,
     )
+    if op == "supersede" and not supersede_id.strip():
+        # 置き換え対象 id が無いのに黙って add に落とすと、旧カードが active のまま矛盾する新カードが
+        # 併存し「置換した」ように見える＝意味的競合の解消というこのフローの目的が silent に破れる。
+        # 不正 scope・本文空と同じく fail-loud にする。
+        return {
+            "status": "error",
+            "detail": "supersede には置き換え対象カードの id（supersede_id）が必要です",
+        }
     try:
-        if op == "supersede" and supersede_id.strip():
+        if op == "supersede":
             new_book = policy_store.supersede_card(
                 book, old_id=supersede_id.strip(), new_card=card, decided_by=decided_by
             )
