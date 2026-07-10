@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 
 import pytest
 import server
@@ -33,10 +34,14 @@ def _sign_in_with_google(c: TestClient, monkeypatch, *, email: str = "sensei@exa
         "validate_google_credential",
         lambda credential: auth.GoogleUser(subject="google-subject-123", email=email),
     )
-    c.get("/?next=/app/")  # GIS callback 後の戻り先と session cookie を作る。
-    c.cookies.set("g_csrf_token", "csrf-token")
-    r = c.post("/auth/google", data={"credential": "signed-token", "g_csrf_token": "csrf-token"})
-    assert r.status_code == 303 and r.headers["location"] == "/app/"
+    welcome = c.get("/?next=/app/")  # popup callback 用の戻り先と session CSRF token を作る。
+    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    r = c.post(
+        "/auth/google",
+        json={"credential": "signed-token"},
+        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+    )
+    assert r.status_code == 200 and r.json()["redirect"] == "/app/"
 
 
 def test_config_shape() -> None:
@@ -1187,15 +1192,16 @@ def test_google_signin_protects_app_and_api(monkeypatch) -> None:
     assert "test-client.apps.googleusercontent.com" in welcome.text
 
 
-def test_google_login_uri_is_https_on_cloud_run(monkeypatch) -> None:
-    """TLS終端後の内部HTTPをGoogleへ誤って渡さず、公開HTTPS callbackを描画する。"""
+def test_google_popup_callback_is_rendered(monkeypatch) -> None:
+    """Googleの外部Origin POSTを避けるため、同一Origin popup callback を描画する。"""
     monkeypatch.setattr(
         settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
     )
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
-    monkeypatch.setenv("K_SERVICE", "hoiku-agent")
     welcome = _client().get("/")
-    assert 'data-login_uri="https://testserver/auth/google"' in welcome.text
+    assert 'data-callback="handleGoogleCredential"' in welcome.text
+    assert 'fetch("/auth/google"' in welcome.text
+    assert "data-login_uri=" not in welcome.text
 
 
 def test_google_verified_user_becomes_actor_and_provisions_user(records_db, monkeypatch) -> None:
@@ -1222,32 +1228,37 @@ def test_google_verified_user_becomes_actor_and_provisions_user(records_db, monk
 
 
 def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
-    """GIS callback は double-submit cookie が一致しなければ session を作らない。"""
+    """popup callback は案内画面が発行した session CSRF token が無ければ session を作らない。"""
     monkeypatch.setattr(
         settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
     )
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
-    c.cookies.set("g_csrf_token", "expected")
-    r = c.post("/auth/google", data={"credential": "token", "g_csrf_token": "wrong"})
+    c.get("/")
+    r = c.post(
+        "/auth/google", json={"credential": "token"}, headers={"X-Google-Login-CSRF": "wrong"}
+    )
     assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
 
 
-def test_google_callback_accepts_google_identity_origin(monkeypatch) -> None:
-    """ADK のOrigin保護は、GISがPOSTする固定Google Originをcallbackまで通す。"""
+def test_google_callback_rejects_cross_origin_post(monkeypatch) -> None:
+    """Google callback は同一Origin fetch に限定し、外部OriginのPOSTをADKが拒否する。"""
     monkeypatch.setattr(
         settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
     )
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
-    c.cookies.set("g_csrf_token", "expected")
+    welcome = c.get("/")
+    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     r = c.post(
         "/auth/google",
-        headers={"Origin": "https://accounts.google.com"},
-        data={"credential": "invalid", "g_csrf_token": "expected"},
+        headers={
+            "Origin": "https://accounts.google.com",
+            "X-Google-Login-CSRF": csrf,
+        },
+        json={"credential": "invalid"},
     )
-    # Originは通過し、無効tokenをアプリ自身が401として拒否する（ADKの403ではない）。
-    assert r.status_code == 401 and r.json()["code"] == "invalid_credential"
+    assert r.status_code == 403 and r.text == "Forbidden: origin not allowed"
 
 
 def test_set_user_display_name_updates_config_and_actor(records_db, monkeypatch) -> None:
