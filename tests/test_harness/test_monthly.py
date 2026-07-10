@@ -84,6 +84,20 @@ def test_monthly_empty_education_is_violation():
     assert any("教育のねらい" in p for p in validate_monthly_fields(_plan(education=[])))
 
 
+def test_monthly_empty_child_id_is_violation():
+    """個別月案は児童別なので child_id 空は違反（保育経過記録・要録と対称＝dedupe_key の児童間衝突を防ぐ）。"""
+    plan = _plan()
+    object.__setattr__(plan, "child_id", "  ")
+    assert any("対象児" in p for p in validate_monthly_fields(plan))
+
+
+def test_monthly_malformed_month_is_violation():
+    """解釈不能な月（"2026/07"）は正規化されず validate が型不成立として可視化する。"""
+    plan = _plan()
+    object.__setattr__(plan, "month", "2026/07")
+    assert any("YYYY-MM" in p for p in validate_monthly_fields(plan))
+
+
 def test_monthly_missing_required_fields_are_violations():
     problems = validate_monthly_fields(
         _plan(

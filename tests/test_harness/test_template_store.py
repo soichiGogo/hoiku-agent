@@ -158,3 +158,35 @@ def test_load_template_degrades_to_seed_when_table_missing(template_db_missing_t
 def test_store_status_unavailable_when_table_missing(template_db_missing_table):
     """DB 障害時はシード降格で読めても "persistent" と偽らない（正直な降格・偽の緑を出さない）。"""
     assert ts.store_status() == "unavailable"
+
+
+@pytest.fixture()
+def template_db_corrupt_row(tmp_path, monkeypatch):
+    """template_books テーブルはあるが book が現行スキーマと不一致（壊れ行）の状態を作る。
+
+    `_TEMPLATE_PATH` は差し替えない＝リポ同梱シード（4種別入り）へ降格することを検証したいため
+    （テーブル未整備と同じ故障モード：スキーマ改定後に旧形式の行が残る等）。
+    """
+    from sqlalchemy.orm import Session
+
+    from hoiku_agent.config import settings
+    from hoiku_agent.harness import db
+
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/corrupt.db")
+    db.reset_engine_cache()
+    db.Base.metadata.create_all(db.engine())
+    with Session(db.engine()) as s, s.begin():
+        s.add(
+            ts.TemplateBookRecord(
+                id=ts._BOOK_ROW_ID, book={"templates": [{"broken": True}]}, version=1
+            )
+        )
+    yield
+    db.reset_engine_cache()
+
+
+def test_load_template_degrades_to_seed_on_corrupt_row(template_db_corrupt_row):
+    """壊れ book 行の ValidationError も同梱シードへ降格（全 doc_type の write_*／帳票／編集を落とさない）。"""
+    for doc_type in ("diary", "monthly", "child_record", "nursery_record"):
+        tmpl = ts.load_template(doc_type)  # ValidationError を送出せず同梱シードへ降格
+        assert tmpl.doc_type == doc_type and tmpl.sections

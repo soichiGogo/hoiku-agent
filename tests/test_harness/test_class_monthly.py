@@ -103,6 +103,29 @@ def test_grid_missing_aim_is_violation_per_domain():
     assert any("表現" in p for p in problems)
 
 
+def test_month_is_zero_pad_normalized_by_schema():
+    """schema の MonthStr が対象月をゼロ詰めに正規化する（"2026-7"→"2026-07"）＝集積の辞書順前提を守る。"""
+    assert (
+        ClassMonthlyPlan(
+            month="2026-7",
+            age_band=AgeBand.零から二歳,
+            monthly_goal="g",
+            prev_month_state="s",
+            grid=_full_grid(),
+            individual_goals=[IndividualGoal(child_id="架空児A", child_state="s", aim_support="a")],
+        ).month
+        == "2026-07"
+    )
+
+
+def test_malformed_month_is_violation():
+    """解釈不能な月（"2026/07"）は正規化されず、validate が型不成立として可視化する（黙って通さない）。"""
+    plan = _plan()
+    object.__setattr__(plan, "month", "2026/07")  # 検証を迂回して壊れた月を注入
+    problems = validate_class_monthly_fields(plan)
+    assert any("YYYY-MM" in p for p in problems)
+
+
 def test_0_2_requires_individual_goals():
     """0–2 は個人目標が1件以上必須（園フォームに 0–2 だけ個人目標小表がある）。"""
     problems = validate_class_monthly_fields(_plan(individual_goals=[]))

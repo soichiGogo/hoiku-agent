@@ -644,9 +644,69 @@ def test_month_date_range_and_prev_month():
 def test_period_date_range_parses_month_span_or_none():
     assert rs.period_date_range("2026-04〜2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
     assert rs.period_date_range("2026-04~2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
+    # 全角チルダ U+FF5E（Windows IME 既定で最頻出）・EN DASH も区切りとして受ける（取込・手入力の表記ゆれ）。
+    assert rs.period_date_range("2026-04～2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
+    assert rs.period_date_range("2026-04–2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
     # 期制は園差＝自由記述。月〜月以外は None（黙って誤解釈せず呼び出し側がサンプルへ降格）。
     assert rs.period_date_range("1学期") is None
     assert rs.period_date_range("2026-06〜2026-04") is None  # 逆転も None
+
+
+def test_normalize_month_zero_pads_or_raises():
+    assert rs.normalize_month("2026-7") == "2026-07"
+    assert rs.normalize_month("2026-07") == "2026-07"
+    assert rs.normalize_month(" 2026-12 ") == "2026-12"
+    for bad in ("2026", "2026/07", "2026-13", "令和8年7月", ""):
+        with pytest.raises(ValueError):
+            rs.normalize_month(bad)
+
+
+def test_month_is_normalized_so_dedupe_and_ordering_hold(db):
+    """非ゼロ詰め月（"2026-7"）でも target_month はゼロ詰めに揃い、同月の版が分裂しない・辞書順比較が効く。"""
+    a = {"month": "2026-7", "child_id": "はるとくん", "age_band": "0-2"}
+    b = {"month": "2026-07", "child_id": "はるとくん", "age_band": "0-2"}
+    assert rs.save_document("monthly", a, author_kind="ai", now=_NOW)["status"] == "saved"
+    assert rs.save_document("monthly", b, author_kind="caregiver", now=_NOW)["status"] == "saved"
+    # "2026-7" と "2026-07" は同一書類（版が積まれる）＝dedupe_key が分裂しない。
+    assert len([d for d in rs.list_documents() if d["doc_type"] == "monthly"]) == 1
+    # クラス月案の履歴 seed も "2026-7" の before_month で July 自身を除外できる（辞書順比較の前提を守る）。
+    rs.save_document(
+        "class_monthly", {"month": "2026-7", "age_band": "0-2", "monthly_goal": "g"}, now=_NOW
+    )
+    rs.save_document(
+        "class_monthly", {"month": "2026-06", "age_band": "0-2", "monthly_goal": "g"}, now=_NOW
+    )
+    plans = rs.list_class_monthly_entries("0-2", before_month="2026-7")
+    assert [p["month"] for p in plans] == ["2026-06"]  # July 自身は含まれない
+
+
+def test_approve_version_conflict_and_audit_detail(db):
+    """編集→承認の競合：expected_version_seq が現行版と食い違えば承認を拒否し、証跡に版番号を残す。"""
+    entry = _diary_entry("2026-07-03")
+    rs.save_document("diary", entry, author_kind="ai", now=_NOW)  # v1
+    rs.save_document("diary", entry, author_kind="caregiver", now=_NOW)  # v2（別編集が積まれた）
+    # 保育士が v1 を見たまま承認 → 現行は v2 なので拒否（取り違え防止）。
+    stale = rs.approve_document("diary", entry, actor="A", now=_NOW, expected_version_seq=1)
+    assert stale["status"] == "error" and stale["code"] == "version_conflict"
+    assert rs.list_documents()[0]["status"] != "approved"
+    # 現行版（v2）を指定すれば承認でき、証跡に承認した版番号が残る（save と対称）。
+    ok = rs.approve_document("diary", entry, actor="園長", now=_NOW, expected_version_seq=2)
+    assert ok["status"] == "approved" and ok["version_seq"] == 2
+    approve_events = [e for e in rs.list_audit_events() if e["action"] == "approve"]
+    assert approve_events and approve_events[-1]["detail"].get("version_seq") == 2
+
+
+def test_write_error_generic_for_db_failure_but_detail_for_input(db):
+    """入力 ValueError は安全な文言をそのまま返し、DB 障害（SQLAlchemyError）は一般化して SQL を露出しない。"""
+    import sqlalchemy as _sa
+
+    # 入力エラー（date 欠落）＝原因が分かる文言を保育士へ返す。
+    r = rs.save_document("diary", {"age_band": "0-2"}, author_kind="ai", now=_NOW)
+    assert r["status"] == "error" and "date" in r["detail"]
+    # DB 障害＝raw str(exc)（SQL 文・投入値）を返さず一般化＋コード。
+    err = rs._write_error(_sa.exc.SQLAlchemyError("[SQL: INSERT …] [parameters: ('秘密',)]"))
+    assert err["code"] == "db_write_failed"
+    assert "SQL" not in err["detail"] and "秘密" not in err["detail"]
 
 
 # ──────────────────────────── クラス（組）マスタ・所属（名簿管理・日誌 roster の素） ────────────────────────────

@@ -288,6 +288,33 @@ def test_finalize_edit_not_passcode_gated(monkeypatch) -> None:
     assert r.status_code == 200 and r.json()["ok"] is True
 
 
+def test_finalize_edit_unknown_kind_is_400() -> None:
+    """未知 kind は黙って diary として解釈せず 400（他の web 口と同じ kind 検証・黙って誤解釈しない）。"""
+    r = _client().post(
+        "/api/finalize-edit", json={"kind": "child-record", "entry": _edit_diary_entry()}
+    )
+    assert r.status_code == 400 and r.json()["code"] == "invalid_request"
+
+
+def test_run_live_websocket_route_is_removed() -> None:
+    """WebSocket /run_live は撤去済み（HTTP ミドルウェアのゲートを素通りする課金口を塞ぐ）。"""
+    ws = [
+        getattr(r, "path", None)
+        for r in server.app.router.routes
+        if type(r).__name__ in ("WebSocketRoute", "APIWebSocketRoute")
+    ]
+    assert "/run_live" not in ws
+
+
+def test_builder_write_is_gated_when_passcode_set() -> None:
+    """ADK ビルダーの書込口は公開デモでパスコード下（未認証タンパリング防止）・GET 読取は素通し。"""
+    from hoiku_agent.web.routes import _needs_gate
+
+    assert _needs_gate("/builder/save", "POST") is True
+    assert _needs_gate("/dev/apps/x/builder/save", "POST") is True
+    assert _needs_gate("/builder/app/x", "GET") is False
+
+
 # ──────────────────── 帳票PDF 出力（/api/export-pdf・現場でそのまま綴じる最終形） ────────────────────
 
 
@@ -406,6 +433,34 @@ def test_export_pdf_invalid_kind_400() -> None:
     r = _client().post("/api/export-pdf", json={"kind": "weekly", "entry": _edit_diary_entry()})
     assert r.status_code == 400
     assert r.json()["code"] == "invalid_request"
+
+
+def test_export_pdf_malformed_entry_is_400_not_500() -> None:
+    """entry の内部が不正（リスト要素が dict でない）でも 500 でなく 400（公開口の契約「entry 不正は 400」）。"""
+    r = _client().post(
+        "/api/export-pdf",
+        json={"kind": "diary", "entry": {"age_band": "0-2", "individual_notes": ["x"]}},
+    )
+    assert r.status_code == 400 and r.json()["code"] == "invalid_request"
+
+
+def test_export_pdf_very_long_body_still_renders() -> None:
+    """1欄の本文が1ページ高を超えても splitInRow で次ページへ流し 500 にしない（LayoutError 回避）。"""
+    long = "長い叙述である。" * 1500
+    r = _client().post(
+        "/api/export-pdf",
+        json={
+            "kind": "child_record",
+            "entry": {
+                "child_id": "架空児A",
+                "period": "2026-04〜2026-06",
+                "age_band": "0-2",
+                "development_notes": [{"description": long, "tags": ["健康な心と体"]}],
+                "overall_note": long,
+            },
+        },
+    )
+    _assert_is_pdf(r)
 
 
 # ──────────── 園の実 Word 様式（/api/export-docx・Word 編集用の最終形・python-docx） ────────────

@@ -84,3 +84,18 @@ def test_schema_drift_detects_missing_tables_then_clears(tmp_path, monkeypatch) 
     db.Base.metadata.create_all(eng)
     assert db.schema_drift() == []
     db.reset_engine_cache()
+
+
+def test_engine_returns_none_on_invalid_url(monkeypatch) -> None:
+    """不正な URL（構築時に失敗するスキーム）は例外を伝播させず None 降格＝未接続扱い（各ストアの契約を守る）。
+
+    record_store の読取は「降格＝空」・server.py の schema_drift は「起動を止めない」を謳うが、engine() が
+    create_engine の失敗をそのまま投げると両方の契約が破れる（500・uvicorn 起動失敗）。None 降格で回復する。
+    """
+    monkeypatch.setattr(
+        settings, "database_url", "postgres://user:pw@host/db"
+    )  # 旧スキーム＝NoSuchModule
+    db.reset_engine_cache()
+    assert db.engine() is None
+    assert db.schema_drift() == []  # engine None なので観測は空（起動を止めない）
+    db.reset_engine_cache()
