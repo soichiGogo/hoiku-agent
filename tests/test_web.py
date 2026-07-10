@@ -1233,6 +1233,23 @@ def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
     assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
 
 
+def test_google_callback_accepts_google_identity_origin(monkeypatch) -> None:
+    """ADK のOrigin保護は、GISがPOSTする固定Google Originをcallbackまで通す。"""
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    c = _client()
+    c.cookies.set("g_csrf_token", "expected")
+    r = c.post(
+        "/auth/google",
+        headers={"Origin": "https://accounts.google.com"},
+        data={"credential": "invalid", "g_csrf_token": "expected"},
+    )
+    # Originは通過し、無効tokenをアプリ自身が401として拒否する（ADKの403ではない）。
+    assert r.status_code == 401 and r.json()["code"] == "invalid_credential"
+
+
 def test_set_user_display_name_updates_config_and_actor(records_db, monkeypatch) -> None:
     """POST /api/user＝Google の検証済み identity に表示名を紐づけ、証跡へ反映する。"""
     c = _client()
