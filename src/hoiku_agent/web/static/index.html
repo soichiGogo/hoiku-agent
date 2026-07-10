@@ -69,7 +69,7 @@
             <select id="diary-class" class="input"></select>
           </div>
           <div id="diary-ageband-wrap">
-            <label class="field-label">年齢帯（クラス）</label>
+            <label class="field-label">今回の日誌の年齢帯</label>
             <div id="diary-ageband" class="chips"></div>
           </div>
           <label class="field-label" for="diary-date">記録日</label>
@@ -80,9 +80,9 @@
           </div>
         </div>
 
-        <!-- クラス月案の入力欄（年齢帯＝クラス＋対象月＋前月日誌 seed。クラス単位なので対象児は使わない） -->
+        <!-- クラス月案の入力欄（文書の年齢帯＋対象月＋前月日誌 seed。クラス自体は年齢帯を持たない） -->
         <div id="doc-fields-monthly" class="doc-fields" hidden>
-          <label class="field-label">年齢帯（クラス）</label>
+          <label class="field-label">作成する月案の年齢帯</label>
           <div id="class-ageband" class="chips"></div>
           <div class="row">
             <div>
@@ -122,7 +122,9 @@
           <div class="row">
             <div>
               <label class="field-label" for="youroku-year">対象年度</label>
-              <input id="youroku-year" class="input" type="text" value="2026" placeholder="例: 2026">
+              <select id="youroku-year" class="input" disabled>
+                <option value="">対象児を選択してください</option>
+              </select>
             </div>
           </div>
           <div class="seed-note">
@@ -230,13 +232,17 @@
       <div class="card">
         <div class="card-title"><span data-ic="users"></span>クラスを作る</div>
         <div class="cadd">
-          <input id="class-name" class="input" placeholder="組名（例: ひまわり組）" aria-label="組名">
-          <select id="class-new-ageband" class="input" aria-label="年齢帯">
-            <option value="0-2">0〜2歳児クラス</option>
-            <option value="3-5" selected>3〜5歳児クラス</option>
-          </select>
-          <input id="class-fiscal" class="input cadd-year" placeholder="年度（例: 2026）" aria-label="年度">
-          <button id="class-add" class="btn btn-primary"><span data-ic="check"></span>作成</button>
+          <label class="cadd-field cadd-name">
+            <span class="cadd-label">クラス名</span>
+            <input id="class-name" class="input" placeholder="例: ひまわり組" aria-label="組名">
+          </label>
+          <label class="cadd-field">
+            <span class="cadd-label">対象年度 <span class="cadd-optional">任意</span></span>
+            <input id="class-fiscal" class="input cadd-year" placeholder="例: 2026" aria-label="年度">
+          </label>
+          <div class="cadd-actions">
+            <button id="class-add" class="btn btn-primary"><span data-ic="check"></span>クラスを作成</button>
+          </div>
         </div>
         <p id="class-msg" class="nmsg hidden" aria-live="polite"></p>
       </div>

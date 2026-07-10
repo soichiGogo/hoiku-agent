@@ -79,7 +79,7 @@
   期間の日誌（`DigestPrepAgent` 共用・class_diary_entries→class_diary_digest・uncovered_by_key で①の境界より後に
   限定＋評価・反省＝class_diary_reflections〔決定B〕）→ クラス月案 author の authoring_loop（共用）→
   finalize(kind="class_monthly")。`build_class_monthly_pipeline`。seed 合成＝`record_store.class_monthly_seed_inputs`。
-  個別月案（1児）と別 doc_type＝**クラス全体（年齢帯）単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は
+  個別月案（1児）と別 doc_type＝**文書の年齢帯単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は
   0–2/3–5 共通＝3つの視点分岐を課さない（様式忠実）。grid の正準7行そろえは
   `schemas/class_monthly.ClassMonthlyPlan` の model_validator（レイアウトのデータは GRID_ROWS に1つ）。
 - `child_record.py` … 保育経過記録（§19・**依存モデル 2026-07**）：`DigestPrepAgent`（period_prep・

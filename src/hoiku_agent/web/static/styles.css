@@ -693,10 +693,14 @@ select.de-input{appearance:auto;min-height:38px}
 /* ============================================================
    クラス・園児（園の名簿管理＝クラス定義＋園児登録/割当）
    ============================================================ */
-.cadd{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center}
-.cadd .input{flex:1 1 160px;min-width:120px}
-.cadd .cadd-year{flex:0 1 130px}
-.cadd #class-ageband{flex:0 0 auto}
+.cadd{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(180px,.8fr);gap:var(--sp-3) var(--sp-4);max-width:720px}
+.cadd-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.cadd-name{grid-column:1 / -1}
+.cadd-label{font-size:var(--fs-caption);font-weight:800;color:var(--ink)}
+.cadd-optional{font-weight:600;color:var(--muted)}
+.cadd .input{width:100%;min-width:0}
+.cadd-actions{display:flex;align-items:end;grid-column:1 / -1;padding-top:var(--sp-1)}
+.cadd-actions .btn{min-width:180px}
 .clist{display:flex;flex-direction:column;gap:var(--sp-3)}
 .cempty{color:var(--muted);font-size:var(--fs-sm);padding:var(--sp-3) 0}
 .cempty-sm{color:var(--muted);font-size:var(--fs-sm);margin:0}
@@ -730,6 +734,12 @@ select.de-input{appearance:auto;min-height:38px}
 .cadd-row.cadd-new .input{flex:0 1 130px}
 .cadd-or{font-size:var(--fs-caption);color:var(--muted);font-weight:600}
 .cprev{font-size:var(--fs-sm);font-weight:700;color:var(--primary-d);min-width:60px}
+
+@media (max-width:600px){
+  .cadd{grid-template-columns:1fr}
+  .cadd-name,.cadd-actions{grid-column:auto}
+  .cadd-actions .btn{width:100%}
+}
 
 /* 日誌（手入力）フォームの見出し＝AI 生成でなく自分の言葉で書く一次情報であることを示す */
 .diaryform-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2);margin-bottom:var(--sp-3);

@@ -4,7 +4,7 @@
 import * as adk from "./adk.js";
 import { el, esc, iconHTML } from "./ui.js";
 
-const AGE_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" };
+const AGE_LABEL = { "0-2": "0〜2歳", "3-5": "3〜5歳" };
 const GENDERS = [
   { value: "male", label: "男の子", honorific: "くん" },
   { value: "female", label: "女の子", honorific: "ちゃん" },
@@ -12,7 +12,7 @@ const GENDERS = [
 const HONORIFIC = Object.fromEntries(GENDERS.map((g) => [g.value, g.honorific]));
 
 export function makeClasses(ui) {
-  // ui = { list, store, msg, nameInput, ageSelect, fiscalInput, addBtn }
+  // ui = { list, store, msg, nameInput, fiscalInput, addBtn }
   let classes = [];
   let children = [];
   let storeState = "disabled";
@@ -34,6 +34,13 @@ export function makeClasses(ui) {
 
   const childrenOf = (classId) => children.filter((c) => c.class_id === classId);
   const unassigned = () => children.filter((c) => !c.class_id);
+
+  function classAgeLabel(c) {
+    const bands = c.age_bands || [];
+    if (!bands.length) return "年齢帯未確定";
+    const label = bands.map((band) => AGE_LABEL[band] || band).join("・");
+    return bands.length === 1 ? `${label}児` : `異年齢（${label}）`;
+  }
 
   // 未所属児の並び替えに使う満年齢。生年月日が無い児は推測せず「年齢不明」へ送る。
   function ageInYears(birthdate) {
@@ -128,13 +135,13 @@ export function makeClasses(ui) {
     const head = el("div", "ccard-head");
     head.innerHTML =
       `<div class="ctitle">${esc(c.name)}` +
-      `<span class="cmeta">${esc(AGE_LABEL[c.age_band] || c.age_band)}` +
+      `<span class="cmeta">${esc(classAgeLabel(c))}` +
       `${c.fiscal_year ? " ・ " + esc(c.fiscal_year) + "年度" : ""}</span></div>`;
     const count = el("span", "badge", `${childrenOf(c.id).length} 名`);
     head.appendChild(count);
     card.appendChild(head);
 
-    // 在籍児（外すボタンつき）
+    // 在籍児（所属の移動はドラッグ＆ドロップ）
     const roster = el("div", "croster");
     enableDropTarget(roster, c.id);
     const kids = childrenOf(c.id);
@@ -162,15 +169,7 @@ export function makeClasses(ui) {
     row.addEventListener("dragend", () => row.classList.remove("is-dragging"));
     const name = el("span", "cname", esc(k.display_name));
     if (k.official_name) name.title = k.official_name; // 本名（氏名欄用）はホバーで確認できる
-    const off = el("button", "icon-btn", iconHTML("minus"));
-    off.type = "button";
-    off.title = "このクラスから外す";
-    off.setAttribute("aria-label", `${k.display_name}をクラスから外す`);
-    off.onclick = async () => {
-      const res = await adk.assignChild(k.display_name, "");
-      if (applyWrite(res, "外しました")) await reload();
-    };
-    row.append(name, off);
+    row.append(name);
     return row;
   }
 
@@ -300,7 +299,6 @@ export function makeClasses(ui) {
     }
     const res = await adk.addClass({
       name,
-      age_band: ui.ageSelect.value,
       fiscal_year: ui.fiscalInput.value.trim(),
     });
     if (applyWrite(res, res.status === "exists" ? "既にあるクラスです" : "作成しました")) {
