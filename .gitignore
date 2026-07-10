@@ -23,6 +23,7 @@ application_default_credentials.json
 
 # GCP / ADK ローカル成果物
 .adk/
+eval/results/
 *.sqlite
 *.db
 
