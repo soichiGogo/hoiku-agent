@@ -25,6 +25,12 @@ const composeDisplayName = (given, gender) => `${(given || "").trim()}${HONORIFI
 const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
+function classAgeBandSummary(cls) {
+  const bands = cls.age_bands || [];
+  if (!bands.length) return "年齢帯未確定";
+  const labels = bands.map((band) => AGE_BAND_LABEL[band] || band).join("・");
+  return bands.length === 1 ? labels : `異年齢（${labels}）`;
+}
 // 日誌の記録日の既定（今日）。toISOString() は UTC 日付を返すため JST 早朝は前日になる
 // （記録日は dedupe キー兼 L2/L3/L4 seed の期間クエリ対象なので、日付ずれは版混線・集計月ずれを招く）。
 // ローカルタイムゾーンの暦日で組み立てる。
@@ -337,6 +343,22 @@ function sampleRecordEntries(childId) {
   }));
 }
 
+// 期の開始年月から保育年度を解く（4月始まり。1〜3月は前年の年度）。
+function fiscalYearOfPeriod(period) {
+  const match = /^(\d{4})-(\d{2})/.exec(String(period || ""));
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return "";
+  return String(month >= 4 ? year : year - 1);
+}
+
+function fiscalYearsOf(entries) {
+  return [...new Set((entries || []).map((entry) => fiscalYearOfPeriod(entry.period)).filter(Boolean))].sort(
+    (a, b) => Number(b) - Number(a),
+  );
+}
+
 const $ = (id) => document.getElementById(id);
 
 /* ============================================================
@@ -576,7 +598,8 @@ function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
   list.hidden = true;
   container.append(icon, input, list);
 
-  let selected = names[0] || "";
+  // 書類作成時に特定の児童を勝手に対象にしない。候補は入力欄にフォーカスすると表示する。
+  let selected = "";
   let visible = []; // 現在表示中の候補名
   let active = -1; // ハイライト中の候補（visible 上の index）
   let formOpen = false; // 新規児の登録フォーム表示中か（blur の巻き戻しを止める）
@@ -978,21 +1001,30 @@ async function main() {
   function renderDiaryClassSelector() {
     const hasClasses = diaryClasses.length > 0;
     $("diary-class-wrap").hidden = !hasClasses;
-    $("diary-ageband-wrap").hidden = hasClasses; // クラスがあれば年齢帯はクラスから決まる
+    $("diary-ageband-wrap").hidden = hasClasses;
     if (!hasClasses) return;
     const sel = $("diary-class");
     sel.innerHTML = "";
     diaryClasses.forEach((c) => {
       const roster = diaryRosterOf[c.id] || [];
-      // DB 由来のクラス名・年齢帯は textContent で入れる（innerHTML だと option へ HTML が
+      // DB 由来のクラス名・導出年齢帯は textContent で入れる（innerHTML だと option へ HTML が
       // 実 DOM 化し stored XSS になる＝classes.js の classCard と同じくエスケープ徹底）。
       const o = el("option", "");
-      o.textContent = `${c.name}（${AGE_BAND_LABEL[c.age_band] || c.age_band}・${roster.length}名）`;
+      o.textContent = `${c.name}（${classAgeBandSummary(c)}・${roster.length}名）`;
       o.value = c.id;
       sel.appendChild(o);
     });
-    sel.onchange = updateDiaryRosterNote;
+    sel.onchange = () => {
+      updateDiaryAgeBandVisibility();
+      updateDiaryRosterNote();
+    };
+    updateDiaryAgeBandVisibility();
     updateDiaryRosterNote();
+  }
+  function updateDiaryAgeBandVisibility() {
+    const selected = diaryClasses.find((c) => c.id === $("diary-class").value);
+    // 単一年齢帯なら在籍児から決定。異年齢/生年月日未登録なら、書類としての対象年齢帯を保育士が選ぶ。
+    $("diary-ageband-wrap").hidden = !!selected && (selected.age_bands || []).length === 1;
   }
   function updateDiaryRosterNote() {
     const roster = diaryRosterOf[$("diary-class").value] || [];
@@ -1010,10 +1042,31 @@ async function main() {
   }
 
   // 対象児が変わったら：保育経過記録/要録の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
-  // クラス月案はクラス単位なので対象児に依存しない（件数は年齢帯チップの onClassAgeChange が更新する）。
-  function onChildChange(name) {
+    // クラス月案は文書の年齢帯で集計するため、対象児に依存しない。
+  let childChangeSeq = 0;
+  async function onChildChange(name) {
     $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
     $("youroku-seed-count").textContent = sampleRecordEntries(name).length + " 件";
+    const yearSelect = $("youroku-year");
+    const seq = ++childChangeSeq;
+    yearSelect.disabled = true;
+    yearSelect.innerHTML = "";
+    if (!name) {
+      yearSelect.innerHTML = '<option value="">対象児を選択してください</option>';
+      return;
+    }
+    const entries = cfg.records_connected
+      ? await adk.getChildRecordEntries(name)
+      : sampleRecordEntries(name);
+    if (seq !== childChangeSeq) return;
+    const years = fiscalYearsOf(entries);
+    if (!years.length) {
+      yearSelect.innerHTML = '<option value="">保育経過記録のある年度がありません</option>';
+      return;
+    }
+    years.forEach((year) => yearSelect.appendChild(new Option(`${year}年度`, year)));
+    yearSelect.value = years[0];
+    yearSelect.disabled = false;
   }
 
   // 月の初日/末日（"YYYY-MM"）。seed の範囲クエリ用（アーカイブ＝/api/records/diary-entries）。
@@ -1075,7 +1128,7 @@ async function main() {
 
   // 種別ごとの実行（seed 組み立て＋ flow.run／日誌は手入力フォームを開く）。
   function runDiary() {
-    // クラスがあればクラスから年齢帯・在籍児 roster を決める。無ければ年齢帯チップへ降格・roster 空。
+    // クラスが単一年齢帯なら在籍児から決定。異年齢/未確定なら文書用チップで年齢帯を選ぶ。
     const date = $("diary-date").value || todayISO();
     let className = "";
     let ageBand = null;
@@ -1084,7 +1137,7 @@ async function main() {
       const c = diaryClasses.find((x) => x.id === $("diary-class").value);
       if (c) {
         className = c.name;
-        ageBand = c.age_band;
+        if ((c.age_bands || []).length === 1) ageBand = c.age_bands[0];
         roster = diaryRosterOf[c.id] || [];
       }
     }
@@ -1163,6 +1216,10 @@ async function main() {
   }
   async function runRecord() {
     const child = docChild();
+    if (!child) {
+      status.setPhase("対象児を選択してください", "waiting");
+      return;
+    }
     const start = $("record-start").value || "2026-04";
     const end = $("record-end").value || "2026-06";
     const period = `${start}〜${end}`;
@@ -1184,7 +1241,15 @@ async function main() {
   }
   async function runYouroku() {
     const child = docChild();
-    const fiscalYear = $("youroku-year").value || "2026";
+    if (!child) {
+      status.setPhase("対象児を選択してください", "waiting");
+      return;
+    }
+    const fiscalYear = $("youroku-year").value;
+    if (!fiscalYear) {
+      status.setPhase("対象児の保育経過記録がある年度を選択してください", "waiting");
+      return;
+    }
     status.setSubject(child);
     // L4 seed＝最終年度の保育経過記録。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
     let entries = null;
@@ -1310,7 +1375,6 @@ async function main() {
     store: $("classes-store"),
     msg: $("class-msg"),
     nameInput: $("class-name"),
-    ageSelect: $("class-new-ageband"),
     fiscalInput: $("class-fiscal"),
     addBtn: $("class-add"),
   });

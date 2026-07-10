@@ -315,10 +315,20 @@ def test_covered_until_takes_max_end_and_skips_unparseable():
     assert rs.covered_until(["2026-12〜2027-02", "自由記述の期"]) == date(2027, 2, 28)
 
 
+def test_age_band_for_birthdate_uses_the_fiscal_year_start():
+    """クラスの年齢帯は4月1日時点の在籍児から導出し、誕生日境界を推測しない。"""
+    as_of = date(2026, 4, 1)
+    assert rs.age_band_for_birthdate(date(2023, 4, 1), as_of) == "3-5"
+    assert rs.age_band_for_birthdate(date(2023, 4, 2), as_of) == "0-2"
+    assert rs.age_band_for_birthdate(None, as_of) is None
+
+
 def test_list_class_child_record_entries_prefers_roster(db):
     """クラス児童の保育経過記録＝名簿（Class）優先で全期（年度跨ぎ・別帯で書かれた過去記録も）を引く。"""
-    cid = rs.upsert_class("ひよこ組", "0-2", "2026", now=_NOW)["id"]
-    rs.upsert_child("はるとくん", given_name="はると", gender="male", now=_NOW)
+    cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "はるとくん", given_name="はると", gender="male", birthdate=date(2023, 4, 2), now=_NOW
+    )
     rs.assign_child_to_class("はるとくん", cid, now=_NOW)
     # はるとくんの記録2件（うち1件は前年度・別の年齢帯で書かれた記録＝名簿経由なら拾える）
     rs.save_document(
@@ -759,43 +769,50 @@ def test_actor_is_clamped_to_column_width(db):
 
 
 def test_upsert_class_creates_and_is_idempotent_by_name_and_year(db):
-    r = rs.upsert_class("ひまわり組", "3-5", "2026", now=_NOW)
+    r = rs.upsert_class("ひまわり組", "2026", now=_NOW)
     assert r["status"] == "created"
-    assert (r["name"], r["age_band"], r["fiscal_year"]) == ("ひまわり組", "3-5", "2026")
+    assert (r["name"], r["fiscal_year"], r["age_bands"]) == ("ひまわり組", "2026", [])
     # 同じ組名＋年度は既存（重複を作らない）。
-    r2 = rs.upsert_class("ひまわり組", "3-5", "2026", now=_NOW)
+    r2 = rs.upsert_class("ひまわり組", "2026", now=_NOW)
     assert r2["status"] == "exists"
     # 同じ組名でも年度違いは別クラス（進級で組名を再利用できる）。
-    r3 = rs.upsert_class("ひまわり組", "3-5", "2027", now=_NOW)
+    r3 = rs.upsert_class("ひまわり組", "2027", now=_NOW)
     assert r3["status"] == "created" and r3["id"] != r["id"]
     names = [(c["name"], c["fiscal_year"]) for c in rs.list_classes(active_only=True)]
     assert ("ひまわり組", "2026") in names and ("ひまわり組", "2027") in names
 
 
-def test_upsert_class_updates_age_band_but_keeps_identity(db):
-    r = rs.upsert_class("たんぽぽ組", "0-2", "2026", now=_NOW)
-    r2 = rs.upsert_class("たんぽぽ組", "3-5", "2026", now=_NOW)  # 年齢帯だけ直す
-    assert r2["status"] == "exists" and r2["id"] == r["id"] and r2["age_band"] == "3-5"
+def test_class_age_bands_are_derived_from_roster(db):
+    cid = rs.upsert_class("たんぽぽ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "ゆいちゃん", given_name="ゆい", gender="female", birthdate=date(2023, 4, 2), now=_NOW
+    )
+    rs.upsert_child(
+        "さくらちゃん", given_name="さくら", gender="female", birthdate=date(2021, 4, 2), now=_NOW
+    )
+    rs.assign_child_to_class("ゆいちゃん", cid, now=_NOW)
+    rs.assign_child_to_class("さくらちゃん", cid, now=_NOW)
+    cls = next(c for c in rs.list_classes() if c["id"] == cid)
+    assert cls["age_bands"] == ["0-2", "3-5"]
 
 
-def test_upsert_class_validates_age_band_and_degrades(monkeypatch, db):
-    assert rs.upsert_class("ばら組", "9-9", "2026", now=_NOW)["status"] == "error"  # 不正な年齢帯
-    assert rs.upsert_class("", "0-2", "2026", now=_NOW)["status"] == "skipped"  # 空名
+def test_upsert_class_degrades_without_a_database(monkeypatch, db):
+    assert rs.upsert_class("", "2026", now=_NOW)["status"] == "skipped"  # 空名
     monkeypatch.setattr(settings, "database_url", "")
     rs.reset_engine_cache()
-    assert rs.upsert_class("ばら組", "0-2", "2026", now=_NOW)["status"] == "skipped"  # 未接続
+    assert rs.upsert_class("ばら組", "2026", now=_NOW)["status"] == "skipped"  # 未接続
 
 
 def test_assign_child_to_class_and_roster(db):
-    cid = rs.upsert_class("さくら組", "3-5", "2026", now=_NOW)["id"]
+    cid = rs.upsert_class("さくら組", "2026", now=_NOW)["id"]
     rs.upsert_child("はるとくん", given_name="はると", gender="male", now=_NOW)
     rs.upsert_child("ゆいちゃん", given_name="ゆい", gender="female", now=_NOW)
     assert rs.assign_child_to_class("はるとくん", cid, now=_NOW)["status"] == "ok"
     assert rs.assign_child_to_class("ゆいちゃん", cid, now=_NOW)["status"] == "ok"
-    # roster＝クラスの在籍児（表示名順）＋年齢帯（日誌フォームの roster/年齢帯決定の素）。
+    # roster＝クラスの在籍児（表示名順）。年齢帯はクラスでなく生年月日から導出する。
     roster = rs.list_children_in_class(cid)
     assert [c["display_name"] for c in roster] == ["はるとくん", "ゆいちゃん"]
-    assert roster[0]["class_name"] == "さくら組" and roster[0]["class_age_band"] == "3-5"
+    assert roster[0]["class_name"] == "さくら組"
     # list_children にも所属が乗る（名簿UIのグループ化）。
     haruto = next(c for c in rs.list_children() if c["display_name"] == "はるとくん")
     assert haruto["class_id"] == cid and haruto["class_name"] == "さくら組"
@@ -804,7 +821,7 @@ def test_assign_child_to_class_and_roster(db):
 
 
 def test_assign_child_unassign_and_error_paths(db):
-    cid = rs.upsert_class("もも組", "0-2", "2026", now=_NOW)["id"]
+    cid = rs.upsert_class("もも組", "2026", now=_NOW)["id"]
     rs.upsert_child("そうたくん", given_name="そうた", gender="male", now=_NOW)
     rs.assign_child_to_class("そうたくん", cid, now=_NOW)
     # None/"" で未所属へ戻す。
@@ -828,7 +845,7 @@ def test_class_reads_degrade_when_url_unset(monkeypatch):
     rs.reset_engine_cache()
     assert rs.list_classes() == []
     assert rs.list_children_in_class("x") == []
-    assert rs.upsert_class("ひまわり組", "0-2", "2026", now=_NOW)["status"] == "skipped"
+    assert rs.upsert_class("ひまわり組", "2026", now=_NOW)["status"] == "skipped"
     assert rs.assign_child_to_class("はるとくん", None, now=_NOW)["status"] == "skipped"
 
 

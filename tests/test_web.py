@@ -564,9 +564,7 @@ def test_archive_write_maps_missing_schema_to_friendly_error(tmp_path, monkeypat
     """
     monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/empty.db")
     record_store.reset_engine_cache()  # スキーマは作らない（create_all を呼ばない）
-    r = _client().post(
-        "/api/classes", json={"name": "ひまわり", "age_band": "3-5", "fiscal_year": ""}
-    )
+    r = _client().post("/api/classes", json={"name": "ひまわり", "fiscal_year": ""})
     record_store.reset_engine_cache()
     assert r.status_code == 200  # 既存の {status:error} 契約は維持（HTTP は 200・本文で伝える）
     body = r.json()
@@ -739,29 +737,29 @@ def test_classes_crud_and_roster_flow(records_db) -> None:
     """クラス作成→児童をクラスへ割当→roster/一覧に反映（園の名簿管理・日誌 roster の素）。"""
     c = _client()
     # クラス作成
-    r = c.post(
-        "/api/classes", json={"name": "ひまわり組", "age_band": "3-5", "fiscal_year": "2026"}
-    ).json()
-    assert r["status"] == "created" and r["name"] == "ひまわり組" and r["age_band"] == "3-5"
+    r = c.post("/api/classes", json={"name": "ひまわり組", "fiscal_year": "2026"}).json()
+    assert r["status"] == "created" and r["name"] == "ひまわり組" and r["age_bands"] == []
     cid = r["id"]
     # 児童登録（クラス指定つき＝1操作で割当まで完結）
     reg = c.post(
         "/api/children",
-        json={"given_name": "はると", "gender": "male", "class_id": cid},
+        json={"given_name": "はると", "gender": "male", "birthdate": "2021-04-02", "class_id": cid},
     ).json()
     assert reg["status"] == "created" and reg.get("assign") == "ok"
     # 児童登録（後から assign）
-    c.post("/api/children", json={"given_name": "ゆい", "gender": "female"})
+    c.post(
+        "/api/children", json={"given_name": "ゆい", "gender": "female", "birthdate": "2021-04-02"}
+    )
     asg = c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": cid}).json()
     assert asg["status"] == "ok" and asg["class_name"] == "ひまわり組"
     # roster＝クラスの在籍児（日誌フォームの素）
     roster = c.get("/api/classes/roster", params={"class_id": cid}).json()["children"]
     assert [x["display_name"] for x in roster] == ["はるとくん", "ゆいちゃん"]
-    assert roster[0]["class_age_band"] == "3-5"
     # 一覧＋在籍児数
     lst = c.get("/api/classes").json()
     assert lst["store"] == "ok"
-    assert next(x for x in lst["classes"] if x["id"] == cid)["child_count"] == 2
+    cls = next(x for x in lst["classes"] if x["id"] == cid)
+    assert cls["child_count"] == 2 and cls["age_bands"] == ["3-5"]
     # 未所属へ戻す
     assert (
         c.post("/api/classes/assign", json={"child": "ゆいちゃん", "class_id": ""}).json()["status"]
@@ -775,8 +773,8 @@ def test_classes_crud_and_roster_flow(records_db) -> None:
 
 def test_classes_validate_input(records_db) -> None:
     c = _client()
-    assert c.post("/api/classes", json={"name": "", "age_band": "3-5"}).status_code == 400
-    assert c.post("/api/classes", json={"name": "ばら組", "age_band": "9-9"}).status_code == 400
+    assert c.post("/api/classes", json={"name": ""}).status_code == 400
+    assert c.post("/api/classes", json={"name": "ばら組", "fiscal_year": "2026"}).status_code == 200
     assert c.post("/api/classes/assign", json={"child": "", "class_id": "x"}).status_code == 400
 
 
@@ -786,17 +784,14 @@ def test_classes_degrade_when_db_unset(monkeypatch) -> None:
     c = _client()
     assert c.get("/api/classes").json() == {"classes": [], "store": "disabled"}
     assert c.get("/api/classes/roster", params={"class_id": "x"}).json()["children"] == []
-    assert (
-        c.post("/api/classes", json={"name": "ひまわり組", "age_band": "0-2"}).json()["status"]
-        == "skipped"
-    )
+    assert c.post("/api/classes", json={"name": "ひまわり組"}).json()["status"] == "skipped"
 
 
 def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:
     """クラスの書込（POST）は辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
     monkeypatch.setattr(settings, "demo_passcode", "secret")
     c = _client()
-    assert c.post("/api/classes", json={"name": "ひまわり組", "age_band": "3-5"}).status_code == 401
+    assert c.post("/api/classes", json={"name": "ひまわり組"}).status_code == 401
     assert (
         c.post("/api/classes/assign", json={"child": "はるとくん", "class_id": "x"}).status_code
         == 401
@@ -805,7 +800,7 @@ def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> 
     assert c.get("/api/classes/roster", params={"class_id": "x"}).status_code == 200
     ok = c.post(
         "/api/classes",
-        json={"name": "ひまわり組", "age_band": "3-5"},
+        json={"name": "ひまわり組"},
         headers={"X-Demo-Passcode": "secret"},
     )
     assert ok.status_code == 200 and ok.json()["status"] == "created"

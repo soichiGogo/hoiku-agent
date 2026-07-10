@@ -157,11 +157,10 @@ class ClassAddRequest(BaseModel):
     """クラス（組）の定義（園の名簿管理・日誌 roster の素）。書込ゲート＝辞書荒らしと同枠。
 
     同一性は (name, fiscal_year)＝進級で組名が再利用されても年度で分かれる（record_store が担保）。
-    age_band は 0-2/3-5（クラス選択で書類の年齢分岐を決めるキー）。
+    年齢帯はクラスに保存せず、在籍児の生年月日と対象年度から導出する。
     """
 
     name: str  # 組名（例: ひまわり組・必須）
-    age_band: str  # 0-2 / 3-5（必須）
     fiscal_year: str = ""  # 年度（例: 2026・任意）
 
 
@@ -884,18 +883,12 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     @app.post("/api/classes")
     def web_add_class(req: ClassAddRequest):
-        """クラス（組）を定義する（書込ゲート）。組名/年齢帯は必須・age_band 不正は 400・降格は skipped。"""
+        """クラス（組）を定義する（書込ゲート）。組名は必須、年齢帯は在籍児から導出する。"""
         name = (req.name or "").strip()
         if not name:
             return JSONResponse({"status": "error", "detail": "組名は必須です"}, status_code=400)
-        age_band = (req.age_band or "").strip()
-        if age_band not in record_store.AGE_BANDS:
-            return JSONResponse(
-                {"status": "error", "detail": f"年齢帯が不正です: {req.age_band!r}"},
-                status_code=400,
-            )
         result = record_store.upsert_class(
-            name, age_band, (req.fiscal_year or "").strip(), now=datetime.now()
+            name, (req.fiscal_year or "").strip(), now=datetime.now()
         )
         result["store"] = record_store.store_status()
         return result
