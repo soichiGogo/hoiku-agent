@@ -26,10 +26,13 @@
   （harness の `finalize_entry` を中継）で再 validate/整形し、結果を `PATCH …/sessions` で `final_entry`/`final_document`/
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
-- **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`・
+- **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/api/improve`・
   **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）と
-  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**を
+  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**、
+  **ADK ビルダー書込（POST `/builder/*`＝エージェント定義タンパリング防止）**を
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
+  **`/run_live`（WebSocket）は撤去**する（`register_web_ui`）＝パスコードゲートは HTTP ミドルウェア
+  で WebSocket スコープを素通しするため列挙してもゲートできず、UI も使わない（`/run_sse` のみ）。
 - **アップロード取込（「書類を見る」タブ）は中継のみ**：既存ファイル（PDF/Word/Excel）を既存スキーマへ
   取り込む。フォルダ（種別）から kind、（personal 種別なら）子どもフォルダから child が場所で決まる（別建ての
   種別セレクタを持たない＝ファイルシステム的操作）。フロントは `/api/parse-upload`（multipart）で解析結果 entry を
