@@ -62,6 +62,14 @@
   前提＝`DEPLOY_SA` に `roles/cloudsql.client`＋DB URL secret への `roles/secretmanager.secretAccessor`。手動 `alembic upgrade head`
   は初回セットアップ／破壊的変更時の fallback）。GCP 側の一度きり設定は `docs/ライブ実行手順.md`「本番運用ハードニング」。
   **dev は WIF 有効化済み＝main push で自動デプロイ**）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`（nightly/手動・要 WIF+creds）。
+- インフラ（IaC・基盤）: `infra/`＝**Terraform でプラットフォーム基盤を宣言化**（API 有効化/SA・IAM/WIF・Cloud SQL・
+  Secret の器・DNS・Cloud Run ドメインマッピング・Artifact Registry）。**Cloud Run サービス本体（image/env/revision）は
+  `deploy.yml` が所有＝Terraform は import/所有しない**（`gcloud run deploy` と衝突させない境界）。CI＝
+  `.github/workflows/terraform.yml`（PR=plan / main=apply を Environment `infra-prod` の**手動承認**でゲート・WIF で
+  専用 `tf-admin` SA を借用）。**スコープ外（理由つき・`infra/README.md`）**＝請求予算（billing 権限を CI に渡さない）/
+  IAP 有効化・メンバー（直接 IAP のまま）/ Cloud SQL ユーザー・パスワード / Secret の値 / RAG corpus・Memory Bank
+  （TF 非対応＝`scripts/provision_*.py` が正）。初回のみローカル owner で bootstrap（state バケット＋`terraform apply`）
+  ＝手順は `infra/README.md`（`docs/ライブ実行手順.md` は詳細/ fallback）。
 - 可観測性: `src/hoiku_agent/logging_config.py`＝Cloud Run 向け構造化 JSON ログ（stdout 1行 JSON・severity・
   `X-Cloud-Trace-Context` 相関）。`server.py` 入口で `configure_logging()`＋`install_trace_middleware()`。
   Cloud Logging クライアントは手組みしない（マネージド昇格に委ねる）。ローカルは `K_SERVICE` 無しでテキスト降格（`LOG_FORMAT`/`LOG_LEVEL`）。
