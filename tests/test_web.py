@@ -1217,6 +1217,17 @@ def test_google_signin_protects_app_and_api(monkeypatch) -> None:
     assert "test-client.apps.googleusercontent.com" in welcome.text
 
 
+def test_google_login_uri_is_https_on_cloud_run(monkeypatch) -> None:
+    """TLS終端後の内部HTTPをGoogleへ誤って渡さず、公開HTTPS callbackを描画する。"""
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setenv("K_SERVICE", "hoiku-agent")
+    welcome = _client().get("/")
+    assert 'data-login_uri="https://testserver/auth/google"' in welcome.text
+
+
 def test_google_verified_user_becomes_actor_and_provisions_user(records_db, monkeypatch) -> None:
     """検証済み session の email/sub が config・証跡・users に反映される。"""
     c = _client()
