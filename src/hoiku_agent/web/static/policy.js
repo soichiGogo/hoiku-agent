@@ -344,14 +344,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
         handleItem,
       );
     } catch (e) {
-      if (e instanceof adk.PasscodeError) {
-        window.__requireGate && window.__requireGate();
-        banner(flow, "info", "パスコードを入力してから、もう一度お試しください。");
-        procStop();
-        phase("パスコード待ち", "waiting");
-      } else {
-        onError(e.message || String(e));
-      }
+      onError(e.message || String(e));
     } finally {
       button.disabled = false;
     }

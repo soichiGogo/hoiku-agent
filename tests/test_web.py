@@ -1,7 +1,7 @@
 """配布 Web UI（src/hoiku_agent/web）の決定論スモーク（LLM 非依存・creds 不要）。
 
 生成そのもの（/run_sse 経由の日誌/月案）は LLM が要るのでここでは検証しない（層B eval / 実機スモーク）。
-ここで担保するのは「配線が崩れていないこと」＝静的配信・自前 API の形・コストゲートの開閉・/ の着地。
+ここで担保するのは「配線が崩れていないこと」＝静的配信・自前 API の形・利用枠の応答・/ の着地。
 """
 
 from __future__ import annotations
@@ -45,8 +45,9 @@ def test_config_shape() -> None:
     body = r.json()
     assert body["app_name"] == "hoiku_agent"
     assert body["default_user_id"] == "caregiver"
-    for key in ("memory_connected", "rag_connected", "passcode_required", "model"):
+    for key in ("memory_connected", "rag_connected", "llm_budget", "model"):
         assert key in body
+    assert {"available", "limit_yen", "used_yen", "remaining_yen"} <= body["llm_budget"].keys()
     # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（保育経過記録・クラス月案は配線済み）。
     assert "child_record" in body["docx_kinds"]
     assert "class_monthly" in body["docx_kinds"]
@@ -112,27 +113,33 @@ def test_list_apps_has_root_agent() -> None:
     assert "hoiku_agent" in _client().get("/list-apps").json()
 
 
-def test_passcode_gate_blocks_cost_endpoints(monkeypatch) -> None:
-    # demo_passcode を設定すると LLM を回す口だけが要パスコードになる（読み取り・config は素通し）。
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_llm_budget_requires_google_login_when_enabled(monkeypatch) -> None:
+    """本番相当では作成・改善・取込・校正のいずれも Google ログインなしに開かない。"""
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
     assert c.post("/run_sse", json={}).status_code == 401
     assert c.post("/api/improve", json={"diff": "x"}).status_code == 401
-    assert c.get("/api/config").status_code == 200
-    assert c.get("/api/config").json()["passcode_required"] is True
-    # 閲覧（指針カードの読み取り）はパスコード無でも素通し（コストが発生しない）。
-    assert c.get("/api/policy").status_code == 200
-    # 正しいパスコードはゲートを開ける（中身のバリデーション 422 になり、401 にはならない）。
-    opened = c.post("/run_sse", json={}, headers={"X-Demo-Passcode": "secret"})
-    assert opened.status_code != 401
+    assert c.get("/api/config").status_code == 401
 
 
-def test_no_passcode_means_open(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "demo_passcode", "")
+def test_llm_budget_limit_returns_clear_message(monkeypatch) -> None:
+    from hoiku_agent.harness import llm_budget
+    from hoiku_agent.harness.llm_budget import BudgetDecision
+
     c = _client()
-    assert c.get("/api/config").json()["passcode_required"] is False
-    # ゲート無効時は /run_sse がミドルウェアで 401 にはならない（バリデーション 422）。
-    assert c.post("/run_sse", json={}).status_code != 401
+    _sign_in_with_google(c, monkeypatch)
+    monkeypatch.setattr(
+        llm_budget,
+        "reserve",
+        lambda subject, path: BudgetDecision(False, "user_hourly_limit", 35),
+    )
+    r = c.post("/api/proofread", json={"kind": "diary", "entry": {}})
+    assert r.status_code == 429
+    assert r.json()["code"] == "user_hourly_limit"
+    assert "AI利用枠に達しました" in r.json()["error"]
 
 
 # ──────────────────── 編集UI backend（form-meta / finalize-edit・harness 中継） ────────────────────
@@ -299,9 +306,8 @@ def test_finalize_edit_nursery_record_surfaces_validation() -> None:
     assert any("最終年度に至るまでの育ち" in p for p in body["problems"])
 
 
-def test_finalize_edit_not_passcode_gated(monkeypatch) -> None:
-    """編集の再確定は LLM 非課金なのでパスコードでゲートしない（読み取り同様素通し）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_finalize_edit_does_not_consume_llm_budget() -> None:
+    """編集の再確定は LLM 非課金なので、利用枠の対象にしない。"""
     c = _client()
     assert c.get("/api/form-meta").status_code == 200
     r = c.post("/api/finalize-edit", json={"kind": "diary", "entry": _edit_diary_entry()})
@@ -326,25 +332,25 @@ def test_run_live_websocket_route_is_removed() -> None:
     assert "/run_live" not in ws
 
 
-def test_dev_builder_memory_writes_are_gated_reads_open() -> None:
-    """web=True が露出する ADK の dev/builder/memory 面：書込/実行（非 GET）はゲート、読取 GET は素通し。
+def test_dev_builder_memory_writes_are_forbidden_reads_open() -> None:
+    """web=True が露出する ADK の dev/builder/memory 面：書込/実行（非 GET）は禁止、読取 GET は素通し。
 
     公開デモで未認証の LLM 課金迂回（/dev の eval 実行）・Memory Bank 直接書込（承認ゲート迂回）・
     エージェント定義タンパリング（/builder 書込）を塞ぐ。承認 PATCH・セッション作成は従来どおり開放。
     """
-    from hoiku_agent.web.routes import _needs_gate
+    from hoiku_agent.web.routes import _is_forbidden_dev_write
 
-    # 書込/実行（非 GET）＝ゲート
-    assert _needs_gate("/builder/save", "POST") is True
-    assert _needs_gate("/dev/apps/x/builder/save", "POST") is True
-    assert _needs_gate("/dev/apps/x/eval_sets/y/run_eval", "POST") is True
-    assert _needs_gate("/dev/apps/x/tests/run", "POST") is True
-    assert _needs_gate("/apps/x/users/u/memory", "PATCH") is True
+    # 書込/実行（非 GET）＝配布 UI では禁止
+    assert _is_forbidden_dev_write("/builder/save", "POST") is True
+    assert _is_forbidden_dev_write("/dev/apps/x/builder/save", "POST") is True
+    assert _is_forbidden_dev_write("/dev/apps/x/eval_sets/y/run_eval", "POST") is True
+    assert _is_forbidden_dev_write("/dev/apps/x/tests/run", "POST") is True
+    assert _is_forbidden_dev_write("/apps/x/users/u/memory", "PATCH") is True
     # 読取・承認・セッション作成＝素通し
-    assert _needs_gate("/builder/app/x", "GET") is False
-    assert _needs_gate("/dev/apps/x/eval-results", "GET") is False
-    assert _needs_gate("/apps/x/users/u/sessions/s", "PATCH") is False  # 承認は非ゲート
-    assert _needs_gate("/apps/x/users/u/sessions", "POST") is False  # セッション作成は非ゲート
+    assert _is_forbidden_dev_write("/builder/app/x", "GET") is False
+    assert _is_forbidden_dev_write("/dev/apps/x/eval-results", "GET") is False
+    assert _is_forbidden_dev_write("/apps/x/users/u/sessions/s", "PATCH") is False
+    assert _is_forbidden_dev_write("/apps/x/users/u/sessions", "POST") is False
 
 
 # ──────────────────── 帳票PDF 出力（/api/export-pdf・現場でそのまま綴じる最終形） ────────────────────
@@ -556,9 +562,8 @@ def test_export_docx_unsupported_kind_400() -> None:
     assert r.json()["code"] == "invalid_request"
 
 
-def test_export_pdf_not_passcode_gated(monkeypatch) -> None:
-    """帳票PDF 出力は LLM 非課金なのでパスコードでゲートしない（読み取り同様素通し）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_export_pdf_is_not_llm_budgeted() -> None:
+    """帳票PDF 出力は LLM 非課金なので利用枠を消費しない。"""
     r = _client().post("/api/export-pdf", json={"kind": "diary", "entry": _edit_diary_entry()})
     _assert_is_pdf(r)
 
@@ -734,18 +739,13 @@ def test_finalize_edit_child_record_keeps_manual_age_when_no_birthdate(records_d
     assert "1歳3か月" in body["formatted"]
 
 
-def test_add_child_is_passcode_gated(records_db, monkeypatch) -> None:
-    """児童マスタへの書込（POST）も辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_add_child_is_available_to_signed_in_workspace(records_db) -> None:
+    """児童マスタは Google ログイン済み workspace 内の通常操作で、別パスコードを求めない。"""
     c = _client()
-    assert (
-        c.post("/api/children", json={"given_name": "はると", "gender": "male"}).status_code == 401
-    )
     assert c.get("/api/children").status_code == 200
     ok = c.post(
         "/api/children",
         json={"given_name": "はると", "gender": "male"},
-        headers={"X-Demo-Passcode": "secret"},
     )
     assert ok.status_code == 200 and ok.json()["display_name"] == "はるとくん"
 
@@ -807,22 +807,12 @@ def test_classes_degrade_when_db_unset(monkeypatch) -> None:
     assert c.post("/api/classes", json={"name": "ひまわり組"}).json()["status"] == "skipped"
 
 
-def test_classes_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:
-    """クラスの書込（POST）は辞書荒らしと同枠でゲート。読取（GET）は素通し。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_classes_write_is_available_to_signed_in_workspace(records_db) -> None:
+    """クラスの書込は Google ログイン済み workspace 内の通常操作である。"""
     c = _client()
-    assert c.post("/api/classes", json={"name": "ひまわり組"}).status_code == 401
-    assert (
-        c.post("/api/classes/assign", json={"child": "はるとくん", "class_id": "x"}).status_code
-        == 401
-    )
     assert c.get("/api/classes").status_code == 200
     assert c.get("/api/classes/roster", params={"class_id": "x"}).status_code == 200
-    ok = c.post(
-        "/api/classes",
-        json={"name": "ひまわり組"},
-        headers={"X-Demo-Passcode": "secret"},
-    )
+    ok = c.post("/api/classes", json={"name": "ひまわり組"})
     assert ok.status_code == 200 and ok.json()["status"] == "created"
 
 
@@ -863,18 +853,14 @@ def test_proofread_empty_narrative_returns_no_suggestions_without_llm() -> None:
     assert body["suggestions"] == [] and body["checked"] == 0 and body["error"] is None
 
 
-def test_proofread_is_passcode_gated(monkeypatch) -> None:
-    """校正AI は LLM を回す口なのでパスコードゲート（/api/improve・/api/parse-upload と同枠）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_proofread_requires_google_login_when_enabled(monkeypatch) -> None:
+    """校正AI は LLM 口なので Google ログインが必要。"""
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
     assert c.post("/api/proofread", json={"kind": "diary", "entry": {}}).status_code == 401
-    # パスコードを与えれば通る（空 entry＝叙述文なしで suggestions 空・200）。
-    ok = c.post(
-        "/api/proofread",
-        json={"kind": "diary", "entry": {}},
-        headers={"X-Demo-Passcode": "secret"},
-    )
-    assert ok.status_code == 200 and ok.json()["suggestions"] == []
 
 
 def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:
@@ -966,22 +952,13 @@ def test_class_monthly_seed_endpoint_composes_three_inputs(records_db) -> None:
     assert bad.status_code == 400
 
 
-def test_records_write_is_passcode_gated_reads_open(records_db, monkeypatch) -> None:
-    """アーカイブの**書込**はパスコードでゲート（公開デモ URL からのゴミデータ・偽承認証跡の防止）。
-
-    読み取り（一覧・児童・seed）は従来どおり素通し。正しいパスコードは書込を開ける。
-    """
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_records_write_is_available_to_signed_in_workspace(records_db) -> None:
+    """アーカイブの書込は Google ログイン済み workspace に紐付く通常操作である。"""
     c = _client()
     payload = {"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"}
-    # 書込はパスコード無しだと 401
-    assert c.post("/api/records", json=payload).status_code == 401
-    assert c.post("/api/records/approve", json={"kind": "diary", "entry": {}}).status_code == 401
-    # 読み取りは素通し
     assert c.get("/api/records").status_code == 200
     assert c.get("/api/children").status_code == 200
-    # 正しいパスコードは書込を開ける
-    ok = c.post("/api/records", json=payload, headers={"X-Demo-Passcode": "secret"})
+    ok = c.post("/api/records", json=payload)
     assert ok.status_code == 200 and ok.json()["status"] == "saved"
 
 
@@ -1098,21 +1075,16 @@ def test_feedback_save_and_list_flow(records_db) -> None:
     assert fb["version_seq"] == 1
 
 
-def test_feedback_write_gated_read_open(records_db, monkeypatch) -> None:
-    """フィードバックの書込はパスコードゲート（辞書荒らしと同枠）・読取は素通し。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_feedback_write_is_available_to_signed_in_workspace(records_db) -> None:
+    """フィードバックも Google ログイン済み workspace 内で保存する。"""
     c = _client()
     doc_id = c.post(
         "/api/records",
         json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"},
-        headers={"X-Demo-Passcode": "secret"},
     ).json()["document_id"]
     payload = {"document_id": doc_id, "verdict": "up", "comment": "良い"}
-    assert c.post("/api/records/feedback", json=payload).status_code == 401  # 書込は要パスコード
-    assert (
-        c.get("/api/records/feedback", params={"document_id": doc_id}).status_code == 200
-    )  # 読取は素通し
-    ok = c.post("/api/records/feedback", json=payload, headers={"X-Demo-Passcode": "secret"})
+    assert c.get("/api/records/feedback", params={"document_id": doc_id}).status_code == 200
+    ok = c.post("/api/records/feedback", json=payload)
     assert ok.status_code == 200 and ok.json()["status"] == "saved"
 
 
@@ -1142,14 +1114,12 @@ def test_feedback_degrades_when_db_unset(monkeypatch) -> None:
     assert c.get("/api/records/feedback").json() == {"feedback": [], "store": "disabled"}
 
 
-def test_get_record_read_not_passcode_gated(records_db, monkeypatch) -> None:
-    """単一書類の閲覧は読取＝非ゲート（保存はゲート・読み取りは素通し）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_get_record_read_is_not_llm_budgeted(records_db) -> None:
+    """単一書類の閲覧は LLM を呼ばず、利用枠も消費しない。"""
     c = _client()
     saved = c.post(
         "/api/records",
         json={"kind": "diary", "entry": _edit_diary_entry(), "author_kind": "ai"},
-        headers={"X-Demo-Passcode": "secret"},
     ).json()
     assert c.get(f"/api/records/{saved['document_id']}").status_code == 200
 
@@ -1295,16 +1265,15 @@ def test_set_user_display_name_requires_signin(monkeypatch) -> None:
     assert r.status_code == 403 and r.json()["code"] == "auth_required"
 
 
-def test_set_user_display_name_not_passcode_gated(records_db, monkeypatch) -> None:
-    """/api/user はパスコードゲート外＝サインイン済みならパスコード無しで自分の表示名を保存できる。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")  # ゲート有効でも…
+def test_set_user_display_name_requires_no_extra_secret(records_db, monkeypatch) -> None:
+    """/api/user はサインイン済みなら別パスコードなしで自分の表示名を保存できる。"""
     c = _client()
     _sign_in_with_google(c, monkeypatch)
     r = c.post(
         "/api/user",
         json={"display_name": "そうた先生"},
     )
-    assert r.status_code == 200 and r.json()["status"] == "ok"  # パスコードで 401 にならない
+    assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
 # ──────────────────── 表記ルール辞書（ひらがな表記DX＝/api/notation の中継） ────────────────────
@@ -1368,14 +1337,14 @@ def test_notation_invalid_kind_400(tmp_path, monkeypatch) -> None:
     assert r.status_code == 400 and r.json()["status"] == "error"
 
 
-def test_notation_writes_are_passcode_gated(monkeypatch) -> None:
-    """書込（POST/PATCH/DELETE）は公開デモの辞書荒らし防止でゲート、読取（GET）は素通し。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_notation_writes_require_no_extra_secret(tmp_path, monkeypatch) -> None:
+    """表記ルール編集は Google ログイン済み workspace の通常操作である。"""
+    from hoiku_agent.harness import notation_store as ns
+
+    monkeypatch.setattr(ns, "_NOTATION_PATH", tmp_path / "表記ルール.json")
     c = _client()
     assert c.get("/api/notation").status_code == 200
-    assert c.post("/api/notation", json={"pattern": "x", "replacement": "y"}).status_code == 401
-    assert c.patch("/api/notation/rule-0001", json={"enabled": False}).status_code == 401
-    assert c.delete("/api/notation/rule-0001").status_code == 401
+    assert c.post("/api/notation", json={"pattern": "x", "replacement": "y"}).status_code == 200
 
 
 # ──────────────────── アップロード取込（upload_extract / /api/parse-upload） ────────────────────
@@ -1433,7 +1402,6 @@ def test_upload_extract_docx_xlsx_pdf() -> None:
 def test_parse_upload_overrides_keys_and_relays_finalize(monkeypatch) -> None:
     """取込エンドポイント：LLM が種別/対象を取り違えても保育士入力（与件）で権威的に上書きし、
     harness.finalize で整形・検査した結果を返す（保存は後段 /api/records・ここは解析のみ）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "")  # ゲート無効で素通しにする
     from hoiku_agent.web import upload_parse
 
     fence = (
@@ -1474,7 +1442,6 @@ def test_parse_upload_overrides_keys_and_relays_finalize(monkeypatch) -> None:
 def test_parse_upload_class_monthly_overrides_and_relays(monkeypatch) -> None:
     """クラス月案の取込（§18）：クラス単位＝主対象児なしで、対象月＝与件を権威的に上書きし、
     grid が正準7行に整えられた harness 確定結果を中継する（kind=class_monthly・class_monthly も取込対応）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "")
     import json as _json
 
     from hoiku_agent.web import upload_parse
@@ -1546,7 +1513,6 @@ def test_parse_upload_class_monthly_overrides_and_relays(monkeypatch) -> None:
 
 def test_parse_upload_degrades_on_llm_failure(monkeypatch) -> None:
     """LLM 失敗（creds 未設定等）は 200＋parse_error で正直に降格し、与件入りの最小 entry を返す。"""
-    monkeypatch.setattr(settings, "demo_passcode", "")
     from hoiku_agent.web import upload_parse
 
     async def _boom(agent, parts):
@@ -1565,7 +1531,6 @@ def test_parse_upload_degrades_on_llm_failure(monkeypatch) -> None:
 
 
 def test_parse_upload_unsupported_format_400(monkeypatch) -> None:
-    monkeypatch.setattr(settings, "demo_passcode", "")
     r = _client().post(
         "/api/parse-upload",
         data={"kind": "diary", "target": "2026-05-15", "age_band": "0-2"},
@@ -1574,9 +1539,12 @@ def test_parse_upload_unsupported_format_400(monkeypatch) -> None:
     assert r.status_code == 400 and r.json()["code"] == "invalid_request"
 
 
-def test_parse_upload_is_passcode_gated(monkeypatch) -> None:
-    """アップロード取込は LLM を回す口なのでパスコードゲート（/api/improve と同枠）。"""
-    monkeypatch.setattr(settings, "demo_passcode", "secret")
+def test_parse_upload_requires_google_login_when_enabled(monkeypatch) -> None:
+    """アップロード取込は LLM 口なので Google ログインが必要。"""
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     r = _client().post(
         "/api/parse-upload",
         data={"kind": "diary", "target": "2026-05-15", "age_band": "0-2"},

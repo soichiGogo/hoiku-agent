@@ -25,8 +25,6 @@
 #      （未設定なら RAG/Memory/DB（アーカイブ＋指針）は降格＝§9/Phase 1/2）。
 #      任意 secret: DATABASE_URL（Secret Manager を使わない場合の後方互換フォールバック＝平文 env 注入。
 #        推奨は上の DATABASE_URL_SECRET（Secret Manager にパスワードを置き Cloud Run が参照）。
-#        DEMO_PASSCODE（LLM を回す口のゲート＝公開/パスコード運用のコスト・濫用対策。--set-env-vars は
-#        全置換ゆえ CI で明示管理しないと再デプロイのたびに落ちてゲートが外れる）。
 #        SESSION_SECRET（Google Sign-In 後の session cookie 署名用・32 bytes 以上の乱数。Cloud Run 環境変数へ注入）。
 #   認証ポリシー: 案内画面を先に出すため Cloud Run IAP は `--no-iap` にし、公開到達後の `/app/`・API は
 #      アプリ内 Google Sign-In session で fail-closed にする。GOOGLE_OAUTH_CLIENT_ID / SESSION_SECRET が無い deploy は失敗させる。
@@ -126,9 +124,6 @@ jobs:
         #     どちらも未設定なら降格（record_store は skipped/空・policy_store はローカル）。
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          # LLM を回す口のゲート（公開/パスコード運用時のコスト・濫用対策）。--set-env-vars は全置換ゆえ
-          # ここで明示管理しないと自動デプロイのたびに落ちてゲートが外れる（GH secret に置く）。
-          DEMO_PASSCODE: ${{ secrets.DEMO_PASSCODE }}
           # Google Sign-In 後の署名付き session cookie の鍵。Google OAuth client secret ではない。
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
         run: |
@@ -160,12 +155,6 @@ jobs:
             exit 1
           fi
           ENV_VARS="GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},GOOGLE_CLOUD_LOCATION=${{ vars.GCP_REGION }},GOOGLE_GENAI_USE_VERTEXAI=true,MODEL_LOCATION=$MODEL_LOCATION,GEMINI_MODEL=${{ vars.GEMINI_MODEL }},RAG_CORPUS=${{ vars.RAG_CORPUS }},AGENT_ENGINE_ID=${{ vars.AGENT_ENGINE_ID }},TRACE_TO_CLOUD=$TRACE_TO_CLOUD,GOOGLE_OAUTH_CLIENT_ID=${{ vars.GOOGLE_OAUTH_CLIENT_ID }},SESSION_SECRET=$SESSION_SECRET"
-
-          # DEMO_PASSCODE（LLM を回す口のゲート）を設定時のみ注入する。未設定なら注入しない
-          # （＝ゲート無効）。Google ログイン後にも LLM コストの二重防御として維持できる。
-          if [ -n "$DEMO_PASSCODE" ]; then
-            ENV_VARS="$ENV_VARS,DEMO_PASSCODE=$DEMO_PASSCODE"
-          fi
 
           # DB 接続の注入：Secret Manager（推奨）優先／無ければ GH secret の平文 env へフォールバック。
           if [ -n "${{ vars.DATABASE_URL_SECRET }}" ]; then

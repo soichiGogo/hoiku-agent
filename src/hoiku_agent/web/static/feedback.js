@@ -75,12 +75,6 @@ export function makeFeedbackBar({ docKind, getDocId }) {
     } else {
       res = { status: "skipped", reason: "no_doc" }; // 未保存の書類＝紐付け先が無い（改善は別途動く）
     }
-    if (res.needsGate) {
-      window.__requireGate && window.__requireGate();
-      note.innerHTML = `${iconHTML("info")}パスコードを入力してから、もう一度お試しください。`;
-      sendBtn.disabled = false;
-      return;
-    }
     setSaveNote(res, !!docId);
     // ひとことがあれば「指針に活かす」を出す（保存の成否に関わらず改善フローは動く）。
     if (text) showImproveAffordance();

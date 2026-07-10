@@ -172,10 +172,6 @@ export function makeDiaryForm({ area, status }) {
       proofBtn.innerHTML = `<span class="spinner"></span>チェック中…`;
       try {
         const res = await adk.proofread(KIND, editor.collect());
-        if (res.needsGate) {
-          window.__requireGate && window.__requireGate();
-          return;
-        }
         renderSuggestions(res);
       } finally {
         proofBtn.disabled = false;

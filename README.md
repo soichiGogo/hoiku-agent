@@ -161,7 +161,7 @@ gcloud auth application-default login
 # 本番と同じ入口で起動（保育士UI = http://localhost:8000/app/）
 uvicorn server:app
 # AGENT_ENGINE_ID / RAG_CORPUS / DATABASE_URL が未設定でも安全に降格して動く
-# 配布リンクの LLM 課金を守るなら .env に DEMO_PASSCODE を設定
+# 本番は Google Sign-In を設定し、LLM 利用枠（個人: 1時間1000円／全体: 1日10000円）を DB で管理
 
 # ADK CLI / dev UI で対話する場合
 adk run src/hoiku_agent      # CLI 対話（既定＝クラス月案）

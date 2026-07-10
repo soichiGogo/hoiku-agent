@@ -27,12 +27,10 @@
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
 - **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/api/improve`・
-  **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）と
-  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**、
-  **ADK ビルダー書込（POST `/builder/*`＝エージェント定義タンパリング防止）**を
-  `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
-  **`/run_live`（WebSocket）は撤去**する（`register_web_ui`）＝パスコードゲートは HTTP ミドルウェア
-  で WebSocket スコープを素通しするため列挙してもゲートできず、UI も使わない（`/run_sse` のみ）。
+  **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）は、
+  `harness.llm_budget` が Google Sign-In subject ごとの時間枠と全体の日次枠を原子的に予約してから通す。
+  非LLMの書類アーカイブ・名簿・表記ルールは Google Sign-In の workspace 境界で保護する。ADK の dev/builder/memory の書込は
+  配布UIから 403 で閉じる。読み取り・静的配信は利用枠を消費しない。**`/run_live`（WebSocket）は撤去**する。
 - **アップロード取込（「書類を見る」タブ）は中継のみ**：既存ファイル（PDF/Word/Excel）を既存スキーマへ
   取り込む。フォルダ（種別）から kind、（personal 種別なら）子どもフォルダから child が場所で決まる（別建ての
   種別セレクタを持たない＝ファイルシステム的操作）。フロントは `/api/parse-upload`（multipart）で解析結果 entry を
@@ -117,21 +115,21 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `docx_fill.fill_docx` で園の実 Word 様式に流し込んで返す＝Word 編集版・描画のみ・非ゲート・未対応 kind は 400。対応 kind は
   `/api/config` の `docx_kinds` で UI に伝えボタン出し分け）・**`/api/parse-upload`**（アップロード取込＝multipart で
   受けたファイルを `upload_parse.parse_uploaded_file` で解析し確認・編集用 entry〔＋整形/検査結果〕を返す中継。**LLM を回す口＝
-  `_GATED_PREFIX` でパスコードゲート**・未対応形式/種別は 400・creds 無/LLM 失敗は 200＋parse_error で正直に降格。保存は後段の
+  `llm_budget` で利用枠を予約**・未対応形式/種別は 400・creds 無/LLM 失敗は 200＋parse_error で正直に降格。保存は後段の
   `/api/records`＝`author_kind="imported"`）・**`/api/records`／`/api/records/approve`／
   `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
   `/api/records/class-monthly-seed`（クラス月案 seed 3系統＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
   `/api/records/child-record-entries`（全期・`exclude_period` で作成対象の期を除外＝要録 L4／保育経過記録「前回まで」seed）／
   `/api/records/feedback`（**書類フィードバック＝👍👎＋ひとこと**＝`record_store.save_feedback`/`list_feedback` の中継・POST 保存は
-  書込ゲート〔`_GATED_WRITE_PREFIX`〕・actor は `_resolve_actor`／GET 一覧は読取素通し・リテラル路なので `/api/records/{id}` より前に宣言）／
+  Google Sign-In の workspace 境界・actor は `_resolve_actor`／GET 一覧は読取素通し・リテラル路なので `/api/records/{id}` より前に宣言）／
   `/api/records/{id}`（単一書類の現行版全文＝「書類を見る」タブ・`record_store.get_document`・不在/不正 id は 404・
   リテラル路 diary-entries/diary-meta/feedback より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
-  **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`POST /api/user`**（サインイン中
+  **書込＝Google Sign-In の workspace 境界で保護**・読み取りは素通し・名空/性別不正=400）・**`POST /api/user`**（サインイン中
   ユーザー自身の表示名を **Google 検証済み email/sub に紐づけて**設定＝`record_store.set_user_display_name` 中継・body 由来を使わず偽装不可・
-  未サインインは 403・Google 認証済みの自己書込ゆえ **パスコードゲート外**）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
+  未サインインは 403・Google 認証済みの自己書込）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
-  辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
+  Google Sign-In の workspace 境界で保護**・読取は素通し・種別不正=400/重複競合=409）＋利用枠 middleware（`/api/eval-baseline` は v1 で撤去）。`/` は案内画面を返す（dev UI は `/dev-ui/` 温存）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
   **線形様式（日誌/個別月案/要録）の本文セクション順序・ラベルは `template_store` から駆動**（テキスト整形と共通の SSOT・種別→flowable は chohyo_pdf が持つ）。保育経過記録マトリクス・クラス月案グリッドは非線形のため対象外（各 story wrapper のコード）。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
@@ -162,7 +160,7 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   **叙述文（プロース系）だけ**を id/パス/ラベル付きで集め（数量的な生活記録・仮名・タグ・日付は渡さない＝AI に事実を
   触らせない・§14）、`build_proofreader_agent` を InMemoryRunner で1パス駆動→```json フェンスの提案を復元→**id→entry の
   パスへ写像**して返す（元と同一/空/対象外 id は落とす安全網）。中継のみ（採否・反映は front・提案の実体は agents）。
-  `/api/proofread`＝LLM 口＝`_GATED_PREFIX` でパスコードゲート・creds 無/LLM 失敗は 200＋error で正直に降格（そのまま保存できる）。
+  `/api/proofread`＝LLM 口＝`llm_budget` で利用枠を予約・creds 無/LLM 失敗は 200＋error で正直に降格（そのまま保存できる）。
 - `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を**カテゴリ別グループ表示の種別メニュー**
   （`app.js` の `DOC_CATEGORIES`＋`renderDocMenu`）で1タブに統合＝4カテゴリ〔指導計画/保育記録/保護者連携/園運営〕に分け、対応済み（DOC_TYPES に
   フロー実体あり）は選択可・**今後対応予定（年間指導計画/週案/日案/連絡帳/おたより/勤務シフト）は灰色の非選択 placeholder〔status="soon"・クリックで一言案内・
@@ -198,4 +196,4 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 ## 入口
 
 - ローカル：`uvicorn server:app` → `http://localhost:8000/app/`（`adk web src` の dev UI は `/dev-ui/`）。
-- 配信：Cloud Run の URL ルート（`/`）が `/app/` に着地。`DEMO_PASSCODE` を設定すると要パスコード。
+- 配信：Cloud Run の URL ルート（`/`）が案内画面を返し、Google Sign-In 後に `/app/` を開く。LLM 口は利用枠で保護する。

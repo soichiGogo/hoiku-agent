@@ -85,12 +85,8 @@ export function makeClasses(ui) {
     });
   }
 
-  // 書込結果を反映（needsGate はパスコード要求・失敗は正直に出す＝偽の緑を出さない）。成功なら true。
+  // 書込結果を反映（失敗は正直に出す＝偽の緑を出さない）。成功なら true。
   function applyWrite(res, okMsg) {
-    if (res && res.needsGate) {
-      window.__requireGate && window.__requireGate();
-      return false;
-    }
     const ok = res && ["created", "exists", "ok"].includes(res.status);
     if (!ok) {
       flash((res && res.detail) || "うまくいきませんでした", "err");

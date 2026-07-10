@@ -3,26 +3,25 @@
 
 let _cfg = null;
 
-export class PasscodeError extends Error {}
-
 export async function loadConfig() {
   _cfg = await (await fetch("/api/config")).json();
   return _cfg;
+}
+async function refreshBudget() {
+  try {
+    const next = await (await fetch("/api/config")).json();
+    if (!next.llm_budget) return;
+    _cfg = { ..._cfg, ...next };
+    window.dispatchEvent(new CustomEvent("llm-budget", { detail: next.llm_budget }));
+  } catch {
+    // 利用枠表示の再読込に失敗しても、作成済みの書類フローを失敗扱いにしない。
+  }
 }
 export function config() {
   return _cfg;
 }
 const app = () => _cfg.app_name;
 const uid = () => _cfg.default_user_id;
-
-export async function gate(passcode) {
-  const r = await fetch("/api/gate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passcode }),
-  });
-  return r.ok;
-}
 
 // 自分の表示名（display_name）を登録/編集する（Google サインイン前提）。email はサーバが検証済み値で
 // 解決する（body に載せない＝偽装不可）。未サインインは 403（auth_required）で正直に降格。
@@ -84,7 +83,6 @@ async function _notationWrite(url, method, body) {
       headers: body ? { "Content-Type": "application/json" } : {},
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (r.status === 401) return { status: "error", detail: "パスコードが必要です" };
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return { status: j.status || "error", detail: j.detail || `失敗 (${r.status})` };
     return j; // { status:"ok", rules, store }
@@ -165,8 +163,7 @@ export async function approveRecord(kind, entry, actor) {
 }
 
 // 書類への 👍👎（＋ひとこと）を保存する（確定/承認画面の軽量フィードバック＝§8「回す」の一次入力）。
-// verdict は "up"/"down"。書込ゲート（401）は needsGate を添えて呼び出し側が gate を促す。
-// 未接続は status:"skipped"（本流を壊さない補助シグナル）・失敗は status:"error"。
+// verdict は "up"/"down"。未接続は status:"skipped"（本流を壊さない補助シグナル）・失敗は status:"error"。
 export async function saveFeedback(documentId, verdict, comment, actor) {
   try {
     const r = await fetch("/api/records/feedback", {
@@ -179,7 +176,6 @@ export async function saveFeedback(documentId, verdict, comment, actor) {
         actor: actor || "",
       }),
     });
-    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
     if (!r.ok) return { status: "error", detail: "フィードバックの保存に失敗 (" + r.status + ")" };
     return await r.json();
   } catch (e) {
@@ -276,7 +272,7 @@ export async function listRecords(docType) {
 
 // アップロードしたファイル（pdf/docx/xlsx）を解析し、確認・編集用の entry を受け取る（「書類を見る」取込）。
 // 種別・対象・年齢帯・対象児は保育士が場所/フォームで指定した与件（サーバが権威的に上書きしてから解析）。
-// 401（パスコード必要）・400（未対応形式）は {error} に畳んで返す（呼び出し側が正直に表示）。
+// 401（認証切れ）・400（未対応形式）は {error} に畳んで返す（呼び出し側が正直に表示）。
 export async function parseUpload(kind, { target, child, ageBand }, file) {
   const fd = new FormData();
   fd.append("kind", kind);
@@ -286,7 +282,6 @@ export async function parseUpload(kind, { target, child, ageBand }, file) {
   fd.append("file", file);
   try {
     const r = await fetch("/api/parse-upload", { method: "POST", body: fd });
-    if (r.status === 401) return { error: "パスコードが必要です（配布リンクの保護）", code: "passcode_required" };
     if (!r.ok) {
       let detail = "解析に失敗しました (" + r.status + ")";
       try {
@@ -294,9 +289,12 @@ export async function parseUpload(kind, { target, child, ageBand }, file) {
       } catch {
         /* 本文が JSON でなければ既定メッセージ */
       }
+      await refreshBudget();
       return { error: detail };
     }
-    return await r.json(); // { kind, entry, formatted, problems, parse_error, ok }
+    const result = await r.json();
+    await refreshBudget();
+    return result; // { kind, entry, formatted, problems, parse_error, ok }
   } catch (e) {
     return { error: e.message };
   }
@@ -333,7 +331,6 @@ export async function addChild(payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
     return await r.json();
   } catch {
     return { status: "error", detail: "登録に失敗しました" };
@@ -363,7 +360,7 @@ export async function getClassRoster(classId) {
   }
 }
 
-// クラス（組）を定義する（書込ゲート）。成功 {status:"created"/"exists", ...}／未認証は 401→needsGate。
+// クラス（組）を定義する。成功 {status:"created"/"exists", ...}。
 export async function addClass(payload) {
   try {
     const r = await fetch("/api/classes", {
@@ -371,7 +368,6 @@ export async function addClass(payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
     return await r.json();
   } catch {
     return { status: "error", detail: "クラスの作成に失敗しました" };
@@ -386,7 +382,6 @@ export async function assignChild(child, classId) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ child, class_id: classId || "" }),
     });
-    if (r.status === 401) return { status: "error", detail: "パスコードが必要です", needsGate: true };
     return await r.json();
   } catch {
     return { status: "error", detail: "割り当てに失敗しました" };
@@ -394,7 +389,7 @@ export async function assignChild(child, classId) {
 }
 
 // 校正AI（日本語チェック・言い換え提案）。手入力 entry の叙述文への提案（パス付き）を返す。
-// LLM 口＝401 は needsGate。creds 無/失敗は 200＋error（suggestions 空）で正直に降格。
+// LLM 口はログインと利用枠が必要。creds 無/失敗は 200＋error（suggestions 空）で正直に降格。
 export async function proofread(kind, entry) {
   try {
     const r = await fetch("/api/proofread", {
@@ -402,8 +397,9 @@ export async function proofread(kind, entry) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind, entry }),
     });
-    if (r.status === 401) return { suggestions: [], needsGate: true };
-    return await r.json();
+    const result = await r.json();
+    await refreshBudget();
+    return result;
   } catch {
     return { suggestions: [], error: "校正の呼び出しに失敗しました" };
   }
@@ -479,20 +475,25 @@ export async function patchState(sessionId, stateDelta) {
   return true;
 }
 
-// 汎用 SSE POST：data: 行ごとに onItem(parsedJson) を呼ぶ。401 は PasscodeError。
+// 汎用 SSE POST：data: 行ごとに onItem(parsedJson) を呼ぶ。
 export async function ssePost(url, body, onItem) {
   const r = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (r.status === 401) throw new PasscodeError();
   // 非 OK 応答（4xx/5xx）は body を SSE として読まず即 throw する。fetch の Response.body は
   // エラー応答でも ReadableStream として存在する（null になるのは 204/304 等のみ）ため、`!r.body`
   // に頼ると 422/500 が握りつぶされ、呼び出し側がストリーム完了＝成功と誤認しスピナーが回り続ける。
   if (!r.ok) {
-    const detail = await r.text().catch(() => "");
-    throw new Error(url + " 失敗 (" + r.status + (detail ? ": " + detail.slice(0, 200) : "") + ")");
+    let detail = "";
+    try {
+      detail = (await r.json()).error || "";
+    } catch {
+      detail = await r.text().catch(() => "");
+    }
+    await refreshBudget();
+    throw new Error(detail || url + " 失敗 (" + r.status + ")");
   }
   const reader = r.body.getReader();
   const dec = new TextDecoder();
@@ -516,6 +517,7 @@ export async function ssePost(url, body, onItem) {
       }
     }
   }
+  await refreshBudget();
 }
 
 // 日誌/月案の実行（ADK /run_sse）。new_message を渡してイベントを onEvent(adkEvent) で受ける。
