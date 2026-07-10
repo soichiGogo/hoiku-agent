@@ -2,197 +2,155 @@
 
 # HOIKUAGENT
 
-**保育士の勘所を吸収して「回す」、保育書類作成支援 AI エージェント**
+### 日誌は自分のことばで。AIは、記録を次の書類へつなぐ。
+
+保育士の勘所を吸収し、書類づくりを育て続ける保育書類作成支援 AI エージェント
 
 [![CI](https://github.com/soichiGogo/hoiku-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/soichiGogo/hoiku-agent/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2F855A.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Google ADK](https://img.shields.io/badge/Agent-Google%20ADK-4285F4?logo=google&logoColor=white)
 ![Gemini](https://img.shields.io/badge/LLM-Gemini%20on%20Vertex%20AI-886FBF)
 ![Cloud Run](https://img.shields.io/badge/Deploy-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white)
 
 DevOps × AI Agent Hackathon 2026 提出プロダクト
 
-📄 Zenn 記事（準備中）｜🎬 デモ動画（準備中）
+[課題と価値](#課題と価値) · [なぜエージェントか](#なぜエージェントか) · [システム構成](#システム構成) · [つくるまわすとどける](#つくるまわすとどける) · [ローカルで試す](#クイックスタート)
 
 </div>
 
 ---
 
-## HOIKUAGENT とは
+## 課題と価値
 
-保育士は毎日の保育のかたわらで、日誌・月案・保育経過記録・保育要録といった**書類の連なり**を書き続けています。HOIKUAGENT は、この書類作成を支援する AI エージェントです。価値の核（北極星）は次の一点：
+保育士は毎日の日誌から、クラス月案、保育経過記録、保育要録まで、子どもの育ちを連続した書類に残します。けれど日誌にある一人ひとりの姿を、発達段階や園の方針に沿って次の書類へつなぐ作業には、時間と熟練した判断が必要です。
 
-> **「どんな文書にも対応できる」ではなく、保育士の勘所を吸収し、改善サイクルによる文書の高度化を通じて、保育士が手間をかけず子どもと本気で向き合える環境を整備する。**
+HOIKUAGENT は、保育日誌を AI が代筆するサービスではありません。日誌は保育士が自分のことばで入力し、AI は**過去の確定書類・園の指針・子どもの履歴**を手がかりに、次の書類の下書きを支援します。最後に書類を確定するのは、必ず保育士です。
 
-合言葉は **「生成は土台、価値は改善サイクル＋個別化＋10の姿」**。書類を自動生成すること自体ではなく、現場のフィードバックで文書が育ち続ける仕組みに価値を置いています。
+> **目指すもの** — 書類を自動生成することではなく、現場のフィードバックを次の書類づくりへ還元し、保育士が子どもと向き合う時間を増やすこと。
 
-## ハッカソン主論点への回答
+### 4つの書類を、ひとつの記録の流れに
 
-### ① なぜ「エージェント」でなければならないか
+| 書類 | だれが書くか | 次に活きる場所 |
+| --- | --- | --- |
+| **保育日誌** | 保育士が手入力。AI は校正の提案のみ | クラス月案・保育経過記録の一次情報 |
+| **クラス月案** | AI が過去の記録と月案を集積して下書き | クラスのねらい・振り返りの継続 |
+| **保育経過記録** | AI が期内の日誌と前回までの記録を集積して下書き | 子どもの育ちの連続した記録 |
+| **保育要録** | AI が保育経過記録を集積して下書き | 年長児の就学先への引き継ぎ |
 
-保育書類の核心は「子どもの姿 → ねらい・評価文」への変換ですが、この判断手順は制度（保育所保育指針）に定義されていません。だから固定のワークフローでは書けず、**不足情報を自分で取りに行く動き**が要ります。
+## なぜエージェントか
 
-- 作成AIが **保育所保育指針の該当箇所**（Vertex AI RAG）、**その子の育ちの履歴**（Agent Engine Memory Bank）、**園に蓄積された勘所**（育つ文書作成指針）を自律的に参照して下書きを作る
-- **作成AI × レビューAI の二軸**が APPROVED まで巡回し、最終確定は必ず保育士（Human-in-the-Loop）
+保育書類の核心は、観察した「子どもの姿」を、次のねらい・援助・評価へ変換することです。この変換は定型ではなく、書類の種類、発達段階、過去の記録、園の勘所によって参照すべき情報が変わります。
 
-### ② テーマ「回す」の具現化
+- **必要な情報を判断して取りに行く**：作成 AI は保育所保育指針を検索し、子どもの履歴を参照します。
+- **不足を推測で埋めない**：書類の質を左右する不足だけを保育士に質問します。
+- **出力を自分で終わらせない**：レビュー AI の指摘を受けて再作成し、最終判断は保育士に渡します。
 
-書類を作るたびに、改善サイクルが自然に回ります。
+つまり、単発の文章生成ではなく、状況に応じて**参照・質問・再作成**を選ぶ AI エージェントとして設計しています。
 
-- 確定・承認画面の **👍👎＋ひとことフィードバック**や修正メモを、**改善エージェント**が「園として一般化できる勘所か」を精査して**育つ文書作成指針（構造化カード）**への追加・改訂として提案
-- 既存カードと意味的に競合すれば**保育士に比較相談**し、保育士の決定で**即反映**。カードの変更履歴が「回した証拠」
-- 反映されたカードは次の生成から **prompt に決定的に前置注入**される（作成AI・レビューAIの与件になる）
-- 別系統で **eval ゲート**（3軸 rubric judge・main 比の非劣化チェック）が CI として品質回帰を監視 — 現場のループと開発のループの**二重の「回す」**
+## システム構成
 
-## アーキテクチャ
+![HOIKUAGENT のシステム構成](docs/system-architecture.png)
 
-一階（書類作成）と二階（改善）の**二階建て**。責務は3つに素直に分離し、多層マルチエージェントにはしません。
+保育士向け UI、書類作成パイプライン、Google Cloud 上の記録・知識・長期記憶を分け、役割を混ぜない構成です。確定後の子どもの記憶への書き戻しは、**保育士の明示承認と型の検査を通った場合だけ**行います。
 
-```mermaid
-flowchart TB
-    subgraph floor1["一階：書類作成（Cloud Run）"]
-        direction LR
-        input["保育士の入力"] --> router["doc_type ルータ<br/>（harness・決定的）"]
-        router --> author["作成AI<br/>（Gemini）"]
-        author -->|draft| reviewer["レビューAI"]
-        reviewer -.->|NEEDS_REVISION| author
-        reviewer -->|APPROVED| finalize["確定処理<br/>（harness）"]
-        finalize --> hitl["保育士の確認・<br/>編集・承認（HITL）"]
-        hitl --> archive[("書類アーカイブ<br/>Cloud SQL・版管理")]
-    end
+| レイヤ | 担当 | 役割 |
+| --- | --- | --- |
+| `harness/` | 型と手順を保証する決定的な層 | 必須欄・年齢分岐・集積・様式・承認ゲートを一箇所で管理 |
+| `agents/` | 内容を考える AI の層 | 書類別の作成 AI、レビュー AI、校正 AI、取込抽出 AI |
+| `improver/` | 園の勘所を育てる層 | フィードバックを一般化し、指針カードの追加・改訂を提案 |
 
-    subgraph floor2["二階：改善エージェント＝回す"]
-        direction LR
-        feedback["👍👎・ひとこと・<br/>修正メモ"] --> improver["改善エージェント<br/>一般化できる勘所かを精査"]
-        improver -->|意味的競合は比較相談| decide["保育士の決定"]
-        decide -->|即反映| policy[("育つ文書作成指針<br/>構造化カード・履歴＝回した証拠")]
-    end
+### AI エージェントの仕組み
 
-    subgraph knowledge["ナレッジ＆長期メモリ（Google Cloud）"]
-        direction LR
-        rag[("Vertex AI RAG<br/>保育所保育指針")] ~~~ memory[("Agent Engine Memory Bank<br/>子どもの長期記憶")]
-    end
+![AI エージェントの仕組み](docs/agent-workflow.png)
 
-    knowledge -.->|"作成AIが自律参照（Agentic RAG）"| floor1
-    floor1 -->|保育士の承認時のみ書き戻し| knowledge
-    floor1 -->|確定・承認画面から| floor2
-    floor2 -.->|"育った指針を prompt へ前置注入（決定的）"| floor1
-```
+作成 AI は、検索・質問・起案のために多数の AI を並べるのではなく、**単一の `LlmAgent`** として動きます。`harness/` が書類の集積と対象書類の指針を決定的に用意し、作成 AI は必要に応じて保育所保育指針を検索し、子どもの履歴を参照し、不足があれば保育士に質問します。
 
-| 責務 | コード | 役割 | 性質 |
-|------|--------|------|------|
-| ① 型の保証 | `harness/` | 必須欄・年齢分岐（0–2/3–5）・巡回制御・集積・様式整形。決定ロジックの唯一の実装 | 決定的 |
-| ② 中身の決定 | `agents/` | 作成AI（書類別）＋レビューAI＋校正AI。不足情報を自分で取りに行く（Agentic RAG） | Agentic |
-| ③ 回す | `improver/` | フィードバック→育つ指針カードの提案。意味的競合は保育士に比較相談・決定で即反映 | Agentic |
+レビュー AI は下書きを別の観点から点検します。`NEEDS_REVISION` なら作成 AI が指摘を受けて再作成し、`APPROVED` なら `harness/` が型・年齢分岐・様式を検査します。**AI が最終確定することはなく、保育士の確認・編集・承認を経て確定**します。改善エージェントも別系統で動き、フィードバックから園の指針カードを提案するだけで、反映は保育士が決めます。
 
-### 書類の集積階層 — 下流ほど AI の主戦場
+## つくる・まわす・とどける
 
-保育書類は単発ではなく、日々の記録が上位文書へ集積されていく構造を持ちます。HOIKUAGENT はこの階層をそのまま実装しています。
+| 軸 | プロダクトでの実装 | 確かめられること |
+| --- | --- | --- |
+| **つくる** | Google ADK の作成 AI・レビュー AI・HITL。RAG と子どもの履歴を状況に応じて参照し、下書きを巡回改善 | [AI エージェントの仕組み](#ai-エージェントの仕組み)と[決定論E2E](tests/test_e2e/) |
+| **まわす** | 👍👎 とひとこと → 改善エージェント → 指針カード提案。競合は保育士に比較相談し、3軸 eval が品質回帰を監視 | [eval README](eval/README.md) と [eval gate workflow](.github/workflows/eval-gate.yml) |
+| **とどける** | Cloud Run 上の保育士向け UI、アプリ内 Google ログイン、ユーザーごとのデータ領域、WIF による鍵レスデプロイ | [CI](.github/workflows/ci.yml)、[deploy workflow](.github/workflows/deploy.yml)、[インフラ](infra/README.md) |
 
-```mermaid
-flowchart LR
-    diary["保育日誌<br/>（毎日・保育士の手入力）"] -->|L2 集積| class_plan["クラス月案<br/>（毎月・園の実様式）"]
-    diary -->|L3 集積| record["保育経過記録<br/>（期ごと・子ども別）"]
-    record --> class_plan
-    record -->|L4 集積| youroku["保育要録<br/>（年長・就学引き継ぎ）"]
-```
+### 「作る」と「育てる」の二つの循環
 
-- **保育日誌は保育士の手入力**（現場ヒアリングより：日誌は自分の言葉で書く一次情報。AI は校正AIとして日本語チェック・言い換え**提案のみ**を返す＝**AI は著者ではなく校正者**）
-- 下流の**クラス月案・保育経過記録・保育要録**が AI 生成の主戦場。過去の確定書類をアーカイブから自動集積して下書きを作る
+1. **作る** — 記録を集積し、作成 AI とレビュー AI が下書きを整えます。保育士が確認・編集・承認して確定します。
+2. **育てる** — 👍👎 とひとこと、修正メモを改善エージェントが読み取り、園として再利用できる勘所だけを指針カードとして提案します。競合する判断は保育士に比較相談します。
+3. **守る** — 指針変更やモデル変更は、3軸の eval ゲート（指針整合・10の姿・保護者向け表現）で main 比の品質非劣化を確認します。
 
-## 主な機能
+## 保育の記録を扱うための境界
 
-- **4種の書類パイプライン**：クラス月案（区分×領域グリッドの園実様式）／保育経過記録／保育要録＋手入力日誌。全年齢対応（0–2歳＝3つの視点／3–5歳＝5領域の年齢分岐）
-- **保育士向け配布 UI**（`/app/`）：書類を作る・育てる（指針＋表記ルール）・クラス・園児（名簿）・書類を見る（アーカイブ閲覧/編集/再承認）の4タブ
-- **園の帳票そのままの出力**：帳票 PDF（確認印欄つき・A4 縦/横）／園の実 Word 様式への流し込み .docx
-- **既存書類の取り込み**：PDF/Word/Excel を抽出AIで構造化し、以後の生成の集積元として活用（生ファイルは保存しない）
-- **ひらがな表記DX**：「子供→子ども」等の表記統一を確定時に決定的に適用（保育士が育てる編集辞書・取りこぼしゼロ）
-- **子どもの長期記憶**：Memory Bank への書き戻しは**保育士の明示承認＋型成立のときだけ**（真の承認ゲート）
-- **品質回帰 eval ゲート**：3軸 rubric（指針整合・10の姿・保護者向け表現）で採点し、main 比の非劣化を CI で担保
-- **本番運用ハードニング**：Cloud Run scale-to-zero・WIF 鍵レス CD・DB migration の自動適用・構造化 JSON ログ・Cloud Trace スパンエクスポート・アプリ内 Google ログイン
+- **AIは下書きと提案に徹する**：確認・編集・承認による最終判断は保育士が行います。
+- **記憶は承認後にだけ育つ**：子どもの長期記憶への書き戻しは、保育士の明示承認と型の検査がそろった場合だけです。
+- **データを分けて守る**：アプリ内 Google ログインとユーザーごとのデータ領域で、書類・園児・フィードバックを分離します。
+- **表記を決定的にそろえる**：表記ルールは確定時に適用し、AI の提案とは別の仕組みで取りこぼしを防ぎます。
+- **実データをリポジトリに残さない**：開発・eval には実在しない仮名だけを使い、秘密情報と保育書類はコミットしません。
+
+## できること
+
+| 保育士の画面 | できること |
+| --- | --- |
+| **書類を作る** | 手入力の日誌、クラス月案、保育経過記録、保育要録をひとつの入口で作成。帳票 PDF と園の Word 様式を出力 |
+| **育てる** | 指針カードと、`子供 → 子ども` のような表記ルールを保育士が編集。フィードバックから改善案も作成 |
+| **クラス・園児** | クラスと園児を管理し、日誌入力時に在籍児を表示 |
+| **書類を見る** | 確定済み書類の閲覧・編集・再承認。PDF / Word / Excel の既存書類を取り込み、以後の集積に利用 |
 
 ## 技術スタック
 
-| 役割 | 採用 |
-|------|------|
-| エージェント実装 | **Google ADK**（Python, コードファースト） |
-| LLM | **Gemini**（Vertex AI 経由） |
-| 独自ナレッジ検索 | **Vertex AI RAG Engine**（保育所保育指針の告示・解説・10の姿・要録関係資料） |
-| 長期メモリ・セッション | **Agent Engine**（Memory Bank / Sessions） |
-| 書類アーカイブ・育つ指針 | **Cloud SQL**（PostgreSQL・版管理・承認証跡） |
-| デプロイ | **Cloud Run**（scale-to-zero・アプリ内 Google Sign-In） |
-| CI/CD・可観測性 | **GitHub Actions**（WIF 鍵レス）＋ **Cloud Trace** / Cloud Logging |
+| 領域 | 採用技術 |
+| --- | --- |
+| エージェント | Google ADK / Python / Gemini on Vertex AI |
+| 知識・長期記憶 | Vertex AI RAG Engine（保育所保育指針の告示・解説・10の姿・要録関係資料）/ Agent Engine Memory Bank |
+| 記録・指針 | Cloud SQL for PostgreSQL / Alembic |
+| UI・帳票 | FastAPI / 保育士向け SPA / ReportLab / python-docx |
+| 実行基盤・認証 | Cloud Run / Docker / アプリ内 Google Sign-In |
+| 品質・運用 | GitHub Actions / Workload Identity Federation / Cloud Logging / Cloud Trace |
 
-## ディレクトリ構成
+## クイックスタート
 
-各ディレクトリの詳細な責務は `docs/architecture.md`、各層の開発規約は当該 `CLAUDE.md` を参照。
-
-```
-src/hoiku_agent/
-├── agent.py       … root_agent＝doc_type 分岐ルータ（クラス月案/保育経過記録/保育要録）
-├── harness/       … ① 型の保証（決定的）：必須欄・年齢分岐・巡回制御・集積（L2/L3/L4）・
-│                     指針/表記/様式ストア・書類アーカイブ（Cloud SQL）
-├── agents/        … ② 中身の決定（agentic）：作成AI（書類別）・レビューAI・校正AI・抽出AI
-├── improver/      … ③ 回す（二階・別エントリ）：フィードバック→育つ指針カードの提案・即反映
-├── tools/         … エージェントのプリミティブ（RAG 検索・子ども記憶・HITL・自己点検）
-├── schemas/       … 書類スキーマ・指針カード・年齢分岐・10の姿タグ（pydantic 集約）
-└── web/           … 保育士向け配布 UI（SPA /app/）：手入力日誌・生成フロー・帳票PDF/Word・
-                      指針を育てる・アップロード取込・フィードバック導線
-knowledge/         … 育つ文書作成指針・表記ルール・様式テンプレート（シード）＋ RAG ソース（gitignore）
-eval/              … 品質回帰ゲート：評価セット＋3軸 rubric judge＋ゲート判定（run_gate.py）
-docs/              … 設計コンテキスト / architecture（コード対応） / ライブ実行手順
-migrations/        … 書類アーカイブの Alembic スキーマ移行
-tests/             … 決定ロジック単体 / 決定論E2E（FakeLlm 注入・LLM 非依存） / eval ゲート判定
-infra/             … Terraform でプラットフォーム基盤を宣言化（API/SA・IAM/WIF・Cloud SQL・Secret 器・DNS・ドメインマッピング・AR）。アプリのデプロイは deploy.yml が所有＝境界（infra/README.md）
-Dockerfile /.github… Cloud Run 配信 ＋ CI（決定論 ci / deploy / eval-gate / infra=terraform）
-```
-
-## セットアップ
+前提: Python 3.11 以上、[uv](https://docs.astral.sh/uv/)、実際に AI を呼び出す場合は Google Cloud の認証情報。
 
 ```bash
-# 依存（uv 推奨。pip でも可）
-uv sync            # or: pip install -e .
+# 依存関係を用意
+uv sync
 
-# GCP 認証 & 設定
-cp .env.example .env   # PROJECT_ID 等を記入
-gcloud auth application-default login
+# ローカル設定を作成（秘密情報はコミットしない）
+cp .env.example .env
 
-# 本番と同じ入口で起動（保育士UI = http://localhost:8000/app/）
+# 保育士向け UI を起動
 uvicorn server:app
-# AGENT_ENGINE_ID / RAG_CORPUS / DATABASE_URL が未設定でも安全に降格して動く
-# 本番は Google Sign-In を設定し、LLM 利用枠（個人: 1時間1000円／全体: 1日10000円）を DB で管理
-
-# ADK CLI / dev UI で対話する場合
-adk run src/hoiku_agent      # CLI 対話（既定＝クラス月案）
-adk web src                  # ブラウザ UI（agents dir = src/）
 ```
 
-書類別のデモ入口（アーカイブ未接続時はサンプル seed へ降格）：
+ブラウザで [http://localhost:8000/app/](http://localhost:8000/app/) を開きます。`RAG_CORPUS`、`AGENT_ENGINE_ID`、`DATABASE_URL` が未設定でも、該当機能を安全に降格して起動できます。AI を使う前には、`.env` を設定して `gcloud auth application-default login` を実行してください。本番ではアプリ内 Google Sign-In と、個人・全体の LLM 利用枠を DB で管理します。
+
+### テスト
+
+LLM や GCP に依存しない決定論テストを実行できます。
 
 ```bash
-uv run python scripts/run_class_monthly.py --age-band 0-2 --month 2026-07          # クラス月案
-uv run python scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06  # 保育経過記録
-uv run python scripts/run_youroku.py --child-id はるとくん --fiscal-year 2026       # 保育要録
-```
-
-テストは LLM/GCP 非依存の決定論で回ります：
-
-```bash
-uv run --extra dev pytest    # 決定ロジック単体＋決定論E2E（FakeLlm）＋eval ゲート判定
+uv run --extra dev pytest
 ruff check .
 ```
 
-実 LLM で動かす詳細手順（Vertex AI / AI Studio の2経路・GCP プロビジョニング・トラブルシュート）は
-[`docs/ライブ実行手順.md`](docs/ライブ実行手順.md) を参照。
+実際のモデルでの動作確認、RAG / Memory Bank / Cloud SQL の準備、Cloud Run へのデプロイは [ライブ実行手順](docs/ライブ実行手順.md) を参照してください。
 
-## ドキュメント
+## 設計ドキュメント
 
 | ドキュメント | 内容 |
-|------|------|
-| [`docs/設計コンテキスト.md`](docs/設計コンテキスト.md) | 設計判断の根拠（なぜそうするか）を残した開発ハンドオフ |
-| [`docs/architecture.md`](docs/architecture.md) | 設計↔コードの対応（レイヤ・関数レベルの索引） |
-| [`docs/ライブ実行手順.md`](docs/ライブ実行手順.md) | 実 LLM・GCP での実行手順とプロビジョニング |
+| --- | --- |
+| [設計コンテキスト](docs/設計コンテキスト.md) | プロダクトの北極星と、設計判断の根拠 |
+| [アーキテクチャ](docs/architecture.md) | レイヤ、コード、データフローの対応 |
+| [ライブ実行手順](docs/ライブ実行手順.md) | 実 LLM / GCP での実行・プロビジョニング手順 |
+| [eval README](eval/README.md) | 品質回帰ゲートの採点と運用 |
+| [インフラ README](infra/README.md) | Terraform で管理する GCP 基盤の境界 |
+
+## 開発に参加する方へ
+
+設計の正は、まず [設計コンテキスト](docs/設計コンテキスト.md)、次に [アーキテクチャ](docs/architecture.md) です。実装では `harness/`・`agents/`・`improver/` の責務境界を守り、決定的な判断を複数の場所に重ねないでください。開発時の規約は [AGENTS.md](AGENTS.md) を参照してください。
 
 ## ライセンス
 
