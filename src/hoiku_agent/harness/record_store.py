@@ -382,6 +382,41 @@ def covered_until(periods: Iterable[str]) -> date | None:
     return latest
 
 
+def covered_until_by_child(records: Iterable[dict]) -> dict[str, date]:
+    """保育経過記録群を child_id 別に見て、各児の「反映済み最終日」を返す（クラス月案の未反映判定＝児童別）。
+
+    クラス一律の `covered_until`（全児の max）だと、記録が進んでいる児に引きずられて記録が遅れている児
+    （途中入園児等）の日誌まで反映済み扱いで落ちる。児童別に境界を持つことで、各児の日誌を「その児の
+    経過記録に未反映の分」だけ残せる（§19 依存モデル 2026-07 の安全側＝情報を落とさない）。
+    解釈不能な期・child_id 不明のレコードは寄与しない。記録が1件も無い児は返り値に現れない
+    （＝境界なし＝その児の全日誌が未反映として集積に残る）。
+    """
+    by_child: dict[str, date] = {}
+    for r in records:
+        if not isinstance(r, dict):
+            continue
+        child = str(r.get("child_id") or "").strip()
+        span = period_date_range(str(r.get("period") or ""))
+        if not child or span is None:
+            continue
+        end = span[1]
+        if child not in by_child or end > by_child[child]:
+            by_child[child] = end
+    return by_child
+
+
+def fiscal_year_start(month: str) -> date:
+    """対象月（YYYY-MM）が属する年度（4月始まり）の初日を返す（不正 month は ValueError）。
+
+    クラス月案の未反映日誌の探索下限＝**同一コホートに限る境界**。同じ年齢帯でも前年度は別の子集団
+    （進級して抜ける）なので、年度初めより前の日誌は拾わない（前年度コホートの混入を防ぐ）。
+    """
+    m = normalize_month(month)
+    year, mm = int(m[:4]), int(m[5:7])
+    fy = year if mm >= 4 else year - 1
+    return date(fy, 4, 1)
+
+
 def normalize_month(month: str) -> str:
     """ "YYYY-M"／"YYYY-MM" → ゼロ詰め "YYYY-MM" に正規化する（不正は ValueError＝fail-loud）。
 
@@ -1211,29 +1246,50 @@ def list_class_monthly_entries(age_band: str, before_month: str | None = None) -
         return []
 
 
+def _entry_has_uncovered_note(entry: dict, by_child: dict[str, date]) -> bool:
+    """日誌 entry が「経過記録に未反映の個別記録」を1件でも含むか（児童別境界）。
+
+    その児の反映済み最終日（`by_child`）より後の日誌 note か、記録が1件も無い児（境界なし）の note が
+    あれば未反映とみなす。日付が読めない entry は安全側で残す（情報を落とさない）。
+    """
+    try:
+        d = date.fromisoformat(str(entry.get("date") or ""))
+    except (ValueError, TypeError):
+        return True
+    for note in entry.get("individual_notes") or []:
+        if not isinstance(note, dict):
+            continue
+        cov = by_child.get(str(note.get("child_id") or ""))
+        if cov is None or d > cov:
+            return True
+    return False
+
+
 def class_monthly_seed_inputs(age_band: str, month: str) -> dict:
     """クラス月案の seed 入力3点をアーカイブから決定的に合成する（依存モデル 2026-07）。
 
     ① class_record_entries＝クラス児童の作成済み保育経過記録すべて（全期・年度跨ぎ含む）
     ② past_class_plans＝当該クラスの作成済みクラス月案すべて（対象月より前・全期）
-    ③ class_diary_entries＝**保育経過記録にまだ反映されていない期間**の当該クラスの日誌
-       （境界＝`covered_until(①の期間)` の翌日〜前月末。①が無い/期間が解釈できない分は
-       全日誌が未反映として安全側に含める）
-    scripts（run_class_monthly）と web（/api/records/class-monthly-seed）が共用する合成で、
-    境界計算の実体は `covered_until` に1つ（呼び出し側で再実装しない）。month が不正なら ValueError
-    （呼び出し側がサンプル降格/400 にする）。未接続は全部空（呼び出し側がサンプル降格）。
+    ③ class_diary_entries＝**経過記録にまだ反映されていない当該クラスの日誌**（対象月の前月末まで）。
+       未反映判定は**児童別**（`covered_until_by_child`）＝各児の反映済み最終日より後の note を1件でも
+       含む日誌を残す。クラス一律の max 境界だと記録が進んだ児に引きずられて、記録が遅れている児
+       （途中入園児等）の日誌が丸ごと落ちるため（安全側＝情報を落とさない）。探索範囲は当該**年度**内に
+       限る（`fiscal_year_start`＝同じ年齢帯でも前年度は別コホート）。実際の note 単位の絞り込み（反映済み
+       note を除く集積）は下流の `aggregate.aggregate_by_child(covered_by_child=…)` が担う（決定実体は1つ）。
+    scripts（run_class_monthly）と web（/api/records/class-monthly-seed）が共用する合成。month が不正なら
+    ValueError（呼び出し側がサンプル降格/400 にする）。未接続は全部空（呼び出し側がサンプル降格）。
     """
     month = normalize_month(
         month
     )  # ゼロ詰め正準化（不正 month は ValueError＝呼び出し側が降格/400）
     _, prev_month_end = month_date_range(prev_month_of(month))
     records = list_class_child_record_entries(age_band)
-    boundary = covered_until(str(r.get("period") or "") for r in records)
-    diary_from = boundary + timedelta(days=1) if boundary is not None else date.min
+    by_child = covered_until_by_child(records)
+    diary_from = fiscal_year_start(month)  # 同一コホート（当該年度）に限る探索下限
     diaries = [
         e
         for e in list_diary_entries(diary_from, prev_month_end)
-        if (e.get("age_band") or "0-2") == age_band
+        if (e.get("age_band") or "0-2") == age_band and _entry_has_uncovered_note(e, by_child)
     ]
     return {
         "class_diary_entries": diaries,

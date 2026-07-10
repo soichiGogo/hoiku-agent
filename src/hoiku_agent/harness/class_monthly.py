@@ -7,23 +7,26 @@
 クラス月案の入力（依存モデル 2026-07）は3系統：
 ① クラス児童の作成済み保育経過記録すべて（全期・年度跨ぎ含む）＝これまでの育ちの土台
 ② それまでの作成済みクラス月案すべて（全期）＝計画の連続性（ねらいの発展・月末評価の反映）
-③ **保育経過記録にまだ反映されていない期間**の当該クラスの日誌（＝①の期間境界より後の分だけ。
-   経過記録に巻き取られた日誌は①で見るため重複させない）＋その評価・反省（決定B）
+③ **保育経過記録にまだ反映されていない当該クラスの日誌**（＝**児童別**に、各児の経過記録に未反映の
+   note だけ。記録が進んだ児は①で見るため重複させないが、記録が遅れている児〔途中入園児等〕の note は
+   クラス一律 max 境界で落とさず残す＝安全側）＋その評価・反省（決定B・日次のクラス所見なので従来どおり）
 
 クラス月案パイプライン（doc_type=クラス月案 のときルータが選ぶ）:
     class_record_prep（①を child_id 別に決定的集計・RecordDigestPrepAgent を要録と共用・
       入力=class_record_entries／出力=class_records_digest）
     class_plan_prep（②を月順の履歴に決定的集計・入力=past_class_plans／出力=class_plan_digest）
     class_diary_prep（③を child_id 別に決定的集計・DigestPrepAgent を個別月案と共用・
-      入力=class_diary_entries／出力=class_diary_digest・`uncovered_by_key` で①の境界より後に限定・
-      評価・反省は reflections_key=class_diary_reflections に別チャネル集約＝決定B）
+      入力=class_diary_entries／出力=class_diary_digest・`uncovered_by_key` で①から**児童別境界**を求め
+      各児の未反映 note に限定〔`covered_until_by_child`〕・評価・反省は reflections_key=class_diary_reflections
+      にクラス一律 max 境界で別チャネル集約＝決定B）
       → authoring_loop（[class_monthly_author → reviewer → ApprovalGate] を巡回・共用）
       → finalize(kind="class_monthly")（ClassMonthlyPlan を復元→validate/write）
       → [after_agent_callback] persist_visit_to_memory（明示承認＋型成立のとき書き戻し・§9）
 
 呼び出し側（scripts/run_class_monthly.py・web の seed）は `record_store.class_monthly_seed_inputs` で
-3入力を合成して seed する（境界計算の実体は record_store.covered_until に1つ・prep でも同じ規則で
-防御的に限定＝ファイル/サンプル seed でも一貫）。未接続・該当なしは空＝各 digest が降格メッセージへ。
+3入力を合成して seed する（③の探索は当該年度内＝`fiscal_year_start`で前年度コホートを混ぜず、児童別境界
+`covered_until_by_child` で未反映 note を含む日誌だけ残す。note 単位の実際の絞り込みは prep/aggregate が
+担い決定実体は1つ）。未接続・該当なしは空＝各 digest が降格メッセージへ。
 """
 
 from __future__ import annotations

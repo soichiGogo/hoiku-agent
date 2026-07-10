@@ -60,6 +60,18 @@ def test_aggregate_counts_notes_per_child():
     assert len(digest["c001"]["observed_states"]) == 2
 
 
+def test_aggregate_by_child_filters_covered_notes_per_child():
+    """covered_by_child を渡すと各児の反映済み（date<=境界）note を除外し、境界の無い児は全 note を残す。"""
+    entries = [_entry(10, "c001"), _entry(20, "c001"), _entry(10, "c002")]
+    # c001 は 6/15 まで反映済み（6/10 は covered・6/20 は uncovered）／c002 は境界なし（全 uncovered）
+    digest = aggregate_by_child(entries, {"c001": date(2026, 6, 15)})
+    assert digest["c001"]["note_count"] == 1  # 6/20 のみ残る（6/10 は反映済みで除外）
+    assert digest["c001"]["observed_states"] == ["20日の姿"]
+    assert digest["c002"]["note_count"] == 1  # 境界なし＝クラス一律 max で落ちる児が残る
+    # 反映済み note しか無い児は digest に現れない（空集約）。
+    assert "c001" not in aggregate_by_child([_entry(10, "c001")], {"c001": date(2026, 6, 30)})
+
+
 def test_prev_month_digest_is_json_serializable():
     """state へ載せる L2 還流の digest は素の dict（Counter でない）で JSON 化できる。"""
     import json

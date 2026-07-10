@@ -12,15 +12,21 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import date
 
 from ..schemas import ChildRecord, ClassMonthlyPlan, DiaryEntry
 
 
-def aggregate_by_child(entries: list[DiaryEntry]) -> dict[str, dict]:
+def aggregate_by_child(
+    entries: list[DiaryEntry], covered_by_child: dict[str, date] | None = None
+) -> dict[str, dict]:
     """当月の日誌群を child_id 別に集約する（月案の前月集積の素データ）。
 
     Args:
         entries: 当月の日誌（DiaryEntry）のリスト。
+        covered_by_child: 児童別の「経過記録に反映済みの最終日」（クラス月案のみ・§19）。渡すと、
+            その児にとって反映済み（`entry.date <= 境界`）の note を集約から外す＝記録が遅れている児
+            （途中入園児等）は境界が無い＝全 note を残す。クラス一律 max 境界で日誌が丸ごと落ちる欠陥の是正。
 
     Returns:
         {child_id: {"note_count", "tag_freq", "observed_states"}} の決定的集約。
@@ -32,6 +38,10 @@ def aggregate_by_child(entries: list[DiaryEntry]) -> dict[str, dict]:
     digest: dict[str, dict] = {}
     for entry in entries:
         for note in entry.individual_notes:
+            if covered_by_child is not None:
+                cov = covered_by_child.get(note.child_id)
+                if cov is not None and entry.date <= cov:
+                    continue  # その児にとって経過記録に反映済み＝クラス月案 seed から外す（児童別境界）
             slot = digest.setdefault(
                 note.child_id,
                 {"note_count": 0, "tag_freq": Counter(), "observed_states": []},
@@ -42,7 +52,9 @@ def aggregate_by_child(entries: list[DiaryEntry]) -> dict[str, dict]:
     return digest
 
 
-def prev_month_digest(entries: list[DiaryEntry]) -> dict[str, dict]:
+def prev_month_digest(
+    entries: list[DiaryEntry], covered_by_child: dict[str, date] | None = None
+) -> dict[str, dict]:
     """aggregate_by_child の結果を state へ載せられる serializable 形に正規化する（L2 還流）。
 
     Counter は JSON 化できる素の dict にし、タグ頻度は多い順に並べる（要約 author が読みやすい順）。
@@ -51,11 +63,12 @@ def prev_month_digest(entries: list[DiaryEntry]) -> dict[str, dict]:
 
     Args:
         entries: 前月の日誌（DiaryEntry）のリスト。
+        covered_by_child: 児童別の反映済み最終日（クラス月案のみ）。`aggregate_by_child` へ委譲する。
 
     Returns:
         {child_id: {"note_count", "tag_freq"(dict・降順), "observed_states"}} の serializable 集約。
     """
-    raw = aggregate_by_child(entries)
+    raw = aggregate_by_child(entries, covered_by_child)
     return {
         child_id: {
             "note_count": slot["note_count"],

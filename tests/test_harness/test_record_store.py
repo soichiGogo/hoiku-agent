@@ -417,13 +417,48 @@ def test_class_monthly_seed_inputs_composes_uncovered_diaries_records_and_plans(
         now=_NOW,
     )
     seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
-    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-07-10"]  # 未反映だけ
+    # 6/20 は はるとくん には反映済みだが、記録の無い めいちゃん には未反映 → 児童別境界で保持する
+    # （クラス一律 max 境界だと 6/20 が丸ごと落ち めいちゃん の姿が消えていた欠陥の是正）。
+    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-06-20", "2026-07-10"]
     assert [r["period"] for r in seed["class_record_entries"]] == ["2026-04〜2026-06"]
     assert [p["month"] for p in seed["past_class_plans"]] == ["2026-07"]
 
 
+def test_class_monthly_seed_keeps_lagging_child_diary_before_others_boundary(db):
+    """記録が遅れている児（途中入園児等）の日誌が、記録の進んだ児の境界より前でも seed に残る（児童別境界）。"""
+    # A は 4〜6月の記録あり（境界 6/30）／B は記録なし（途中入園）。
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "Aちゃん", "age_band": "0-2"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    # 6/15 の日誌に B だけが登場（A の境界より前だが B には未反映）。
+    rs.save_document(
+        "diary",
+        _diary_entry("2026-06-15", children=("Bちゃん",)),
+        author_kind="caregiver",
+        now=_NOW,
+    )
+    seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
+    # クラス一律 max 境界（6/30）なら 6/15 は落ちるが、B は未反映なので保持されるのが正しい。
+    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-06-15"]
+
+
+def test_covered_until_by_child_is_per_child(db):
+    """covered_until_by_child は児童別の反映済み最終日を返し、記録の無い児は現れない（境界なし＝全未反映）。"""
+    records = [
+        {"child_id": "Aちゃん", "period": "2026-04〜2026-06"},
+        {"child_id": "Aちゃん", "period": "2026-07〜2026-09"},  # 最大を採る
+        {"child_id": "Cちゃん", "period": "2026-04〜2026-06"},
+        {"child_id": "Dちゃん", "period": "自由記述"},  # 解釈不能は寄与しない
+    ]
+    by_child = rs.covered_until_by_child(records)
+    assert by_child == {"Aちゃん": date(2026, 9, 30), "Cちゃん": date(2026, 6, 30)}
+
+
 def test_class_monthly_seed_inputs_without_records_includes_all_diaries(db):
-    """経過記録が1件も無ければ全日誌が未反映（前月末まで）＝境界 None の安全側。"""
+    """経過記録が1件も無ければ全日誌が未反映（年度初〜前月末）＝境界なしの安全側。"""
     rs.save_document("diary", _diary_entry("2026-06-20"), author_kind="caregiver", now=_NOW)
     rs.save_document("diary", _diary_entry("2026-07-10"), author_kind="caregiver", now=_NOW)
     rs.save_document("diary", _diary_entry("2026-08-01"), author_kind="caregiver", now=_NOW)
