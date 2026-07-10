@@ -224,7 +224,12 @@ def _period_end_date(period: str) -> date | None:
     year, month = int(matches[-1][0]), int(matches[-1][1])
     if not (1 <= month <= 12):
         return None
-    return date(year, month, calendar.monthrange(year, month)[1])
+    try:
+        # 年 "0000" 等は Python の date（年≥1）が ValueError にする。契約どおり None へ降格し、
+        # finalize-edit／export-pdf を 500 にしない（月齢の自動充填は諦めて手入力を温存する）。
+        return date(year, month, calendar.monthrange(year, month)[1])
+    except ValueError:
+        return None
 
 
 def _fill_child_record_age_months(entry: dict, master: dict | None = None) -> None:
@@ -274,10 +279,16 @@ def _is_authed(request: Request) -> bool:
 def _needs_gate(path: str, method: str = "GET") -> bool:
     if path in _GATED_EXACT or any(path.startswith(p) for p in _GATED_PREFIX):
         return True
-    # ADK ビルダーの書込口（/builder/save 等・/dev/apps/.../builder/save）はエージェント定義ファイルを
-    # 書き換えるので、公開デモではパスコード下に置く（未認証タンパリング防止）。GET（ビルダー状態の読取）は
-    # エージェント source 相当なので素通し。ローカル（passcode 未設定）は _passcode_guard 自体が無効＝従来どおり。
-    if method != "GET" and "/builder/" in path:
+    # `get_fast_api_app(web=True)` は ADK の dev/builder/memory 面を本番 app に登録する。これらは
+    # 公開デモ（IAP 無し＋パスコード）で未認証のまま濫用できるため、書込/実行系（非 GET）をゲート下に置く：
+    #  - /dev/*         … eval セット作成・run/run_eval・tests 実行＝**LLM 課金**／eval データ書込
+    #  - /builder/*     … エージェント定義ファイルへの書込（`/builder/save`・`/dev/apps/.../builder/save`）
+    #  - …/memory       … Memory Bank 直接書込（PATCH＝§9/§13 の「承認＋型成立でのみ書き戻す」承認ゲート迂回）
+    # 読取 GET（eval 結果閲覧・graph・trace・builder 状態＝dev-ui が使う）と、承認 PATCH（…/sessions）・
+    # セッション作成は従来どおり素通し。ローカル（passcode 未設定）は _passcode_guard 自体が無効＝影響なし。
+    if method != "GET" and (
+        path.startswith("/dev/") or "/builder/" in path or path.endswith("/memory")
+    ):
         return True
     # アーカイブ・名簿・表記ルールは書込（POST 等）のみゲート（GET＝一覧/児童/seed は素通し）。
     return method != "GET" and any(path.startswith(p) for p in _GATED_WRITE_PREFIX)

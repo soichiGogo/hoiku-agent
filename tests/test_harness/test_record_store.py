@@ -709,6 +709,17 @@ def test_write_error_generic_for_db_failure_but_detail_for_input(db):
     assert "SQL" not in err["detail"] and "秘密" not in err["detail"]
 
 
+def test_actor_is_clamped_to_column_width(db):
+    """正当に長い担当者名（IAP 表示名＋email 等）でも VARCHAR(100) を超えず保存できる（PG で落ちない）。"""
+    long_actor = "あ" * 250
+    entry = _diary_entry("2026-07-09")
+    rs.save_document("diary", entry, author_kind="caregiver", actor=long_actor, now=_NOW)
+    rs.approve_document("diary", entry, actor=long_actor, now=_NOW)
+    stored = {e["actor"] for e in rs.list_audit_events()}
+    assert stored == {long_actor[:100]}
+    assert all(len(a) <= 100 for a in stored)
+
+
 # ──────────────────────────── クラス（組）マスタ・所属（名簿管理・日誌 roster の素） ────────────────────────────
 
 

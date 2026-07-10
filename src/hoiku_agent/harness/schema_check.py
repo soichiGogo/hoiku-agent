@@ -274,6 +274,13 @@ def validate_nursery_record_fields(record: NurseryRecord) -> list[str]:
             "保育の展開と子どもの育ち（development_notes）が空：年齢分岐タグ付きで1つ以上必要（§19）"
         )
 
+    # 要録は最終年度（年長＝5歳児クラス）専用で5領域固定（§19）。0–2 の要録は制度上ありえないので、
+    # 3つの視点タグで型成立してしまわないよう age_band を 3–5 に固定する（年齢分岐を畳む）。
+    if record.age_band is not AgeBand.三から五歳:
+        problems.append(
+            "保育要録は年長（3–5歳児クラス＝5領域）専用です（age_band が 0-2 は不可＝§19）"
+        )
+
     # ── 年齢分岐：保育の展開に必須タグ体系を課す（年長＝5領域） ──
     required_tag_type, tag_label = _required_tag_type(record.age_band)
     for i, note in enumerate(record.development_notes):

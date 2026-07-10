@@ -156,6 +156,13 @@ def supersede_card(
         raise ValueError("新カード本文（body）が空です")
     if find_card(book, new_card.id) is not None:
         raise ValueError(f"新カード id が重複しています: {new_card.id}")
+    # 置換後に同 scope の active カードと本文が完全一致すると二重登録になる（add_card と対称の安全網）。
+    # 置換対象（old）自身との一致は許す（body 据え置きの更新もありうる）＝old は superseded になるため。
+    dup = find_exact_duplicate(book, new_card.scope, new_card.body)
+    if dup is not None and dup.id != old_id:
+        raise ValueError(
+            f"同じ内容のカードが既にあります（{new_card.scope.value}）: {_truncate(new_card.body)}"
+        )
 
     linked_new = new_card.model_copy(update={"supersedes": old_id})
     cards: list[PolicyCard] = []

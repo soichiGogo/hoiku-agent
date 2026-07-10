@@ -63,6 +63,14 @@ FEEDBACK_VERDICTS = ("up", "down")
 GENDERS = ("male", "female")
 _HONORIFIC = {"male": "くん", "female": "ちゃん"}
 
+# actor（担当者名／IAP 表示名＋email）列は VARCHAR(100)。正当に長い表示名で PostgreSQL の書込が
+# DataError にならないよう、書込境界で列上限に丸める（sqlite テストでは無害だが本番だけ落ちるのを防ぐ）。
+_ACTOR_MAX = 100
+
+
+def _clamp_actor(actor: str) -> str:
+    return (actor or "")[:_ACTOR_MAX]
+
 
 def honorific_for(gender: str | None) -> str:
     """性別から敬称を導く（male→くん / female→ちゃん / 不明→空）。表示名合成の単一ソース。"""
@@ -509,6 +517,7 @@ def save_document(
             "status": "error",
             "detail": f"author_kind は {AUTHOR_KINDS} のいずれか: {author_kind!r}",
         }
+    actor = _clamp_actor(actor)  # created_by / AuditEvent.actor は VARCHAR(100)
     try:
         target_date, target_month, target_period = _extract_target(kind, entry)
         child_display = _extract_child_display(kind, entry)
@@ -790,6 +799,7 @@ def approve_document(
     eng = _engine()
     if eng is None:
         return {"status": "skipped", "reason": "DATABASE_URL 未設定（アーカイブ降格）"}
+    actor = _clamp_actor(actor)  # AuditEvent.actor は VARCHAR(100)
     try:
         with Session(eng) as session, session.begin():
             doc = _find_document(session, kind, entry)
@@ -851,6 +861,7 @@ def save_feedback(
     eng = _engine()
     if eng is None:
         return {"status": "skipped", "reason": "DATABASE_URL 未設定（フィードバック降格）"}
+    actor = _clamp_actor(actor)  # Feedback.actor は VARCHAR(100)
     v = (verdict or "").strip()
     if v not in FEEDBACK_VERDICTS:
         return {

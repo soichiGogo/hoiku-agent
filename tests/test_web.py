@@ -306,13 +306,25 @@ def test_run_live_websocket_route_is_removed() -> None:
     assert "/run_live" not in ws
 
 
-def test_builder_write_is_gated_when_passcode_set() -> None:
-    """ADK ビルダーの書込口は公開デモでパスコード下（未認証タンパリング防止）・GET 読取は素通し。"""
+def test_dev_builder_memory_writes_are_gated_reads_open() -> None:
+    """web=True が露出する ADK の dev/builder/memory 面：書込/実行（非 GET）はゲート、読取 GET は素通し。
+
+    公開デモで未認証の LLM 課金迂回（/dev の eval 実行）・Memory Bank 直接書込（承認ゲート迂回）・
+    エージェント定義タンパリング（/builder 書込）を塞ぐ。承認 PATCH・セッション作成は従来どおり開放。
+    """
     from hoiku_agent.web.routes import _needs_gate
 
+    # 書込/実行（非 GET）＝ゲート
     assert _needs_gate("/builder/save", "POST") is True
     assert _needs_gate("/dev/apps/x/builder/save", "POST") is True
+    assert _needs_gate("/dev/apps/x/eval_sets/y/run_eval", "POST") is True
+    assert _needs_gate("/dev/apps/x/tests/run", "POST") is True
+    assert _needs_gate("/apps/x/users/u/memory", "PATCH") is True
+    # 読取・承認・セッション作成＝素通し
     assert _needs_gate("/builder/app/x", "GET") is False
+    assert _needs_gate("/dev/apps/x/eval-results", "GET") is False
+    assert _needs_gate("/apps/x/users/u/sessions/s", "PATCH") is False  # 承認は非ゲート
+    assert _needs_gate("/apps/x/users/u/sessions", "POST") is False  # セッション作成は非ゲート
 
 
 # ──────────────────── 帳票PDF 出力（/api/export-pdf・現場でそのまま綴じる最終形） ────────────────────
@@ -442,6 +454,24 @@ def test_export_pdf_malformed_entry_is_400_not_500() -> None:
         json={"kind": "diary", "entry": {"age_band": "0-2", "individual_notes": ["x"]}},
     )
     assert r.status_code == 400 and r.json()["code"] == "invalid_request"
+
+
+def test_export_pdf_child_record_year_0000_period_not_500() -> None:
+    """period に年 "0000" が入っても月齢自動充填で 500 にせず帳票は出る（_period_end_date が None 降格）。"""
+    r = _client().post(
+        "/api/export-pdf",
+        json={
+            "kind": "child_record",
+            "entry": {
+                "child_id": "架空児A",
+                "period": "0000-04〜0000-06",
+                "age_band": "0-2",
+                "development_notes": [{"description": "a", "tags": ["健康な心と体"]}],
+                "overall_note": "b",
+            },
+        },
+    )
+    _assert_is_pdf(r)
 
 
 def test_export_pdf_very_long_body_still_renders() -> None:

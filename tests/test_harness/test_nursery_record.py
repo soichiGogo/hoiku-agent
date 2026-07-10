@@ -71,6 +71,19 @@ def test_nursery_record_requires_five_domains_tag():
     assert any("5領域" in p for p in problems)
 
 
+def test_nursery_record_rejects_0_2_age_band():
+    """要録は年長（3–5歳児クラス＝5領域）専用。0–2 で3つの視点タグを持たせても型不成立にする（§19）。"""
+    rec = _record()
+    object.__setattr__(rec, "age_band", AgeBand.零から二歳)
+    object.__setattr__(
+        rec,
+        "development_notes",
+        [DevelopmentNote(description="x", tags=[ThreeViewpoint.健やかに伸び伸びと育つ])],
+    )
+    problems = validate_nursery_record_fields(rec)
+    assert any("年長" in p and "0-2" in p for p in problems)
+
+
 def test_nursery_record_missing_required_fields_are_violations():
     problems = validate_nursery_record_fields(
         _record(
