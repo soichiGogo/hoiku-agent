@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import hmac
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -34,6 +35,7 @@ from .docx_fill import fill_docx
 from .docx_fill import supported_kinds as docx_supported_kinds
 from .iap import verified_iap_email
 from .proofread import proofread_entry
+from . import upload_extract
 from .upload_parse import parse_uploaded_file
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
@@ -149,7 +151,6 @@ class ChildAddRequest(BaseModel):
     # 生年月日（ISO 8601＝YYYY-MM-DD・任意）。書類の月齢（○歳○か月）を満年齢で自動導出する素。
     birthdate: str = ""
     class_id: str = ""  # 所属クラス（任意・登録と同時に割り当てる＝名簿管理の1操作で完結）
-    actor: str = ""
 
 
 class ClassAddRequest(BaseModel):
@@ -162,7 +163,6 @@ class ClassAddRequest(BaseModel):
     name: str  # 組名（例: ひまわり組・必須）
     age_band: str  # 0-2 / 3-5（必須）
     fiscal_year: str = ""  # 年度（例: 2026・任意）
-    actor: str = ""
 
 
 class ProofreadRequest(BaseModel):
@@ -180,7 +180,6 @@ class ClassAssignRequest(BaseModel):
 
     child: str  # 対象児の表示名（呼び名＋敬称・必須）
     class_id: str = ""  # 割り当て先クラス（空＝未所属へ）
-    actor: str = ""
 
 
 class UserProfileRequest(BaseModel):
@@ -256,18 +255,31 @@ def _fill_child_record_age_months(entry: dict, master: dict | None = None) -> No
         entry["age_months"] = label
 
 
+def _passcode_matches(provided: str | None) -> bool:
+    """パスコードを定数時間比較する（== の短絡でプレフィックス一致長が漏れるのを防ぐ）。"""
+    if not provided:
+        return False
+    return hmac.compare_digest(provided, settings.demo_passcode)
+
+
 def _is_authed(request: Request) -> bool:
-    """パスコード未設定なら常に許可。設定時は cookie かヘッダで一致を要求する。"""
-    pc = settings.demo_passcode
-    if not pc:
+    """パスコード未設定なら常に許可。設定時は cookie かヘッダで一致を要求する（定数時間比較）。"""
+    if not settings.demo_passcode:
         return True
-    return request.cookies.get(_COOKIE_NAME) == pc or request.headers.get("x-demo-passcode") == pc
+    return _passcode_matches(request.cookies.get(_COOKIE_NAME)) or _passcode_matches(
+        request.headers.get("x-demo-passcode")
+    )
 
 
 def _needs_gate(path: str, method: str = "GET") -> bool:
     if path in _GATED_EXACT or any(path.startswith(p) for p in _GATED_PREFIX):
         return True
-    # アーカイブは書込（POST 等）のみゲート（GET＝一覧/児童/seed は素通し）。
+    # ADK ビルダーの書込口（/builder/save 等・/dev/apps/.../builder/save）はエージェント定義ファイルを
+    # 書き換えるので、公開デモではパスコード下に置く（未認証タンパリング防止）。GET（ビルダー状態の読取）は
+    # エージェント source 相当なので素通し。ローカル（passcode 未設定）は _passcode_guard 自体が無効＝従来どおり。
+    if method != "GET" and "/builder/" in path:
+        return True
+    # アーカイブ・名簿・表記ルールは書込（POST 等）のみゲート（GET＝一覧/児童/seed は素通し）。
     return method != "GET" and any(path.startswith(p) for p in _GATED_WRITE_PREFIX)
 
 
@@ -450,13 +462,24 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             return {"templates": {}}
 
     @app.post("/api/finalize-edit")
-    async def web_finalize_edit(req: FinalizeEditRequest) -> dict:
+    def web_finalize_edit(req: FinalizeEditRequest):
         """保育士が編集した書類エントリを harness で**再検査・再整形**する（編集UIの保存・§5/§11）。
 
         決定的ロジックは持ち込まず harness の finalize_entry を中継するだけ。state は書かず（フロントが
         ADK の PATCH で final_entry/final_document/validation を更新する）、結果だけ返す。LLM 非課金なので
-        パスコード非ゲート。
+        パスコード非ゲート。sync def＝FastAPI が threadpool で回す（get_child・notation/template ストアの
+        同期 DB I/O をイベントループに載せない＝アーカイブ系エンドポイントと同じ流儀）。
         """
+        # 未知 kind を黙って diary として解釈しない（finalize_entry は else で DiaryEntry にフォールバック
+        # するため）。他の web 口（parse-upload・export・record_store）と同じく kind を先に検証して 400。
+        if req.kind not in record_store.DOC_KINDS:
+            return JSONResponse(
+                {
+                    "error": f"kind は {record_store.DOC_KINDS} のいずれか: {req.kind!r}",
+                    "code": "invalid_request",
+                },
+                status_code=400,
+            )
         doc_date: date | None = None
         if req.doc_date:
             try:
@@ -503,7 +526,9 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                     _fill_child_record_age_months(req.entry, master=master)
         try:
             pdf = render_pdf(req.kind, req.entry, past_entries, official_name=official_name)
-        except ValueError as e:
+        except (ValueError, TypeError, AttributeError, KeyError, IndexError) as e:
+            # 描画側は entry の内部構造を検査しない（型の保証は harness＝§5）。リスト要素が dict でない等の
+            # 不正 entry は AttributeError 等で漏れるので、公開口の契約「kind/entry 不正は 400」に揃える。
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
         filename = _doc_filename(req.kind, req.entry, "pdf")
         # ASCII フォールバック＋RFC5987（UTF-8）で日本語ファイル名を両載せする。
@@ -525,7 +550,8 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """
         try:
             data = fill_docx(req.kind, req.entry)
-        except ValueError as e:
+        except (ValueError, TypeError, AttributeError, KeyError, IndexError) as e:
+            # export-pdf と同じく不正 entry（リスト要素が dict でない等）を 400 に揃える（描画のみ＝§5）。
             return JSONResponse({"error": str(e), "code": "invalid_request"}, status_code=400)
         filename = _doc_filename(req.kind, req.entry, "docx")
         disposition = f"attachment; filename=\"document.docx\"; filename*=UTF-8''{quote(filename)}"
@@ -552,7 +578,15 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
         未対応形式・未対応種別は 400（握りつぶさない）。creds 未設定/LLM 失敗は 200＋parse_error で
         正直に降格し、フォームは与件入りの最小 entry で描ける（偽の緑を出さない）。
+        過大ファイルは読み切る前に 413（メモリ枯渇の早期防御。抽出側も累積上限で有界化する）。
         """
+        # multipart のサイズが判明していれば、全読み込み前に上限超過を弾く（メモリ枯渇の早期防御）。
+        if file.size is not None and file.size > upload_extract.MAX_UPLOAD_BYTES:
+            limit_mb = upload_extract.MAX_UPLOAD_BYTES // (1024 * 1024)
+            return JSONResponse(
+                {"error": f"ファイルが大きすぎます（上限 {limit_mb}MB）", "code": "too_large"},
+                status_code=413,
+            )
         data = await file.read()
         try:
             return await parse_uploaded_file(
@@ -872,7 +906,7 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """簡易パスコード検証。一致で cookie を発行（共有1パスコード＝配布デモ用）。"""
         if not settings.demo_passcode:
             return {"ok": True, "required": False}
-        if req.passcode == settings.demo_passcode:
+        if _passcode_matches(req.passcode):
             resp = JSONResponse({"ok": True})
             resp.set_cookie(
                 _COOKIE_NAME,
@@ -889,6 +923,12 @@ def register_web_ui(app: FastAPI) -> FastAPI:
 
     register_improver_route(app)
 
+    # ADK の /run_live（WebSocket）を撤去する。パスコードゲートは HTTP ミドルウェア（Starlette
+    # BaseHTTPMiddleware）で、WebSocket スコープは素通しするため、_GATED_EXACT に列挙しても実際には
+    # ゲートできない＝セッション作成（非ゲート）→ ws 接続だけで DEMO_PASSCODE なしに live LLM（課金）を
+    # 回せてしまう。UI は /run_sse だけを使い /run_live を使わないので、GET / と同じ要領でルートごと除去する
+    # （自前 Runner を組まない方針とも矛盾しない）。
+    app.router.routes = [r for r in app.router.routes if getattr(r, "path", None) != "/run_live"]
     # 配布リンクの素の URL（/）を保育士 UI に着地させる。ADK 既定は / → /dev-ui へ飛ばすので、
     # その GET / 経路だけ差し替える（dev UI は /dev-ui/ に温存）。審査員がパスを打たずに済むように。
     app.router.routes = [

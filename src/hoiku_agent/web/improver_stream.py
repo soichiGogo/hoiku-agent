@@ -26,6 +26,9 @@ _USER_ID = "caregiver"
 
 # improve_session_id -> (runner, adk_session_id)。resume（競合二択の回答）で同一 invocation を継ぐ。
 _SESSIONS: dict[str, tuple[Any, str]] = {}
+# 保留（needs_input）のまま再開されないセッションが単調増加しないよう上限を設ける（各エントリは
+# InMemoryRunner＋全会話履歴を保持）。超過時は最古（挿入順）を追い出す＝Cloud Run 長寿命でも有界。
+_MAX_SESSIONS = 64
 
 
 class ImproveRequest(BaseModel):
@@ -105,37 +108,47 @@ def _normalize_event(event: Any) -> list[dict]:
 
 
 async def _stream_run(runner: Any, session_id: str, message: types.Content, improve_sid: str):
-    """run_async を回し、各イベントを SSE 化して流す。ask_caregiver で停止したら needs_input を出す。"""
+    """run_async を回し、各イベントを SSE 化して流す。ask_caregiver で停止したら needs_input を出す。
+
+    セッション（runner）は needs_input で保留中のときだけ _SESSIONS に残す（resume が継ぐ）。それ以外の
+    終端（done・error・クライアント切断＝GeneratorExit）では finally で必ず解放する（旧実装は done 経路
+    でしか pop せず、error・切断・未再開の needs_input で Runner ごと恒久リークしていた）。
+    """
     pending: dict | None = None  # 競合二択などで保留中の質問（HITL）
+    keep = False  # needs_input で resume 用に保持するときだけ True
     try:
-        async for event in runner.run_async(
-            user_id=_USER_ID, session_id=session_id, new_message=message
-        ):
-            for item in _normalize_event(event):
-                if item["type"] == "tool_call" and item.get("long_running"):
-                    args = item.get("args") or {}
-                    pending = {
-                        "type": "needs_input",
-                        "session_id": improve_sid,
-                        "function_call_id": item.get("id"),
-                        "name": item.get("name"),
-                        "question": args.get("question"),
-                        "choices": args.get("choices"),
-                    }
-                yield _sse(item)
-    except Exception as e:  # noqa: BLE001  creds 未設定など。降格して UI に正直に出す。
-        yield _sse({"type": "error", "detail": f"{type(e).__name__}: {e}"})
-        return
+        try:
+            async for event in runner.run_async(
+                user_id=_USER_ID, session_id=session_id, new_message=message
+            ):
+                for item in _normalize_event(event):
+                    if item["type"] == "tool_call" and item.get("long_running"):
+                        args = item.get("args") or {}
+                        pending = {
+                            "type": "needs_input",
+                            "session_id": improve_sid,
+                            "function_call_id": item.get("id"),
+                            "name": item.get("name"),
+                            "question": args.get("question"),
+                            "choices": args.get("choices"),
+                        }
+                    yield _sse(item)
+        except Exception as e:  # noqa: BLE001  creds 未設定など。降格して UI に正直に出す。
+            yield _sse({"type": "error", "detail": f"{type(e).__name__}: {e}"})
+            return
 
-    if pending is not None:
-        yield _sse(pending)
-        return
+        if pending is not None:
+            keep = True  # resume（別リクエスト）が continue するので保持する
+            yield _sse(pending)
+            return
 
-    final = await runner.session_service.get_session(
-        app_name=_APP_NAME, user_id=_USER_ID, session_id=session_id
-    )
-    _SESSIONS.pop(improve_sid, None)
-    yield _sse({"type": "done", "policy_change": (final.state or {}).get("policy_change")})
+        final = await runner.session_service.get_session(
+            app_name=_APP_NAME, user_id=_USER_ID, session_id=session_id
+        )
+        yield _sse({"type": "done", "policy_change": (final.state or {}).get("policy_change")})
+    finally:
+        if not keep:
+            _SESSIONS.pop(improve_sid, None)
 
 
 def register_improver_route(app: FastAPI) -> None:
@@ -146,6 +159,9 @@ def register_improver_route(app: FastAPI) -> None:
         runner = InMemoryRunner(agent=build_improver_agent(), app_name=_APP_NAME)
         session = await runner.session_service.create_session(app_name=_APP_NAME, user_id=_USER_ID)
         improve_sid = req.session_id or session.id
+        # 保留のまま再開されないセッションで無制限に増えないよう、上限超過は最古から追い出す。
+        while len(_SESSIONS) >= _MAX_SESSIONS:
+            _SESSIONS.pop(next(iter(_SESSIONS)), None)
         _SESSIONS[improve_sid] = (runner, session.id)
         message = types.Content(
             role="user",
