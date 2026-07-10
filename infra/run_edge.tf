@@ -1,6 +1,7 @@
 # Cloud Run へのカスタムドメイン割当。サービス本体（image/env/revision）は CI(deploy.yml)所有＝
 # ここでは route_name でサービス名を参照するだけ（TF はサービスを import/所有しない＝境界）。
-# 直接 IAP はサービスに付いたまま（このマッピングも含め全入口を保護）＝IAP 有効化/メンバーは TF 管理外。
+# 認証ポリシー（IAP 無効化・アプリ内 Google Sign-In）は deploy.yml が所有する。
+# ドメインマッピングは同じ Cloud Run サービスへ到達させるだけで、ここでは認証方式を管理しない。
 resource "google_cloud_run_domain_mapping" "app" {
   provider = google-beta
   location = var.region
