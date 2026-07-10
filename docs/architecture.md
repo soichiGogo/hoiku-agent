@@ -36,7 +36,7 @@
 | `harness/db.py` | `Base` / `engine` / `reset_engine_cache` / `database_url` / **`is_missing_schema_error` / `missing_tables` / `schema_drift`（migration drift の観測）** | harness 共通の DB 接続基盤（engine キャッシュ・Declarative Base・JSONB variant）。record_store と policy_store が同じ `DATABASE_URL` を共有＝ドメインロジックは置かない。**加えてスキーマ整合の観測補助**＝`is_missing_schema_error`（テーブル/カラム不在をドライバ非依存に判定・record_store の `_write_error` が使う）／`schema_drift`（ORM 台帳 `Base.metadata` に対し実 DB に不足するテーブルを列挙・server.py 起動時に WARNING ログ＝§ prod-db-migration-drift の可視化）。ドメインでなく接続基盤の観測（決定的・creds 不要にテスト可） |
 
 > 2026-07-10: `Class` は組名＋年度だけを保存する。年齢帯は固定属性でなく、在籍児の生年月日と対象年度の4月1日から導出する（migration 0009）。日誌・クラス月案などの `age_band` は、引き続き**書類**の属性である。
-| `harness/record_store.py` | `Workspace` / `touch_user` / `save_document` / `approve_document` / `list_documents` / `get_document` / `request_workspace_deletion` ほか | **Google user ごとの個人 workspace が認可境界**（migration 0011）。書類・園児・クラス・フィードバック・アーカイブ読取/集積を `workspace_id` で必ず絞る。既存データは所有者を推測せず「既存データ」workspace へ退避し、新規ログインからは見せない。削除依頼は本人確認済み session で受け付け、30日後の消去対象として記録する。 |
+| `harness/record_store.py` | `Workspace` / `touch_user` / `save_document` / `approve_document` / `list_documents` / `get_document` / `request_workspace_deletion` / `process_due_deletion_requests` ほか | **Google user ごとの個人 workspace が認可境界**（migration 0011）。書類・園児・クラス・フィードバック・アーカイブ読取/集積を `workspace_id` で必ず絞る。既存データは所有者を推測せず「既存データ」workspace へ退避し、新規ログインからは見せない。削除依頼は本人確認済み session で受け付け、30日後に運営者コマンドが対象 workspace を消去する。 |
 
 ## ツール（§6・4–8個のプリミティブ）
 

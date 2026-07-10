@@ -8,6 +8,7 @@ L2/L3 seed 取得（期間の日誌）・DATABASE_URL 未設定の降格を sqli
 from __future__ import annotations
 
 from datetime import date, datetime
+import uuid
 
 import pytest
 
@@ -572,6 +573,24 @@ def test_workspace_deletion_request_is_idempotent(db):
     assert first["status"] == "pending"
     assert second == first
     assert first["due_at"].startswith("2026-08-04")
+
+
+def test_process_due_deletion_removes_workspace_data(db):
+    user = rs.touch_user("delete@example.com", google_subject="subject-due", now=_NOW)
+    workspace = user["workspace_id"]
+    rs.save_document("diary", _diary_entry("2026-07-01"), workspace_id=workspace, now=_NOW)
+    rs.request_workspace_deletion(
+        "delete@example.com", google_subject="subject-due", now=_NOW, retention_days=0
+    )
+    assert rs.process_due_deletion_requests(now=_NOW) == {"status": "ok", "processed": 1}
+    assert rs.list_documents(workspace_id=workspace) == []
+    with rs.Session(rs._engine()) as session:
+        assert (
+            session.scalar(
+                rs.sa.select(rs.Workspace).where(rs.Workspace.id == uuid.UUID(workspace))
+            )
+            is None
+        )
 
 
 def test_touch_user_degrades(monkeypatch, db):

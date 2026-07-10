@@ -914,6 +914,64 @@ def request_workspace_deletion(
         return _write_error(e)
 
 
+def process_due_deletion_requests(*, now: datetime) -> dict:
+    """期限を過ぎた削除依頼の workspace を不可逆に消去する管理用処理。
+
+    Web からは呼ばない。運営者が定期ジョブまたは管理端末のスクリプトから実行する。documents を起点に
+    版・監査・フィードバックを先に消し、最後に users/workspace を削除して、個人情報を残さない。
+    """
+    eng = _engine()
+    if eng is None:
+        return {"status": "skipped", "processed": 0}
+    try:
+        with Session(eng) as session, session.begin():
+            requests = list(
+                session.scalars(
+                    sa.select(DeletionRequest).where(
+                        DeletionRequest.status == "pending", DeletionRequest.due_at <= now
+                    )
+                )
+            )
+            for req in requests:
+                workspace = req.workspace_id
+                document_ids = sa.select(DocumentRecord.id).where(
+                    DocumentRecord.workspace_id == workspace
+                )
+                session.execute(sa.delete(Feedback).where(Feedback.workspace_id == workspace))
+                session.execute(
+                    sa.delete(AuditEvent).where(AuditEvent.document_id.in_(document_ids))
+                )
+                session.execute(
+                    sa.delete(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids))
+                )
+                session.execute(
+                    sa.delete(DocumentRecord).where(DocumentRecord.workspace_id == workspace)
+                )
+                session.execute(sa.delete(Child).where(Child.workspace_id == workspace))
+                session.execute(sa.delete(Class).where(Class.workspace_id == workspace))
+                # policy/notation は JSON ブック1行。workspaces 導入前のテーブルなので key で同じ境界を
+                # 表現している（routes と同じ命名）。SQLAlchemy ORM を重ねず生テーブルで消す。
+                inspector = sa.inspect(session.bind)
+                if inspector.has_table("policy_books"):
+                    session.execute(
+                        sa.text("DELETE FROM policy_books WHERE id = :id"),
+                        {"id": f"workspace:{workspace}"},
+                    )
+                if inspector.has_table("notation_books"):
+                    session.execute(
+                        sa.text("DELETE FROM notation_books WHERE id = :id"),
+                        {"id": f"workspace:{workspace}"},
+                    )
+                session.execute(
+                    sa.delete(DeletionRequest).where(DeletionRequest.workspace_id == workspace)
+                )
+                session.execute(sa.delete(User).where(User.workspace_id == workspace))
+                session.execute(sa.delete(Workspace).where(Workspace.id == workspace))
+            return {"status": "ok", "processed": len(requests)}
+    except SQLAlchemyError as e:
+        return _write_error(e)
+
+
 def upsert_child(
     display_name: str,
     *,
