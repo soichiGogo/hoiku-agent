@@ -11,6 +11,13 @@ resource "google_cloud_run_domain_mapping" "app" {
   }
 
   spec {
-    route_name = "hoiku-agent"
+    certificate_mode = "AUTOMATIC"
+    route_name       = "hoiku-agent"
+  }
+
+  # certificate_mode は import 時に API が空返しし、既定 AUTOMATIC との差が「置換」を強いる
+  # （このベータリソースの既知の癖）。稼働中の HTTPS を壊さないよう当該属性の差分は無視する。
+  lifecycle {
+    ignore_changes = [spec[0].certificate_mode]
   }
 }

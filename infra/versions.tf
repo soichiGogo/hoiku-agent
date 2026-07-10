@@ -19,12 +19,16 @@ terraform {
   }
 }
 
+# add_terraform_attribution_label=false＝既存リソースへ goog-terraform-provisioned ラベルを付けない
+# （import 時の不要な in-place 更新＝ラベル churn を避ける）。
 provider "google" {
-  project = var.project_id
-  region  = var.region
+  project                         = var.project_id
+  region                          = var.region
+  add_terraform_attribution_label = false
 }
 
 provider "google-beta" {
-  project = var.project_id
-  region  = var.region
+  project                         = var.project_id
+  region                          = var.region
+  add_terraform_attribution_label = false
 }

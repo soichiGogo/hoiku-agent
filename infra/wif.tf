@@ -7,6 +7,7 @@ resource "google_iam_workload_identity_pool" "github" {
 resource "google_iam_workload_identity_pool_provider" "github" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "github"
+  display_name                       = "GitHub OIDC"
 
   # 自リポ限定（他リポが pool へ入れない＝WIF ベストプラクティス）。
   attribute_condition = "assertion.repository_owner=='${var.github_owner}' && assertion.repository=='${var.github_repo}'"

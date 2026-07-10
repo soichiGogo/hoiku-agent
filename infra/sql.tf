@@ -5,8 +5,8 @@ resource "google_sql_database_instance" "hoiku_archive" {
   database_version = "POSTGRES_16"
   region           = var.region
 
-  # 本番でないため削除保護は無効（実 DB に合わせる）。誤 destroy を防ぐなら true へ。
-  deletion_protection = false
+  # TF レベルの削除保護＝ON（terraform からの誤削除を防ぐ・実 DB の既定に一致）。
+  deletion_protection = true
 
   settings {
     tier                        = "db-f1-micro"
@@ -15,6 +15,7 @@ resource "google_sql_database_instance" "hoiku_archive" {
     activation_policy           = "ALWAYS"
     pricing_plan                = "PER_USE"
     deletion_protection_enabled = false
+    enable_dataplex_integration = true
 
     backup_configuration {
       enabled = false
