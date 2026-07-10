@@ -31,13 +31,15 @@ def upgrade() -> None:
     op.execute(
         sa.text(
             "INSERT INTO workspaces (id, name, is_legacy, created_at, updated_at) "
-            "VALUES (:id, '既存データ', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            "VALUES (CAST(:id AS uuid), '既存データ', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
         ).bindparams(id=LEGACY_WORKSPACE_ID)
     )
     for table in ("children", "classes", "documents", "feedback"):
         op.add_column(table, sa.Column("workspace_id", sa.Uuid(), nullable=True))
         op.execute(
-            sa.text(f"UPDATE {table} SET workspace_id = :id").bindparams(id=LEGACY_WORKSPACE_ID)
+            sa.text(f"UPDATE {table} SET workspace_id = CAST(:id AS uuid)").bindparams(
+                id=LEGACY_WORKSPACE_ID
+            )
         )
         op.alter_column(table, "workspace_id", nullable=False)
         op.create_foreign_key(
