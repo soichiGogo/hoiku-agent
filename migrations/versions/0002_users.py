@@ -1,4 +1,4 @@
-"""認証済みユーザー（users）＝IAP の Google アカウントの auto-provision 先（Phase 3 認証）。
+"""認証済みユーザー（users）＝Google アカウントの auto-provision 先（Phase 3 認証）。
 
 モデルの SSOT は src/hoiku_agent/harness/record_store.py（本ファイルはその適用手順）。
 """

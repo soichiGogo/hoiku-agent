@@ -310,7 +310,7 @@ class PolicyBookRecord(db.Base):
 
     __tablename__ = "policy_books"
 
-    id: Mapped[str] = mapped_column(sa.String(20), primary_key=True)
+    id: Mapped[str] = mapped_column(sa.String(64), primary_key=True)
     book: Mapped[dict] = mapped_column(db.JSON_VARIANT)
     version: Mapped[int] = mapped_column(sa.Integer)
 
@@ -320,7 +320,9 @@ def _db_active(path: Path | None) -> bool:
     return path is None and bool(db.database_url())
 
 
-def load_book_meta(path: Path | None = None) -> tuple[PolicyBook, int | None]:
+def load_book_meta(
+    path: Path | None = None, *, book_id: str = _BOOK_ROW_ID
+) -> tuple[PolicyBook, int | None]:
     """カードストアと書き込み前提条件（version）を読む。
 
     戻り値の第2要素は `save_book(if_version=…)` に渡す楽観ロック用 version：
@@ -334,7 +336,7 @@ def load_book_meta(path: Path | None = None) -> tuple[PolicyBook, int | None]:
     if _db_active(path):
         eng = db.engine()
         with Session(eng) as session:
-            row = session.get(PolicyBookRecord, _BOOK_ROW_ID)
+            row = session.get(PolicyBookRecord, book_id)
         if row is None:
             return _load_local(_POLICY_PATH), 0
         return PolicyBook.model_validate(row.book), row.version
@@ -349,16 +351,22 @@ def _load_local(path: Path) -> PolicyBook:
     return PolicyBook.model_validate(data)
 
 
-def load_book(path: Path | None = None) -> PolicyBook:
+def load_book(path: Path | None = None, *, book_id: str = _BOOK_ROW_ID) -> PolicyBook:
     """カードストアを読む（読み手用。書き手は `load_book_meta` で version も取る）。
 
     path は呼び出し時に解決する（明示 path ＞ DATABASE_URL ＞ `_POLICY_PATH`）＝テストは
     `_POLICY_PATH` を monkeypatch で差し替えられる。
     """
-    return load_book_meta(path)[0]
+    return load_book_meta(path, book_id=book_id)[0]
 
 
-def save_book(book: PolicyBook, path: Path | None = None, *, if_version: int | None = None) -> None:
+def save_book(
+    book: PolicyBook,
+    path: Path | None = None,
+    *,
+    if_version: int | None = None,
+    book_id: str = _BOOK_ROW_ID,
+) -> None:
     """カードストアを書き出す。
 
     DB（DATABASE_URL 設定・path 未指定）では `if_version`（`load_book_meta` の第2要素）を渡すと
@@ -374,19 +382,19 @@ def save_book(book: PolicyBook, path: Path | None = None, *, if_version: int | N
         try:
             with Session(eng) as session, session.begin():
                 if if_version is None:
-                    row = session.get(PolicyBookRecord, _BOOK_ROW_ID)
+                    row = session.get(PolicyBookRecord, book_id)
                     if row is None:
-                        session.add(PolicyBookRecord(id=_BOOK_ROW_ID, book=payload, version=1))
+                        session.add(PolicyBookRecord(id=book_id, book=payload, version=1))
                     else:
                         row.book = payload
                         row.version += 1
                 elif if_version == 0:
-                    session.add(PolicyBookRecord(id=_BOOK_ROW_ID, book=payload, version=1))
+                    session.add(PolicyBookRecord(id=book_id, book=payload, version=1))
                 else:
                     updated = session.execute(
                         sa.update(PolicyBookRecord)
                         .where(
-                            PolicyBookRecord.id == _BOOK_ROW_ID,
+                            PolicyBookRecord.id == book_id,
                             PolicyBookRecord.version == if_version,
                         )
                         .values(book=payload, version=if_version + 1)

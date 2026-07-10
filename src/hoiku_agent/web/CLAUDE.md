@@ -41,13 +41,13 @@
   extract〔format 変換〕と中継だけ・§5）。生ファイルは保存しない（抽出→entry のみ永続化＝PII blob を残さない）。
 - **書類アーカイブ（Phase 1）は中継のみ**：確定/編集保存/承認のタイミングでフロントが `/api/records`・
   `/api/records/approve` を呼び、実体は `harness/record_store`（web は now 注入だけ＝runtime 境界）。
-  actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝認証までのつなぎ。
-  **IAP（Phase 3）配下では `iap.py` の検証済み Google アカウント email が actor に優先**され
-  （`IAP_AUDIENCE` 設定時のみ JWT 署名検証・users へ auto-provision＝`record_store.touch_user`・
-  表示名設定済みなら「表示名（email）」）、未設定は完全降格＝ヘッダを信用しない（fail-closed）。
+  actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝ローカル開発時だけのつなぎ。
+  **Google Sign-In（Phase 3）では `auth.py` が検証した session の Google アカウントが actor に優先**され
+  （ID token の署名/audience/期限/email_verified と double-submit CSRF を検証・users へ auto-provision＝
+  `record_store.touch_user`・表示名設定済みなら「表示名（email）」）。`/app/`・API・ADK 口は session 無しで fail-closed。
   **サインイン時はヘッダの担当者欄が「自分の表示名」編集欄**になり、`POST /api/user`（`adk.setUserProfile`）で
-  `record_store.set_user_display_name` を叩いて display_name を DB に登録/編集する（email は body でなく IAP 検証済み値で
-  解決＝偽装不可・未サインインは 403・IAP が認証ゆえパスコードゲート外）。表示は `/api/config` の user_email／user_display_name
+  `record_store.set_user_display_name` を叩いて display_name を DB に登録/編集する（email/sub は body でなく Google 検証済み値で
+  解決＝偽装不可・未サインインは 403・Google 認証済みの自己書込ゆえパスコードゲート外）。表示は `/api/config` の user_email／user_display_name
   （未登録は email をプレースホルダに出して登録を促す・未サインインは従来の自己申告＋localStorage）。
   **アーカイブの失敗で本流（state 保存・承認）を壊さない**が、skipped/error は表示行で正直に出す（偽の緑を出さない）。
   子ども選択肢は入力式コンボボックス（`app.js` の `childCombo`＝前方一致の候補＋Tab/Enter/クリックで補完・
@@ -59,7 +59,9 @@
   性別セレクタで一意化し入力ゆれ・重複児を構造で防ぐ。**本名（姓名）は氏名欄用で DB のみ・§14**（eval/seed は
   仮名のまま）。アーカイブ未接続はセッション内だけ選択肢に足す（本名/性別は保存されず氏名欄は呼び名へ降格）。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
-  **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
+  **フロントは原則**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ただし案内画面の Google Sign-In 公式ボタンだけは
+  Google が配布する `https://accounts.google.com/gsi/client` を例外として読む（独自ボタンではブランド/仕様に追随できないため）。
+  ビルド工程を足さない（ES モジュール直配信）。
   （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/クラス月案/保育経過記録/保育要録）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
   日本語フォントは `web/fonts/ipaexg.ttf` を**同梱**して埋め込む＝実行時に外部取得しない＝ローカル完結は保つ。）
 - **帳票PDF（現場でそのまま綴じる最終形＝§18）は presentation**：確定 entry を園の様式に近い罫線帳票へ描くだけ
@@ -126,8 +128,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   リテラル路 diary-entries/diary-meta/feedback より後に宣言し優先させる）／`/api/children`**（GET＝児童マスタ一覧／**POST＝新規児登録**＝本名（姓/名）＋
   性別を受け、呼び名＋敬称＝display_name を harness が合成し `upsert_child`。書類アーカイブ＝`harness/record_store` の中継・now 注入のみ・
   **書込＝POST のみパスコードゲート**（辞書荒らしと同枠）・読み取りは素通し・名空/性別不正=400）・**`POST /api/user`**（サインイン中
-  ユーザー自身の表示名を **IAP 検証済み email に紐づけて**設定＝`record_store.set_user_display_name` 中継・email は body 由来を使わず偽装不可・
-  未サインインは 403・IAP が認証ゆえ **パスコードゲート外**）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
+  ユーザー自身の表示名を **Google 検証済み email/sub に紐づけて**設定＝`record_store.set_user_display_name` 中継・body 由来を使わず偽装不可・
+  未サインインは 403・Google 認証済みの自己書込ゆえ **パスコードゲート外**）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
   辞書荒らし防止でパスコードゲート**・読取は素通し・種別不正=400/重複競合=409）＋パスコード middleware（`/api/eval-baseline` は v1 で撤去）。`/` を `/app/` へ着地（dev UI は `/dev-ui/` 温存）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
@@ -144,9 +146,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   括弧ラベル直下＋列4へ追記・ラベルは残す）。`_FILLERS` に kind 追加で拡張。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
-- `iap.py` … IAP for Cloud Run の検証済み identity 取得（`verified_iap_email`）。`IAP_AUDIENCE` 設定時のみ
-  `x-goog-iap-jwt-assertion` を IAP 公開鍵で署名検証して email を返す（未設定/検証失敗は None＝匿名・
-  fail-closed）。「誰か」を確定するだけ＝users への記録は harness/record_store、actor の採用は routes。
+- `auth.py` … Google Identity Services の redirect POST を受け、ID token を Google の公開鍵で検証し（audience/期限/
+  email_verified）、double-submit CSRF を確認して最小 identity（sub/email/name）だけを署名付き session に保存する。`/` は
+  案内画面、`/app/`・API・ADK 口は routes の middleware が session 無しで拒否する。Google の公式ボタンを描くため案内画面だけ
+  `accounts.google.com/gsi/client` を読む（通常の UI 資産は従来どおりローカル配信）。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
 - `upload_extract.py` … アップロードされたファイル（bytes）→ LLM 入力コンテンツへの**決定的**変換

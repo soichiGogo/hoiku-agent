@@ -8,6 +8,7 @@ L2/L3 seed 取得（期間の日誌）・DATABASE_URL 未設定の降格を sqli
 from __future__ import annotations
 
 from datetime import date, datetime
+import uuid
 
 import pytest
 
@@ -525,7 +526,7 @@ def test_imported_author_kind_records_import_audit(db):
     assert not any(a in ("finalize", "edit") for a, _ in actions)
 
 
-# ──────────────────────────── users（IAP identity の auto-provision・Phase 3） ────────────────────────────
+# ──────────────────────────── users（Google identity の auto-provision・Phase 3） ────────────────────────────
 
 
 def test_touch_user_provisions_and_is_idempotent(db):
@@ -535,12 +536,61 @@ def test_touch_user_provisions_and_is_idempotent(db):
         "email": "sensei@example.com",
         "display_name": "",
         "active": True,
+        "workspace_id": r1["workspace_id"],
     }
     r2 = rs.touch_user("sensei@example.com", now=_NOW)  # 2回目も同じ行（重複を作らない）
     assert r2["status"] == "ok"
+    assert r2["workspace_id"] == r1["workspace_id"]
     with rs.Session(rs._engine()) as session:
         emails = [u.email for u in session.scalars(rs.sa.select(rs.User))]
     assert emails == ["sensei@example.com"]
+
+
+def test_workspace_isolates_same_child_name_and_documents(db):
+    """同じ児童表示名・同じ日付でも別 workspace の書類は相互に見えない。"""
+    one = rs.touch_user("one@example.com", google_subject="subject-one", now=_NOW)["workspace_id"]
+    two = rs.touch_user("two@example.com", google_subject="subject-two", now=_NOW)["workspace_id"]
+    first = rs.save_document("diary", _diary_entry("2026-07-01"), workspace_id=one, now=_NOW)
+    second = rs.save_document("diary", _diary_entry("2026-07-01"), workspace_id=two, now=_NOW)
+    assert first["document_id"] != second["document_id"]
+    assert len(rs.list_documents(workspace_id=one)) == 1
+    assert len(rs.list_documents(workspace_id=two)) == 1
+    assert rs.get_document(first["document_id"], workspace_id=two) is None
+    assert [c["display_name"] for c in rs.list_children(workspace_id=one)] == [
+        "はるとくん",
+        "めいちゃん",
+    ]
+    assert rs.list_child_record_entries("はるとくん", workspace_id=two) == []
+
+
+def test_workspace_deletion_request_is_idempotent(db):
+    first = rs.request_workspace_deletion(
+        "sensei@example.com", google_subject="subject-delete", now=_NOW
+    )
+    second = rs.request_workspace_deletion(
+        "sensei@example.com", google_subject="subject-delete", now=_NOW
+    )
+    assert first["status"] == "pending"
+    assert second == first
+    assert first["due_at"].startswith("2026-08-04")
+
+
+def test_process_due_deletion_removes_workspace_data(db):
+    user = rs.touch_user("delete@example.com", google_subject="subject-due", now=_NOW)
+    workspace = user["workspace_id"]
+    rs.save_document("diary", _diary_entry("2026-07-01"), workspace_id=workspace, now=_NOW)
+    rs.request_workspace_deletion(
+        "delete@example.com", google_subject="subject-due", now=_NOW, retention_days=0
+    )
+    assert rs.process_due_deletion_requests(now=_NOW) == {"status": "ok", "processed": 1}
+    assert rs.list_documents(workspace_id=workspace) == []
+    with rs.Session(rs._engine()) as session:
+        assert (
+            session.scalar(
+                rs.sa.select(rs.Workspace).where(rs.Workspace.id == uuid.UUID(workspace))
+            )
+            is None
+        )
 
 
 def test_touch_user_degrades(monkeypatch, db):
@@ -755,7 +805,7 @@ def test_write_error_generic_for_db_failure_but_detail_for_input(db):
 
 
 def test_actor_is_clamped_to_column_width(db):
-    """正当に長い担当者名（IAP 表示名＋email 等）でも VARCHAR(100) を超えず保存できる（PG で落ちない）。"""
+    """正当に長い担当者名（Google 表示名＋email 等）でも VARCHAR(100) を超えず保存できる（PG で落ちない）。"""
     long_actor = "あ" * 250
     entry = _diary_entry("2026-07-09")
     rs.save_document("diary", entry, author_kind="caregiver", actor=long_actor, now=_NOW)

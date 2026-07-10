@@ -24,7 +24,7 @@ export async function gate(passcode) {
   return r.ok;
 }
 
-// 自分の表示名（display_name）を登録/編集する（IAP サインイン前提）。email はサーバが検証済み値で
+// 自分の表示名（display_name）を登録/編集する（Google サインイン前提）。email はサーバが検証済み値で
 // 解決する（body に載せない＝偽装不可）。未サインインは 403（auth_required）で正直に降格。
 // 成功は {status:"ok", email, display_name}／DB 未接続は {status:"skipped"}。
 export async function setUserProfile(displayName) {

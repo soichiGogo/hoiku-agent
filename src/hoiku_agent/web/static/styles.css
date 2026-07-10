@@ -150,6 +150,9 @@ a{color:var(--primary-d)}
 .actor-field input{border:0;background:transparent;color:var(--ink);width:7.5em;font:inherit;font-size:13px}
 .actor-field input:focus{outline:none}
 .actor-field:focus-within{border-color:var(--line-strong)}
+.header-logout{min-height:36px;padding:0 10px;border:1px solid var(--line);border-radius:var(--r-sm);
+  color:var(--muted);background:transparent;font:inherit;font-size:12px;cursor:pointer}
+.header-logout:hover{color:var(--ink);background:var(--surface-2)}
 /* 表示名保存の一瞬の確認（サインイン時）。絶対配置＝ヘッダのレイアウトを動かさない。 */
 .actor-note{position:absolute;top:calc(100% + 6px);right:0;z-index:20;white-space:nowrap;pointer-events:none;
   font-size:var(--fs-caption);font-weight:700;padding:3px 9px;border-radius:var(--r-pill);

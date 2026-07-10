@@ -13,7 +13,7 @@
   （doc_type / child / 対象期間 / status）だけ列に昇格する（射影テーブルは作らない＝二重表現しない）。
 - child_id の橋渡し：書類 JSON 内の child_id は表示名のまま（LLM/eval 側は不変）。children.id（UUID）
   への解決は保存時の display_name lookup/auto-create ＝ harness 境界に1つ。
-- clock は外部注入（policy_store と同じ）。actor（担当者）は呼び出し側が渡す（自己申告・認証は Phase 3=IAP）。
+- clock は外部注入（policy_store と同じ）。actor（担当者）は呼び出し側が渡す（自己申告・認証は Phase 3=Google Sign-In）。
 
 スキーマ適用は Alembic（repo root の `migrations/`・`uv run alembic upgrade head`）。テストは sqlite で
 `Base.metadata.create_all` を使い creds 不要・決定論で回す（tests/test_harness/test_record_store.py）。
@@ -58,13 +58,16 @@ _AUTHOR_KIND_ACTION = {"ai": "finalize", "caregiver": "edit", "imported": "impor
 # 送る軽量シグナル（§8「回す」の一次入力＋§12 eval 質的拡充の原資）。audit_events（操作の証跡）とは
 # 関心事が別なので独立テーブルに持つ（同じ関心事を別の場所で二重に表現しない）。
 FEEDBACK_VERDICTS = ("up", "down")
+# ローカル CLI/テスト（Google Sign-In を使わない開発環境）のための固定ワークスペース。Web の本番経路は
+# 必ず Google subject から解決した別 ID を明示して渡すため、公開環境で共有領域にはならない。
+LOCAL_WORKSPACE_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 # 性別→敬称（男→くん / 女→ちゃん 固定）。敬称は列で持たず gender を単一ソースにする（呼び名に付けて
 # 表示名＝child_id を合成する）。園の実運用でも保育士が性別を選ぶだけで敬称のゆれ・重複児を防ぐ。
 GENDERS = ("male", "female")
 _HONORIFIC = {"male": "くん", "female": "ちゃん"}
 
-# actor（担当者名／IAP 表示名＋email）列は VARCHAR(100)。正当に長い表示名で PostgreSQL の書込が
+# actor（担当者名／Google 表示名＋email）列は VARCHAR(100)。正当に長い表示名で PostgreSQL の書込が
 # DataError にならないよう、書込境界で列上限に丸める（sqlite テストでは無害だが本番だけ落ちるのを防ぐ）。
 _ACTOR_MAX = 100
 
@@ -137,6 +140,22 @@ def fiscal_year_start_for_year(fiscal_year: str, *, fallback: date | None = None
     return date(base.year - (base.month < 4), 4, 1)
 
 
+class Workspace(Base):
+    """ユーザーごとに隔離するデータ領域。
+
+    現時点は Google ユーザー1人につき個人ワークスペース1つ（共有招待は未実装）。書類・園児・
+    クラスを同じ workspace_id で必ず絞り込むことが、アーカイブの認可境界になる。
+    """
+
+    __tablename__ = "workspaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(sa.String(100), default="")
+    is_legacy: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
+
+
 class Child(Base):
     """児童マスタ。本名（姓名）は DB のみに置き repo/eval へ持ち込まない（§14）。
 
@@ -152,7 +171,10 @@ class Child(Base):
     __tablename__ = "children"
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
-    display_name: Mapped[str] = mapped_column(sa.String(100), unique=True)  # 呼び名＋敬称＝child_id
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("workspaces.id"), index=True, default=LOCAL_WORKSPACE_ID
+    )
+    display_name: Mapped[str] = mapped_column(sa.String(100))  # 呼び名＋敬称＝child_id
     family_name: Mapped[str | None] = mapped_column(
         sa.String(50)
     )  # 姓（本名・氏名欄・§14 DB のみ）
@@ -182,9 +204,12 @@ class Class(Base):
     """
 
     __tablename__ = "classes"
-    __table_args__ = (sa.UniqueConstraint("name", "fiscal_year"),)
+    __table_args__ = (sa.UniqueConstraint("workspace_id", "name", "fiscal_year"),)
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("workspaces.id"), index=True, default=LOCAL_WORKSPACE_ID
+    )
     name: Mapped[str] = mapped_column(sa.String(50))  # 組名（例: ひまわり組）
     fiscal_year: Mapped[str] = mapped_column(sa.String(10), default="")  # 年度（例: 2026）
     active: Mapped[bool] = mapped_column(default=True)
@@ -202,8 +227,11 @@ class DocumentRecord(Base):
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("workspaces.id"), index=True, default=LOCAL_WORKSPACE_ID
+    )
     doc_type: Mapped[str] = mapped_column(sa.String(20), index=True)
-    dedupe_key: Mapped[str] = mapped_column(sa.String(200), unique=True)
+    dedupe_key: Mapped[str] = mapped_column(sa.String(200))
     child_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("children.id"), index=True)
     target_date: Mapped[date | None] = mapped_column(sa.Date, index=True)  # 日誌
     target_month: Mapped[str | None] = mapped_column(sa.String(7))  # 月案（YYYY-MM）
@@ -214,6 +242,8 @@ class DocumentRecord(Base):
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
+
+    __table_args__ = (sa.UniqueConstraint("workspace_id", "dedupe_key"),)
 
 
 class DocumentVersion(Base):
@@ -238,7 +268,7 @@ class DocumentVersion(Base):
 class AuditEvent(Base):
     """誰が・いつ・何をしたか（承認・編集・確定の証跡）。
 
-    actor は自己申告（Phase 1 のつなぎ）だが、IAP（Phase 3）配下では web が検証済みの Google
+    actor は自己申告（Phase 1 のつなぎ）だが、Google Sign-In（Phase 3）配下では web が検証済みの Google
     アカウント email を渡す＝偽装不可の証跡になる（どちらが来たかは users への登録有無で分かる）。
     """
 
@@ -253,9 +283,10 @@ class AuditEvent(Base):
 
 
 class User(Base):
-    """認証済みユーザー（IAP の Google アカウント・Phase 3）。
+    """認証済みユーザー（Google アカウント・Phase 3）。
 
-    IAP を通った email を初回アクセス時に auto-provision し（children と同じ流儀）、
+    Google Sign-In で検証した subject（Google の不変 ID）を初回アクセス時に auto-provision し、
+    email は表示・監査用の検証済み属性として紐づける（children と同じ流儀）。
     display_name（園内での呼び名）を後から DB で設定できるようにする。v0 では認可（ロール別の
     権限制御）は持たない＝identity の記録と表示名の対応だけ（承認フローの多段化は将来）。
     """
@@ -264,6 +295,10 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(sa.String(200), unique=True)
+    google_subject: Mapped[str | None] = mapped_column(sa.String(255), unique=True, nullable=True)
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("workspaces.id"), index=True
+    )
     display_name: Mapped[str] = mapped_column(sa.String(100), default="")
     active: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
@@ -285,6 +320,9 @@ class Feedback(Base):
     __tablename__ = "feedback"
 
     id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("workspaces.id"), index=True, default=LOCAL_WORKSPACE_ID
+    )
     document_id: Mapped[uuid.UUID] = mapped_column(sa.ForeignKey("documents.id"), index=True)
     # 評価対象の版（送信時点の現行版）。版が引けない稀な状態でも保存は落とさない＝nullable。
     version_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("document_versions.id"))
@@ -292,8 +330,23 @@ class Feedback(Base):
     comment: Mapped[str] = mapped_column(sa.Text, default="")  # ひとこと（任意）
     actor: Mapped[str] = mapped_column(
         sa.String(100), default=""
-    )  # 担当者（IAP 検証済み ＞ 自己申告）
+    )  # 担当者（Google 検証済み ＞ 自己申告）
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
+
+
+class DeletionRequest(Base):
+    """アカウント削除の受付記録。誤操作を避け、受付後30日で運営者が消去を実行する。"""
+
+    __tablename__ = "deletion_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(sa.ForeignKey("workspaces.id"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(sa.ForeignKey("users.id"), index=True)
+    email: Mapped[str] = mapped_column(sa.String(200))
+    status: Mapped[str] = mapped_column(sa.String(20), default="pending")
+    requested_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
+    due_at: Mapped[datetime] = mapped_column(sa.DateTime, index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
 
 
 # ──────────────────────────── engine（実体は harness/db.py・config が唯一の出所） ────────────────────────────
@@ -533,19 +586,54 @@ def _dedupe_key(kind: str, child_display: str, entry: dict) -> str:
     return key
 
 
-def _resolve_child(session: Session, display_name: str, now: datetime) -> Child:
+def _workspace_uuid(workspace_id: str | uuid.UUID | None) -> uuid.UUID:
+    """呼出境界の workspace_id を UUID に正規化する（未指定はローカル開発用の固定領域）。"""
+    if workspace_id is None or workspace_id == "":
+        return LOCAL_WORKSPACE_ID
+    return workspace_id if isinstance(workspace_id, uuid.UUID) else uuid.UUID(str(workspace_id))
+
+
+def _ensure_workspace(session: Session, workspace_id: uuid.UUID, now: datetime) -> None:
+    """開発用固定領域を含め、参照先 workspace を存在させる（FK と create_all テストの両立）。"""
+    if session.get(Workspace, workspace_id) is None:
+        session.add(
+            Workspace(
+                id=workspace_id,
+                name="ローカル開発" if workspace_id == LOCAL_WORKSPACE_ID else "マイワークスペース",
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        session.flush()
+
+
+def _resolve_child(
+    session: Session, display_name: str, workspace_id: uuid.UUID, now: datetime
+) -> Child:
     """表示名→児童マスタ行（無ければ auto-create）。名前→UUID 解決の唯一の境界。"""
-    child = session.scalar(sa.select(Child).where(Child.display_name == display_name))
+    child = session.scalar(
+        sa.select(Child).where(
+            Child.workspace_id == workspace_id, Child.display_name == display_name
+        )
+    )
     if child is None:
-        child = Child(display_name=display_name, created_at=now, updated_at=now)
+        child = Child(
+            workspace_id=workspace_id, display_name=display_name, created_at=now, updated_at=now
+        )
         session.add(child)
         session.flush()
     return child
 
 
-def _find_document(session: Session, kind: str, entry: dict) -> DocumentRecord | None:
+def _find_document(
+    session: Session, kind: str, entry: dict, workspace_id: uuid.UUID
+) -> DocumentRecord | None:
     key = _dedupe_key(kind, _extract_child_display(kind, entry), entry)
-    return session.scalar(sa.select(DocumentRecord).where(DocumentRecord.dedupe_key == key))
+    return session.scalar(
+        sa.select(DocumentRecord).where(
+            DocumentRecord.workspace_id == workspace_id, DocumentRecord.dedupe_key == key
+        )
+    )
 
 
 # ──────────────────────────── 書込 API（web から中継・actor/now は外部注入） ────────────────────────────
@@ -558,6 +646,7 @@ def save_document(
     *,
     author_kind: str = "ai",
     actor: str = "",
+    workspace_id: str | uuid.UUID | None = None,
     now: datetime,
 ) -> dict:
     """確定書類を保存する（同一書類は版を積む upsert）。
@@ -585,16 +674,25 @@ def save_document(
         target_date, target_month, target_period = _extract_target(kind, entry)
         child_display = _extract_child_display(kind, entry)
         key = _dedupe_key(kind, child_display, entry)
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
+            _ensure_workspace(session, workspace, now)
             for name in _mentioned_children(kind, entry):
-                _resolve_child(session, name, now)
-            doc = session.scalar(sa.select(DocumentRecord).where(DocumentRecord.dedupe_key == key))
+                _resolve_child(session, name, workspace, now)
+            doc = session.scalar(
+                sa.select(DocumentRecord).where(
+                    DocumentRecord.workspace_id == workspace, DocumentRecord.dedupe_key == key
+                )
+            )
             if doc is None:
                 doc = DocumentRecord(
+                    workspace_id=workspace,
                     doc_type=kind,
                     dedupe_key=key,
                     child_id=(
-                        _resolve_child(session, child_display, now).id if child_display else None
+                        _resolve_child(session, child_display, workspace, now).id
+                        if child_display
+                        else None
                     ),
                     target_date=target_date,
                     target_month=target_month,
@@ -646,63 +744,230 @@ def save_document(
         return _write_error(e)
 
 
-def touch_user(email: str, *, now: datetime) -> dict:
-    """検証済みユーザー（IAP の email）を users へ auto-provision し、表示用情報を返す（Phase 3）。
+def touch_user(email: str, *, google_subject: str = "", now: datetime) -> dict:
+    """検証済み Google ユーザーを users へ auto-provision し、表示用情報を返す（Phase 3）。
 
     children と同じ流儀＝初回アクセス時に行を作る（登録画面を待たせない）。display_name は
     後から DB で設定でき、設定済みなら actor 表示に使える。降格・障害・空 email は
     {"status": "skipped"/"error"}（本流＝書類の保存・承認を壊さない）。
     """
     email = email.strip()
+    subject = google_subject.strip()
     eng = _engine()
     if eng is None or not email:
         return {"status": "skipped"}
     try:
         with Session(eng) as session, session.begin():
-            user = session.scalar(sa.select(User).where(User.email == email))
+            user = (
+                session.scalar(sa.select(User).where(User.google_subject == subject))
+                if subject
+                else None
+            )
             if user is None:
-                user = User(email=email, created_at=now, updated_at=now)
+                user = session.scalar(sa.select(User).where(User.email == email))
+            if user is None:
+                workspace = Workspace(name=email[:100], created_at=now, updated_at=now)
+                session.add(workspace)
+                session.flush()
+                user = User(
+                    email=email,
+                    google_subject=subject or None,
+                    workspace_id=workspace.id,
+                    created_at=now,
+                    updated_at=now,
+                )
                 session.add(user)
                 session.flush()
+            elif subject and user.google_subject not in (None, subject):
+                # email が再利用・取り違えられても別 Google アカウントへ既存表示名を渡さない。
+                return {"status": "error", "detail": "Google アカウントの対応付けが一致しません"}
+            elif subject:
+                user.google_subject = subject
+                # Google の確認済み email は変更され得る。subject が同じ行だけ更新する。
+                user.email = email
+                user.updated_at = now
+            if user.workspace_id is None:
+                # 旧 users 行には既存書類を自動付与しない。Google subject と既存データの対応を推測すると、
+                # 他人のデータを見せる事故になるため、新しい個人領域から開始する。
+                workspace = Workspace(name=email[:100], created_at=now, updated_at=now)
+                session.add(workspace)
+                session.flush()
+                user.workspace_id = workspace.id
             return {
                 "status": "ok",
                 "email": user.email,
                 "display_name": user.display_name,
                 "active": user.active,
+                "workspace_id": str(user.workspace_id),
             }
     except SQLAlchemyError as e:
         return _write_error(e)
 
 
-def set_user_display_name(email: str, display_name: str, *, now: datetime) -> dict:
-    """検証済みユーザー（IAP の email）の display_name を設定する（Phase 3＝自分の表示名の登録/編集）。
+def set_user_display_name(
+    email: str, display_name: str, *, google_subject: str = "", now: datetime
+) -> dict:
+    """検証済み Google ユーザーの display_name を設定する（Phase 3＝自分の表示名の登録/編集）。
 
     `touch_user` と同じ upsert（無ければ作成）で display_name を更新する。設定済みなら
     `_resolve_actor` が監査証跡を「表示名（email）」で残す（表示名を消費する仕組みは既存）。
-    email は呼び出し元（web/routes）が **IAP の検証済み値**を渡す＝偽装不可（body 由来を使わない）。
+    email と subject は呼び出し元（web/routes）が **Google の検証済み値**を渡す＝偽装不可（body 由来を使わない）。
     空 email/未接続は {"status": "skipped"}、DB 障害は {"status": "error"}（本流を壊さない既存流儀）。
     display_name は列上限（100）に clamp。空文字は表示名クリア（actor は email へ戻る）を許す。
     """
     email = email.strip()
     name = display_name.strip()[:100]
+    subject = google_subject.strip()
     eng = _engine()
     if eng is None or not email:
         return {"status": "skipped"}
     try:
         with Session(eng) as session, session.begin():
-            user = session.scalar(sa.select(User).where(User.email == email))
+            user = (
+                session.scalar(sa.select(User).where(User.google_subject == subject))
+                if subject
+                else None
+            )
             if user is None:
-                user = User(email=email, created_at=now, updated_at=now)
+                user = session.scalar(sa.select(User).where(User.email == email))
+            if user is None:
+                workspace = Workspace(name=email[:100], created_at=now, updated_at=now)
+                session.add(workspace)
+                session.flush()
+                user = User(
+                    email=email,
+                    google_subject=subject or None,
+                    workspace_id=workspace.id,
+                    created_at=now,
+                    updated_at=now,
+                )
                 session.add(user)
+            elif subject and user.google_subject not in (None, subject):
+                return {"status": "error", "detail": "Google アカウントの対応付けが一致しません"}
+            elif subject:
+                user.google_subject = subject
+                user.email = email
             user.display_name = name
             user.updated_at = now
+            if user.workspace_id is None:
+                workspace = Workspace(name=email[:100], created_at=now, updated_at=now)
+                session.add(workspace)
+                session.flush()
+                user.workspace_id = workspace.id
             session.flush()
             return {
                 "status": "ok",
                 "email": user.email,
                 "display_name": user.display_name,
                 "active": user.active,
+                "workspace_id": str(user.workspace_id),
             }
+    except SQLAlchemyError as e:
+        return _write_error(e)
+
+
+def request_workspace_deletion(
+    email: str, *, google_subject: str, now: datetime, retention_days: int = 30
+) -> dict:
+    """検証済み本人からの削除依頼を受け付ける（即時消去ではなく30日後の実行待ち）。
+
+    session/email の自己申告は使わず、routes が Google ID token 検証済みの subject を渡す。既に未処理の
+    依頼があれば重複作成せず同じ受付情報を返すため、二重クリックも安全である。
+    """
+    email = email.strip()
+    subject = google_subject.strip()
+    eng = _engine()
+    if eng is None or not email or not subject:
+        return {"status": "skipped"}
+    # 削除画面を最初に開いた直後でも受け付けられるよう、identity 行はこの境界で確実に作る。
+    provisioned = touch_user(email, google_subject=subject, now=now)
+    if provisioned.get("status") != "ok":
+        return provisioned
+    try:
+        with Session(eng) as session, session.begin():
+            user = session.scalar(sa.select(User).where(User.google_subject == subject))
+            if user is None or user.workspace_id is None:
+                return {"status": "error", "detail": "アカウント情報を確認できません"}
+            pending = session.scalar(
+                sa.select(DeletionRequest).where(
+                    DeletionRequest.user_id == user.id,
+                    DeletionRequest.status == "pending",
+                )
+            )
+            if pending is None:
+                pending = DeletionRequest(
+                    workspace_id=user.workspace_id,
+                    user_id=user.id,
+                    email=user.email,
+                    status="pending",
+                    requested_at=now,
+                    due_at=now + timedelta(days=retention_days),
+                )
+                session.add(pending)
+                session.flush()
+            return {
+                "status": "pending",
+                "request_id": str(pending.id),
+                "due_at": pending.due_at.isoformat(),
+            }
+    except SQLAlchemyError as e:
+        return _write_error(e)
+
+
+def process_due_deletion_requests(*, now: datetime) -> dict:
+    """期限を過ぎた削除依頼の workspace を不可逆に消去する管理用処理。
+
+    Web からは呼ばない。運営者が定期ジョブまたは管理端末のスクリプトから実行する。documents を起点に
+    版・監査・フィードバックを先に消し、最後に users/workspace を削除して、個人情報を残さない。
+    """
+    eng = _engine()
+    if eng is None:
+        return {"status": "skipped", "processed": 0}
+    try:
+        with Session(eng) as session, session.begin():
+            requests = list(
+                session.scalars(
+                    sa.select(DeletionRequest).where(
+                        DeletionRequest.status == "pending", DeletionRequest.due_at <= now
+                    )
+                )
+            )
+            for req in requests:
+                workspace = req.workspace_id
+                document_ids = sa.select(DocumentRecord.id).where(
+                    DocumentRecord.workspace_id == workspace
+                )
+                session.execute(sa.delete(Feedback).where(Feedback.workspace_id == workspace))
+                session.execute(
+                    sa.delete(AuditEvent).where(AuditEvent.document_id.in_(document_ids))
+                )
+                session.execute(
+                    sa.delete(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids))
+                )
+                session.execute(
+                    sa.delete(DocumentRecord).where(DocumentRecord.workspace_id == workspace)
+                )
+                session.execute(sa.delete(Child).where(Child.workspace_id == workspace))
+                session.execute(sa.delete(Class).where(Class.workspace_id == workspace))
+                # policy/notation は JSON ブック1行。workspaces 導入前のテーブルなので key で同じ境界を
+                # 表現している（routes と同じ命名）。SQLAlchemy ORM を重ねず生テーブルで消す。
+                inspector = sa.inspect(session.bind)
+                if inspector.has_table("policy_books"):
+                    session.execute(
+                        sa.text("DELETE FROM policy_books WHERE id = :id"),
+                        {"id": f"workspace:{workspace}"},
+                    )
+                if inspector.has_table("notation_books"):
+                    session.execute(
+                        sa.text("DELETE FROM notation_books WHERE id = :id"),
+                        {"id": f"workspace:{workspace}"},
+                    )
+                session.execute(
+                    sa.delete(DeletionRequest).where(DeletionRequest.workspace_id == workspace)
+                )
+                session.execute(sa.delete(User).where(User.workspace_id == workspace))
+                session.execute(sa.delete(Workspace).where(Workspace.id == workspace))
+            return {"status": "ok", "processed": len(requests)}
     except SQLAlchemyError as e:
         return _write_error(e)
 
@@ -714,6 +979,7 @@ def upsert_child(
     given_name: str | None = None,
     gender: str | None = None,
     birthdate: date | None = None,
+    workspace_id: str | uuid.UUID | None = None,
     now: datetime,
 ) -> dict:
     """児童マスタへ表示名で upsert する（無ければ作成・本名/性別/誕生日を補完）。冪等。
@@ -729,10 +995,16 @@ def upsert_child(
     if eng is None or not display_name:
         return {"status": "skipped"}
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
-            existing = session.scalar(sa.select(Child).where(Child.display_name == display_name))
+            _ensure_workspace(session, workspace, now)
+            existing = session.scalar(
+                sa.select(Child).where(
+                    Child.workspace_id == workspace, Child.display_name == display_name
+                )
+            )
             created = existing is None
-            child = _resolve_child(session, display_name, now)
+            child = _resolve_child(session, display_name, workspace, now)
             touched = False
             if birthdate is not None and child.birthdate is None:
                 child.birthdate = birthdate
@@ -753,7 +1025,9 @@ def upsert_child(
         return _write_error(e)
 
 
-def upsert_class(name: str, fiscal_year: str = "", *, now: datetime) -> dict:
+def upsert_class(
+    name: str, fiscal_year: str = "", *, workspace_id: str | uuid.UUID | None = None, now: datetime
+) -> dict:
     """クラス（組）を (name, fiscal_year) で upsert する（無ければ作成）。冪等。
 
     園の名簿管理でクラスを定義する口（web `/api/classes` の中継先）。同一性は組名＋年度＝進級で
@@ -766,13 +1040,20 @@ def upsert_class(name: str, fiscal_year: str = "", *, now: datetime) -> dict:
     if eng is None or not name:
         return {"status": "skipped"}
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
+            _ensure_workspace(session, workspace, now)
             existing = session.scalar(
-                sa.select(Class).where(Class.name == name, Class.fiscal_year == fiscal_year)
+                sa.select(Class).where(
+                    Class.workspace_id == workspace,
+                    Class.name == name,
+                    Class.fiscal_year == fiscal_year,
+                )
             )
             created = existing is None
             if existing is None:
                 cls = Class(
+                    workspace_id=workspace,
                     name=name,
                     fiscal_year=fiscal_year,
                     created_at=now,
@@ -787,7 +1068,13 @@ def upsert_class(name: str, fiscal_year: str = "", *, now: datetime) -> dict:
         return _write_error(e)
 
 
-def assign_child_to_class(child_display_name: str, class_id: str | None, *, now: datetime) -> dict:
+def assign_child_to_class(
+    child_display_name: str,
+    class_id: str | None,
+    *,
+    workspace_id: str | uuid.UUID | None = None,
+    now: datetime,
+) -> dict:
     """児童を指定クラスへ割り当てる（class_id=None/"" で未所属へ戻す）。
 
     表示名→children 行を解決し class_id を張り替える（園の名簿管理での割当/移動/解除）。児童が
@@ -803,13 +1090,18 @@ def assign_child_to_class(child_display_name: str, class_id: str | None, *, now:
     except ValueError:
         return {"status": "error", "detail": f"class_id が不正です: {class_id!r}"}
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
-            child = session.scalar(sa.select(Child).where(Child.display_name == name))
+            child = session.scalar(
+                sa.select(Child).where(Child.workspace_id == workspace, Child.display_name == name)
+            )
             if child is None:
                 return {"status": "error", "detail": "対象の児童がいません（先に登録してください）"}
             cls = None
             if target_uuid is not None:
-                cls = session.get(Class, target_uuid)
+                cls = session.scalar(
+                    sa.select(Class).where(Class.id == target_uuid, Class.workspace_id == workspace)
+                )
                 if cls is None:
                     return {"status": "error", "detail": "対象のクラスがありません"}
             child.class_id = target_uuid
@@ -820,15 +1112,18 @@ def assign_child_to_class(child_display_name: str, class_id: str | None, *, now:
         return _write_error(e)
 
 
-def get_child(display_name: str) -> dict | None:
+def get_child(display_name: str, *, workspace_id: str | uuid.UUID | None = None) -> dict | None:
     """表示名→児童マスタの本名/性別/誕生日（氏名欄の本名解決に使う＝帳票PDF）。未接続/不在は None。"""
     name = display_name.strip()
     eng = _engine()
     if eng is None or not name:
         return None
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            child = session.scalar(sa.select(Child).where(Child.display_name == name))
+            child = session.scalar(
+                sa.select(Child).where(Child.workspace_id == workspace, Child.display_name == name)
+            )
             return _child_view(child) if child else None
     except SQLAlchemyError:
         return None
@@ -839,6 +1134,7 @@ def approve_document(
     entry: dict,
     *,
     actor: str,
+    workspace_id: str | uuid.UUID | None = None,
     now: datetime,
     expected_version_seq: int | None = None,
 ) -> dict:
@@ -857,8 +1153,9 @@ def approve_document(
         return {"status": "skipped", "reason": "DATABASE_URL 未設定（アーカイブ降格）"}
     actor = _clamp_actor(actor)  # AuditEvent.actor は VARCHAR(100)
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
-            doc = _find_document(session, kind, entry)
+            doc = _find_document(session, kind, entry, workspace)
             if doc is None:
                 return {"status": "error", "detail": "対象の書類がアーカイブにありません（未保存）"}
             current_seq = 0
@@ -900,6 +1197,7 @@ def save_feedback(
     comment: str = "",
     *,
     actor: str = "",
+    workspace_id: str | uuid.UUID | None = None,
     now: datetime,
 ) -> dict:
     """書類への 👍👎（＋ひとこと）を、その文書と**現行版**に紐付けて保存する（§8「回す」の一次入力）。
@@ -929,8 +1227,13 @@ def save_feedback(
     except (ValueError, TypeError):
         return {"status": "error", "detail": f"document_id が不正です: {document_id!r}"}
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
-            doc = session.get(DocumentRecord, doc_uuid)
+            doc = session.scalar(
+                sa.select(DocumentRecord).where(
+                    DocumentRecord.id == doc_uuid, DocumentRecord.workspace_id == workspace
+                )
+            )
             if doc is None:
                 return {"status": "error", "detail": "対象の書類がアーカイブにありません"}
             version_seq = 0
@@ -938,6 +1241,7 @@ def save_feedback(
                 version = session.get(DocumentVersion, doc.current_version_id)
                 version_seq = version.seq if version else 0
             fb = Feedback(
+                workspace_id=workspace,
                 document_id=doc.id,
                 version_id=doc.current_version_id,
                 verdict=v,
@@ -980,14 +1284,21 @@ def list_documents(
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = 200,
+    workspace_id: str | uuid.UUID | None = None,
 ) -> list[dict]:
     """書類メタの一覧（新しい順）。降格・障害は空（読取は落とさない＝policy_store の read と同じ）。"""
     eng = _engine()
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            q = sa.select(DocumentRecord).order_by(DocumentRecord.updated_at.desc()).limit(limit)
+            q = (
+                sa.select(DocumentRecord)
+                .where(DocumentRecord.workspace_id == workspace)
+                .order_by(DocumentRecord.updated_at.desc())
+                .limit(limit)
+            )
             if doc_type:
                 q = q.where(DocumentRecord.doc_type == doc_type)
             if date_from:
@@ -995,13 +1306,16 @@ def list_documents(
             if date_to:
                 q = q.where(DocumentRecord.target_date <= date_to)
             docs = list(session.scalars(q))
-            names = {c.id: c.display_name for c in session.scalars(sa.select(Child))}
+            names = {
+                c.id: c.display_name
+                for c in session.scalars(sa.select(Child).where(Child.workspace_id == workspace))
+            }
             return [_doc_view(d, names.get(d.child_id)) for d in docs]
     except SQLAlchemyError:
         return []
 
 
-def get_document(document_id: str) -> dict | None:
+def get_document(document_id: str, *, workspace_id: str | uuid.UUID | None = None) -> dict | None:
     """単一書類の全文（メタ＋現行版の本文 entry・整形テキスト・確定/編集の区別・担当者）を返す。
 
     「作成済み書類を見る」タブ（アーカイブ閲覧＝参照データの点検）用。整形テキストは画面表示に、
@@ -1016,8 +1330,13 @@ def get_document(document_id: str) -> dict | None:
     except ValueError:
         return None
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            doc = session.get(DocumentRecord, doc_uuid)
+            doc = session.scalar(
+                sa.select(DocumentRecord).where(
+                    DocumentRecord.id == doc_uuid, DocumentRecord.workspace_id == workspace
+                )
+            )
             if doc is None:
                 return None
             child_display = None
@@ -1045,6 +1364,7 @@ def list_diary_entries(
     date_to: date,
     *,
     approved_only: bool = False,
+    workspace_id: str | uuid.UUID | None = None,
 ) -> list[dict]:
     """期間内の日誌の最新版 entry（JSON）を日付順に返す＝月案 L2／保育経過記録 L3 の seed 取得元。
 
@@ -1055,10 +1375,12 @@ def list_diary_entries(
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
             q = (
                 sa.select(DocumentRecord)
                 .where(
+                    DocumentRecord.workspace_id == workspace,
                     DocumentRecord.doc_type == "diary",
                     DocumentRecord.target_date >= date_from,
                     DocumentRecord.target_date <= date_to,
@@ -1092,7 +1414,9 @@ def _diary_evaluation_complete(entry: dict) -> bool:
     )
 
 
-def list_diary_meta(date_from: date, date_to: date) -> list[dict]:
+def list_diary_meta(
+    date_from: date, date_to: date, *, workspace_id: str | uuid.UUID | None = None
+) -> list[dict]:
     """期間内の日誌メタ（id・対象日・状態・評価充足）を日付順に返す＝クラス月案作成時の未記入検出用。
 
     本文（entry）は載せない軽量メタ（充足判定だけ済ませて返す＝ワイヤは軽い）。seed 取得
@@ -1103,10 +1427,12 @@ def list_diary_meta(date_from: date, date_to: date) -> list[dict]:
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
             q = (
                 sa.select(DocumentRecord)
                 .where(
+                    DocumentRecord.workspace_id == workspace,
                     DocumentRecord.doc_type == "diary",
                     DocumentRecord.target_date >= date_from,
                     DocumentRecord.target_date <= date_to,
@@ -1138,6 +1464,7 @@ def list_child_record_entries(
     child_display_name: str,
     *,
     exclude_period: str | None = None,
+    workspace_id: str | uuid.UUID | None = None,
 ) -> list[dict]:
     """指定児の保育経過記録の最新版 entry（JSON）を期間順に返す＝要録 L4 seed・保育経過記録の
     「前回まで」seed・年間マトリクス帳票の過去期埋め込みの取得元。
@@ -1152,13 +1479,17 @@ def list_child_record_entries(
     if eng is None or not name:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            child = session.scalar(sa.select(Child).where(Child.display_name == name))
+            child = session.scalar(
+                sa.select(Child).where(Child.workspace_id == workspace, Child.display_name == name)
+            )
             if child is None:
                 return []
             q = (
                 sa.select(DocumentRecord)
                 .where(
+                    DocumentRecord.workspace_id == workspace,
                     DocumentRecord.doc_type == "child_record",
                     DocumentRecord.child_id == child.id,
                 )
@@ -1178,7 +1509,12 @@ def list_child_record_entries(
         return []
 
 
-def list_class_child_record_entries(age_band: str, *, as_of: date | None = None) -> list[dict]:
+def list_class_child_record_entries(
+    age_band: str,
+    *,
+    as_of: date | None = None,
+    workspace_id: str | uuid.UUID | None = None,
+) -> list[dict]:
     """クラス（年齢帯）の児童の保育経過記録の最新版 entry を（児童・期間順に）返す＝クラス月案 seed。
 
     「クラスの児童」の同定は**名簿（Class＝組マスタ）優先**：対象年度の4月1日時点で、在籍児の
@@ -1193,6 +1529,7 @@ def list_class_child_record_entries(age_band: str, *, as_of: date | None = None)
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
             # 名簿優先：当該年度のクラスに在籍する児童を、生年月日から年齢帯へ分類する。
             roster_ids = [
@@ -1200,7 +1537,12 @@ def list_class_child_record_entries(age_band: str, *, as_of: date | None = None)
                 for child, cls in session.execute(
                     sa.select(Child, Class)
                     .join(Class, Child.class_id == Class.id)
-                    .where(Class.active.is_(True), Child.active.is_(True))
+                    .where(
+                        Class.workspace_id == workspace,
+                        Child.workspace_id == workspace,
+                        Class.active.is_(True),
+                        Child.active.is_(True),
+                    )
                 )
                 if (not cls.fiscal_year or cls.fiscal_year == str(reference_date.year))
                 and age_band_for_birthdate(child.birthdate, reference_date) == age_band
@@ -1208,7 +1550,10 @@ def list_class_child_record_entries(age_band: str, *, as_of: date | None = None)
             q = (
                 sa.select(DocumentRecord)
                 .outerjoin(Child, DocumentRecord.child_id == Child.id)
-                .where(DocumentRecord.doc_type == "child_record")
+                .where(
+                    DocumentRecord.workspace_id == workspace,
+                    DocumentRecord.doc_type == "child_record",
+                )
             )
             if roster_ids:
                 q = q.where(DocumentRecord.child_id.in_(roster_ids))
@@ -1229,7 +1574,9 @@ def list_class_child_record_entries(age_band: str, *, as_of: date | None = None)
         return []
 
 
-def list_class_monthly_entries(age_band: str, before_month: str | None = None) -> list[dict]:
+def list_class_monthly_entries(
+    age_band: str, before_month: str | None = None, *, workspace_id: str | uuid.UUID | None = None
+) -> list[dict]:
     """クラス（年齢帯）の作成済みクラス月案の最新版 entry を月順に返す＝クラス月案の「それまで」seed。
 
     **全期（年度跨ぎ含む）**を対象に、`before_month`（"YYYY-MM"）より前の月だけ返す（＝作成対象の月
@@ -1240,10 +1587,14 @@ def list_class_monthly_entries(age_band: str, before_month: str | None = None) -
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
             q = (
                 sa.select(DocumentRecord)
-                .where(DocumentRecord.doc_type == "class_monthly")
+                .where(
+                    DocumentRecord.workspace_id == workspace,
+                    DocumentRecord.doc_type == "class_monthly",
+                )
                 .order_by(DocumentRecord.target_month)
             )
             if before_month is not None and before_month.strip():
@@ -1288,7 +1639,9 @@ def _entry_has_uncovered_note(entry: dict, by_child: dict[str, date]) -> bool:
     return False
 
 
-def class_monthly_seed_inputs(age_band: str, month: str) -> dict:
+def class_monthly_seed_inputs(
+    age_band: str, month: str, *, workspace_id: str | uuid.UUID | None = None
+) -> dict:
     """クラス月案の seed 入力3点をアーカイブから決定的に合成する（依存モデル 2026-07）。
 
     ① class_record_entries＝クラス児童の作成済み保育経過記録すべて（全期・年度跨ぎ含む）
@@ -1307,17 +1660,19 @@ def class_monthly_seed_inputs(age_band: str, month: str) -> dict:
     )  # ゼロ詰め正準化（不正 month は ValueError＝呼び出し側が降格/400）
     _, prev_month_end = month_date_range(prev_month_of(month))
     diary_from = fiscal_year_start(month)  # 同一コホート（当該年度）に限る探索下限
-    records = list_class_child_record_entries(age_band, as_of=diary_from)
+    records = list_class_child_record_entries(age_band, as_of=diary_from, workspace_id=workspace_id)
     by_child = covered_until_by_child(records)
     diaries = [
         e
-        for e in list_diary_entries(diary_from, prev_month_end)
+        for e in list_diary_entries(diary_from, prev_month_end, workspace_id=workspace_id)
         if (e.get("age_band") or "0-2") == age_band and _entry_has_uncovered_note(e, by_child)
     ]
     return {
         "class_diary_entries": diaries,
         "class_record_entries": records,
-        "past_class_plans": list_class_monthly_entries(age_band, before_month=month),
+        "past_class_plans": list_class_monthly_entries(
+            age_band, before_month=month, workspace_id=workspace_id
+        ),
     }
 
 
@@ -1340,7 +1695,7 @@ def _child_view(c: Child, cls: Class | None = None) -> dict:
     }
 
 
-def list_children() -> list[dict]:
+def list_children(*, workspace_id: str | uuid.UUID | None = None) -> list[dict]:
     """児童マスタ（active のみ・表示名順）。UI の子ども選択肢（降格は空＝従来チップへ）。
 
     各児に所属クラス名を添える＝名簿UIの「未所属／各クラス」グループ化に使う（クラス表を1回引いて
@@ -1350,10 +1705,16 @@ def list_children() -> list[dict]:
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            classes = {c.id: c for c in session.scalars(sa.select(Class))}
+            classes = {
+                c.id: c
+                for c in session.scalars(sa.select(Class).where(Class.workspace_id == workspace))
+            }
             children = session.scalars(
-                sa.select(Child).where(Child.active.is_(True)).order_by(Child.display_name)
+                sa.select(Child)
+                .where(Child.workspace_id == workspace, Child.active.is_(True))
+                .order_by(Child.display_name)
             )
             return [_child_view(c, classes.get(c.class_id)) for c in children]
     except SQLAlchemyError:
@@ -1383,14 +1744,20 @@ def _class_view(c: Class, children: Iterable[Child] = ()) -> dict:
     return view
 
 
-def list_classes(fiscal_year: str | None = None, active_only: bool = True) -> list[dict]:
+def list_classes(
+    fiscal_year: str | None = None,
+    active_only: bool = True,
+    *,
+    workspace_id: str | uuid.UUID | None = None,
+) -> list[dict]:
     """クラス一覧（年度降順→組名）。在籍児数と導出年齢帯を添える。降格・障害は空。"""
     eng = _engine()
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            q = sa.select(Class)
+            q = sa.select(Class).where(Class.workspace_id == workspace)
             if active_only:
                 q = q.where(Class.active.is_(True))
             if fiscal_year:
@@ -1399,7 +1766,11 @@ def list_classes(fiscal_year: str | None = None, active_only: bool = True) -> li
             classes = list(session.scalars(q))
             by_class: dict[uuid.UUID, list[Child]] = {}
             for child in session.scalars(
-                sa.select(Child).where(Child.active.is_(True), Child.class_id.is_not(None))
+                sa.select(Child).where(
+                    Child.workspace_id == workspace,
+                    Child.active.is_(True),
+                    Child.class_id.is_not(None),
+                )
             ):
                 if child.class_id is not None:
                     by_class.setdefault(child.class_id, []).append(child)
@@ -1408,7 +1779,9 @@ def list_classes(fiscal_year: str | None = None, active_only: bool = True) -> li
         return []
 
 
-def list_children_in_class(class_id: str) -> list[dict]:
+def list_children_in_class(
+    class_id: str, *, workspace_id: str | uuid.UUID | None = None
+) -> list[dict]:
     """指定クラスの在籍児（active・表示名順）＝日誌フォームの roster／名簿UIのクラス内一覧の素。
 
     不正 id・未接続・障害・該当なしは空（読取は落とさない）。年齢帯決定のためクラス情報も child_view に添える。
@@ -1421,13 +1794,20 @@ def list_children_in_class(class_id: str) -> list[dict]:
     except (ValueError, AttributeError):
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            cls = session.get(Class, target)
+            cls = session.scalar(
+                sa.select(Class).where(Class.id == target, Class.workspace_id == workspace)
+            )
             if cls is None:
                 return []
             children = session.scalars(
                 sa.select(Child)
-                .where(Child.class_id == target, Child.active.is_(True))
+                .where(
+                    Child.workspace_id == workspace,
+                    Child.class_id == target,
+                    Child.active.is_(True),
+                )
                 .order_by(Child.display_name)
             )
             return [_child_view(c, cls) for c in children]
@@ -1459,7 +1839,12 @@ def list_audit_events(document_id: str | None = None, limit: int = 100) -> list[
         return []
 
 
-def list_feedback(document_id: str | None = None, limit: int = 100) -> list[dict]:
+def list_feedback(
+    document_id: str | None = None,
+    limit: int = 100,
+    *,
+    workspace_id: str | uuid.UUID | None = None,
+) -> list[dict]:
     """書類フィードバック（👍👎＋ひとこと）の一覧（新しい順）。
 
     document_id を与えるとその書類の分だけ返す（確定画面／「書類を見る」タブで既存フィードバックを
@@ -1470,8 +1855,14 @@ def list_feedback(document_id: str | None = None, limit: int = 100) -> list[dict
     if eng is None:
         return []
     try:
+        workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session:
-            q = sa.select(Feedback).order_by(Feedback.created_at.desc()).limit(limit)
+            q = (
+                sa.select(Feedback)
+                .where(Feedback.workspace_id == workspace)
+                .order_by(Feedback.created_at.desc())
+                .limit(limit)
+            )
             if document_id:
                 q = q.where(Feedback.document_id == uuid.UUID(document_id))
             rows = list(session.scalars(q))
