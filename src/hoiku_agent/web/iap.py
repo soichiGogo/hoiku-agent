@@ -15,23 +15,44 @@ IAP を有効化した Cloud Run には、IAP がリクエストへ `x-goog-iap-
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from fastapi import Request
 
 from ..config import settings
 
-# IAP の署名検証用公開鍵（ES256）。google-auth が取得・キャッシュする。
+# IAP の署名検証用公開鍵（ES256）。gstatic から取得する。
 _IAP_CERTS_URL = "https://www.gstatic.com/iap/verify/public_key"
 _HEADER = "x-goog-iap-jwt-assertion"
 
 
+@lru_cache(maxsize=1)
+def _request_transport():
+    """公開鍵取得用の transport を1つだけ作って使い回す。
+
+    `google.oauth2.id_token.verify_token` は呼び出しごとに certs_url を fetch し、キャッシュは
+    cachecontrol 対応 Session を渡したときだけ効く。素の Request() を毎回作ると全リクエスト（/api/config
+    は全ページロードで走る）で gstatic への同期 HTTPS 往復が発生する。モジュール寿命で1つ保持し、
+    可能なら cachecontrol でキャッシュする（依存が無ければ素の Request にフォールバック）。
+    """
+    from google.auth.transport import requests as ga_requests
+
+    try:
+        import cachecontrol  # type: ignore[import-not-found]
+        import requests as _requests
+
+        return ga_requests.Request(session=cachecontrol.CacheControl(_requests.Session()))
+    except Exception:  # noqa: BLE001  cachecontrol 不在等はキャッシュなしにフォールバック
+        return ga_requests.Request()
+
+
 def _verify_assertion(assertion: str, audience: str) -> dict:
     """IAP JWT を署名検証して claims を返す（失敗は例外）。テストではここを差し替える。"""
-    from google.auth.transport import requests as ga_requests
     from google.oauth2 import id_token
 
     return id_token.verify_token(
         assertion,
-        ga_requests.Request(),
+        _request_transport(),
         audience=audience,
         certs_url=_IAP_CERTS_URL,
     )

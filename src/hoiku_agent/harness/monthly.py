@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from ..agents import build_monthly_author_agent
 from ..schemas import DiaryEntry
 from .aggregate import collect_reflections, prev_month_digest
-from .record_store import covered_until
+from .record_store import covered_until, covered_until_by_child
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
@@ -69,9 +69,12 @@ class DigestPrepAgent(BaseAgent):
     （個別月案・保育経過記録は None＝従来どおり digest のみ・挙動不変・§10 決定B）。
 
     `uncovered_by_key` を与えると（クラス月案のみ・依存モデル 2026-07）、state[uncovered_by_key] の
-    保育経過記録群から「反映済み最終日」（`record_store.covered_until`）を求め、**それより後の日誌だけ**
-    を集計する＝経過記録にまだ巻き取られていない日誌に限定する（seed 側の合成
-    `class_monthly_seed_inputs` と同じ境界規則を prep でも保証＝ファイル/サンプル seed でも一貫）。
+    保育経過記録群から**児童別の「反映済み最終日」**（`record_store.covered_until_by_child`）を求め、
+    child_id 別集積（digest）では各児にとって未反映の note だけを残す（記録が遅れている児＝途中入園児等は
+    境界が無い＝全 note を残す）。クラス一律 max 境界だと記録が進んだ児に引きずられて遅れている児の日誌が
+    丸ごと落ちる欠陥の是正（安全側＝情報を落とさない）。一方、日次の評価・反省（`reflections_key`）は
+    child_id 別でなくクラス全体の所見なので、従来どおりクラス一律の `covered_until`（max）で日を絞る
+    （seed 側の合成 `class_monthly_seed_inputs` は両者を賄う superset を state に渡す）。
 
     **content を持たせない理由（§12）**：ADK eval の rubric judge は invocation の先頭イベント著者の
     developer instructions を引く（LLM 段のみ登録）。prep が content 付きイベントを先頭に置くと judge が
@@ -86,17 +89,21 @@ class DigestPrepAgent(BaseAgent):
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
         entries = _parse_prev_entries(ctx.session.state.get(self.input_key))
+        covered_by_child: dict | None = None
+        reflection_entries = entries
         if self.uncovered_by_key:
             records = ctx.session.state.get(self.uncovered_by_key)
-            boundary = covered_until(
-                str((r or {}).get("period") or "")
-                for r in (records if isinstance(records, list) else [])
+            records = records if isinstance(records, list) else []
+            # digest＝児童別境界（各児の未反映 note だけ残す）／評価・反省＝クラス一律 max 境界で日を絞る。
+            covered_by_child = covered_until_by_child(records)
+            class_boundary = covered_until(
+                str(r.get("period") or "") for r in records if isinstance(r, dict)
             )
-            if boundary is not None:
-                entries = [e for e in entries if e.date > boundary]
-        state_delta: dict = {self.output_key: prev_month_digest(entries)}
+            if class_boundary is not None:
+                reflection_entries = [e for e in entries if e.date > class_boundary]
+        state_delta: dict = {self.output_key: prev_month_digest(entries, covered_by_child)}
         if self.reflections_key:
-            state_delta[self.reflections_key] = collect_reflections(entries)
+            state_delta[self.reflections_key] = collect_reflections(reflection_entries)
         # content を付けない（state_delta のみ）＝eval の invocation_events に載らず judge を壊さない。
         yield Event(
             invocation_id=ctx.invocation_id,

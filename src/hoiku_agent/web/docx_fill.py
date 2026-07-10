@@ -221,6 +221,28 @@ def _fill_child_record(entry: dict) -> Document:
     if matrix is not None:
         _fill_domain_matrix(matrix, entry)
 
+    # ── 特記事項（総合所見・配慮特記・家庭連携・次期に向けて）──
+    # テンプレに受け皿の1セルがあるのにこれらを書かないと、帳票PDF には出るのに Word 版だけ黙って
+    # 総合所見等を落とす（保育士が気づかず失う）。ラベル付きで改行連結して1セルに束ねる
+    # （_fill_domain_matrix が「その他」行で内容を落とさないのと同じ方針）。
+    notes_tbl = _find_table(doc, header_contains=("特記事項",))
+    if notes_tbl is not None:
+        cell = _label_row_value_cell(notes_tbl, "特記事項")
+        if cell is not None:
+            sections = [
+                ("総合所見", entry.get("overall_note")),
+                ("配慮事項・特記", entry.get("care_notes")),
+                ("家庭との連携", entry.get("family_liaison")),
+                ("次期に向けて", entry.get("next_aims")),
+            ]
+            blob = "\n".join(
+                f"【{label}】{str(value).strip()}"
+                for label, value in sections
+                if str(value or "").strip()
+            )
+            if blob:
+                _set_cell(cell, blob)
+
     return doc
 
 

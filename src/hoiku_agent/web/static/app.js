@@ -25,7 +25,13 @@ const composeDisplayName = (given, gender) => `${(given || "").trim()}${HONORIFI
 const AGE_BANDS = ["0〜2歳児クラス", "3〜5歳児クラス"];
 const AGE_BAND_VALUE = { "0〜2歳児クラス": "0-2", "3〜5歳児クラス": "3-5" };
 const AGE_BAND_LABEL = { "0-2": "0〜2歳児クラス", "3-5": "3〜5歳児クラス" }; // ageBandOf(値)→チップ表示
-const todayISO = () => new Date().toISOString().slice(0, 10); // 日誌の記録日の既定（今日）
+// 日誌の記録日の既定（今日）。toISOString() は UTC 日付を返すため JST 早朝は前日になる
+// （記録日は dedupe キー兼 L2/L3/L4 seed の期間クエリ対象なので、日付ずれは版混線・集計月ずれを招く）。
+// ローカルタイムゾーンの暦日で組み立てる。
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // 作成できる書類の種別（統合タブの種別セグメント）。UI キー＝diary/monthly/record/youroku。
 // monthly セグメントは**クラス月案**（園の実様式・§18）＝flow kind は "class_monthly"（DocTypeRouter の
@@ -935,7 +941,10 @@ async function main() {
     onAddChild: async ({ family_name, given_name, gender, birthdate }) => {
       // アーカイブ未接続はセッション内だけ選択肢へ足す（本名/性別/生年月日は保存されない＝氏名欄は呼び名へ降格）。
       if (!cfg.records_connected) {
-        return { ok: true, displayName: composeDisplayName(given_name, gender) };
+        const dn = composeDisplayName(given_name, gender);
+        // 生年月日はセッション内でも控える（再読込までは ageBandOf が満年齢で年齢帯を判定できる）。
+        if (birthdate) BIRTHDATE_OF[dn] = birthdate;
+        return { ok: true, displayName: dn };
       }
       const res = await adk.addChild({ family_name, given_name, gender, birthdate });
       if (res && res.needsGate) {
@@ -945,6 +954,10 @@ async function main() {
       if (!res || res.status === "error") {
         return { ok: false, message: (res && res.detail) || "登録に失敗しました。" };
       }
+      // 登録直後に BIRTHDATE_OF を更新（次の /api/children 読込を待たず年齢帯を満年齢で判定＝
+      // 3–5 児がフォールバックの 0-2 に誤判定され author プロンプト・タグ語彙がずれるのを防ぐ）。
+      const dn = res.display_name || composeDisplayName(given_name, gender);
+      if (birthdate) BIRTHDATE_OF[dn] = birthdate;
       return { ok: true, displayName: res.display_name };
     },
   });
@@ -971,11 +984,10 @@ async function main() {
     sel.innerHTML = "";
     diaryClasses.forEach((c) => {
       const roster = diaryRosterOf[c.id] || [];
-      const o = el(
-        "option",
-        "",
-        `${c.name}（${AGE_BAND_LABEL[c.age_band] || c.age_band}・${roster.length}名）`,
-      );
+      // DB 由来のクラス名・年齢帯は textContent で入れる（innerHTML だと option へ HTML が
+      // 実 DOM 化し stored XSS になる＝classes.js の classCard と同じくエスケープ徹底）。
+      const o = el("option", "");
+      o.textContent = `${c.name}（${AGE_BAND_LABEL[c.age_band] || c.age_band}・${roster.length}名）`;
       o.value = c.id;
       sel.appendChild(o);
     });

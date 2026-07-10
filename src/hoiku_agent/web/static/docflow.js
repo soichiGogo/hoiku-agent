@@ -326,11 +326,25 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       // 質問と回答の対を経過（procBody）の聞いたタイミングへ差し込む（前面の一番下でなく時系列位置に残す）。
       addQA(pending.question, answer);
       phase("回答を受けて再開しています", "working");
-      await drive(
-        sessionId,
-        adk.functionResponseMessage(pending.id, "ask_caregiver", { answer, status: "answered" }),
-        pending.invId,
-      );
+      try {
+        await drive(
+          sessionId,
+          adk.functionResponseMessage(pending.id, "ask_caregiver", { answer, status: "answered" }),
+          pending.invId,
+        );
+      } catch (e) {
+        // 再開の失敗（パスコード切れ・セッション消失＝Cloud Run スケールダウン等）で回答を失わない：
+        // 質問カードを復元して再回答できるようにし、原因を正直に表示する（無反応で固まらせない）。
+        procStop();
+        askCard(sessionId, pending);
+        if (e instanceof adk.PasscodeError) {
+          window.__requireGate && window.__requireGate();
+          banner(area, "info", "パスコードを入力してから、もう一度回答してください。");
+        } else {
+          banner(area, "err", "再開に失敗しました（" + e.message + "）。もう一度回答してください。");
+        }
+        phase("回答の再送をお待ちしています", "waiting");
+      }
     };
     if (Array.isArray(pending.choices) && pending.choices.length) {
       for (const c of pending.choices) {

@@ -110,6 +110,35 @@ def _truncate(text: str) -> str:
     return text[:MAX_TEXT_CHARS] + "\n…（以下省略：文字数上限に達したため切り詰め）"
 
 
+def _join_bounded(lines) -> str:
+    """行イテレータを結合するが、累積が MAX_TEXT_CHARS を超えたら打ち切る（zip 爆弾の展開コストを有界化）。
+
+    _truncate は「全部蓄積してから末尾を切る」ため、高圧縮 docx/xlsx（展開後は膨大なセル/段落）だと
+    切り詰め前に list が非有界に膨れて OOM しうる。ここで蓄積側を止め、消費を打ち切ることで
+    openpyxl の read_only ストリームや python-docx のイテレーションもそれ以上読まない。
+    """
+    out: list[str] = []
+    total = 0
+    for line in lines:
+        out.append(line)
+        total += len(line) + 1
+        if total > MAX_TEXT_CHARS:
+            break
+    return _truncate("\n".join(out))
+
+
+def _iter_docx_lines(doc):
+    for para in doc.paragraphs:
+        t = para.text.strip()
+        if t:
+            yield t
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                yield " | ".join(cells)
+
+
 def _docx_to_text(data: bytes) -> str:
     """docx の段落＋表セルをテキスト化する（python-docx）。壊れは ValueError。"""
     try:
@@ -118,17 +147,16 @@ def _docx_to_text(data: bytes) -> str:
         doc = Document(io.BytesIO(data))
     except Exception as e:  # noqa: BLE001  壊れた docx/非 openxml は正直に上げる
         raise ValueError(f"docx を読み取れませんでした: {e}") from e
-    lines: list[str] = []
-    for para in doc.paragraphs:
-        t = para.text.strip()
-        if t:
-            lines.append(t)
-    for table in doc.tables:
-        for row in table.rows:
-            cells = [c.text.strip() for c in row.cells]
+    return _join_bounded(_iter_docx_lines(doc))
+
+
+def _iter_xlsx_lines(wb):
+    for ws in wb.worksheets:
+        yield f"# シート: {ws.title}"
+        for row in ws.iter_rows(values_only=True):
+            cells = ["" if v is None else str(v).strip() for v in row]
             if any(cells):
-                lines.append(" | ".join(cells))
-    return "\n".join(lines)
+                yield " | ".join(cells).rstrip(" |")
 
 
 def _xlsx_to_text(data: bytes) -> str:
@@ -139,14 +167,7 @@ def _xlsx_to_text(data: bytes) -> str:
         wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     except Exception as e:  # noqa: BLE001  壊れた xlsx/非 openxml は正直に上げる
         raise ValueError(f"xlsx を読み取れませんでした: {e}") from e
-    lines: list[str] = []
     try:
-        for ws in wb.worksheets:
-            lines.append(f"# シート: {ws.title}")
-            for row in ws.iter_rows(values_only=True):
-                cells = ["" if v is None else str(v).strip() for v in row]
-                if any(cells):
-                    lines.append(" | ".join(cells).rstrip(" |"))
+        return _join_bounded(_iter_xlsx_lines(wb))
     finally:
         wb.close()
-    return "\n".join(lines)

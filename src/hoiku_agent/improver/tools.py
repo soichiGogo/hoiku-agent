@@ -24,7 +24,11 @@ from ..harness import policy_store
 from ..schemas.policy import PolicyCard, PolicyScope
 from ..tools import ask_caregiver as ask_caregiver  # noqa: PLC0414  人に訊く口は一階と共用
 
-_SCOPES = {s.value: s for s in PolicyScope}  # "共通"/"保育日誌"/"月案"/"保育経過記録" → PolicyScope
+_SCOPES = {
+    s.value: s for s in PolicyScope
+}  # 値→PolicyScope（共通/保育日誌/月案/保育経過記録/保育要録）
+# エラー文言・docstring 用の scope 一覧は enum から導出する（scope 追加時に文言が古くならないように）。
+_SCOPE_LABEL = "/".join(s.value for s in PolicyScope)
 
 
 def _parse_scope(scope: str) -> PolicyScope | None:
@@ -80,7 +84,7 @@ def propose_policy_card(
     if sc is None:
         return {
             "status": "error",
-            "detail": f"scope は 共通/保育日誌/月案/保育経過記録 のいずれか: {scope!r}",
+            "detail": f"scope は {_SCOPE_LABEL} のいずれか: {scope!r}",
         }
     if not body.strip():
         return {"status": "error", "detail": "body（カード本文）が空です"}
@@ -88,14 +92,20 @@ def propose_policy_card(
     book = policy_store.load_book()
     dup = policy_store.find_exact_duplicate(book, sc, body)
     declared = []
+    unknown_ids = []  # 申告されたが存在しない競合カード id（黙って捨てず素通りさせない）
     for cid in (c.strip() for c in conflicts_with.split(",")):
-        card = policy_store.find_card(book, cid) if cid else None
+        if not cid:
+            continue
+        card = policy_store.find_card(book, cid)
         if card is not None:
             declared.append(card)
+        else:
+            unknown_ids.append(cid)
 
     op = "supersede" if declared else "add"
     supersede_id = declared[0].id if declared else ""
-    has_conflict = bool(declared) or dup is not None
+    # 不明 id は「競合を意図したが id が誤り」の可能性が高いので競合ありとして扱い、素通りを防ぐ。
+    has_conflict = bool(declared) or dup is not None or bool(unknown_ids)
 
     if dup is not None:
         guidance = (
@@ -107,6 +117,12 @@ def propose_policy_card(
             "意味的競合あり：ask_caregiver で既存カードと新案を比較相談し、保育士に "
             "『既存を残す／新しい案に置きかえる(supersede)／両方活かして統合』を選んでもらう。"
             "決定後に commit_policy_card で即反映。"
+        )
+    elif unknown_ids:
+        guidance = (
+            f"申告された競合カード id が見つかりません（{', '.join(unknown_ids)}）。read_policy_cards で "
+            "id を確認し直して再提案するか、競合が無いなら conflicts_with を空にしてください"
+            "（『競合なし』として素通りさせない）。"
         )
     else:
         guidance = (
@@ -129,6 +145,7 @@ def propose_policy_card(
         "declared_conflicts": [
             {"id": c.id, "body": c.body, "scope": c.scope.value} for c in declared
         ],
+        "unknown_conflict_ids": unknown_ids,
         "has_conflict": has_conflict,
         "guidance": guidance,
     }
@@ -156,7 +173,7 @@ def commit_policy_card(
     if sc is None:
         return {
             "status": "error",
-            "detail": f"scope は 共通/保育日誌/月案/保育経過記録 のいずれか: {scope!r}",
+            "detail": f"scope は {_SCOPE_LABEL} のいずれか: {scope!r}",
         }
     if not body.strip():
         return {"status": "error", "detail": "body（カード本文）が空です"}
@@ -173,8 +190,16 @@ def commit_policy_card(
         created_at=now,
         updated_at=now,
     )
+    if op == "supersede" and not supersede_id.strip():
+        # 置き換え対象 id が無いのに黙って add に落とすと、旧カードが active のまま矛盾する新カードが
+        # 併存し「置換した」ように見える＝意味的競合の解消というこのフローの目的が silent に破れる。
+        # 不正 scope・本文空と同じく fail-loud にする。
+        return {
+            "status": "error",
+            "detail": "supersede には置き換え対象カードの id（supersede_id）が必要です",
+        }
     try:
-        if op == "supersede" and supersede_id.strip():
+        if op == "supersede":
             new_book = policy_store.supersede_card(
                 book, old_id=supersede_id.strip(), new_card=card, decided_by=decided_by
             )

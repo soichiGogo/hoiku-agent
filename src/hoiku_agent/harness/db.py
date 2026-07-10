@@ -12,11 +12,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import DeclarativeBase
+
+_logger = logging.getLogger(__name__)
 
 # PostgreSQL では JSONB、テスト（sqlite）では素の JSON にフォールバックする。
 JSON_VARIANT = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
@@ -41,7 +44,17 @@ def engine() -> sa.Engine | None:
     if not url:
         return None
     if url not in _ENGINES:
-        _ENGINES[url] = sa.create_engine(url, pool_pre_ping=True)
+        try:
+            _ENGINES[url] = sa.create_engine(url, pool_pre_ping=True)
+        except Exception:  # noqa: BLE001
+            # 不正な URL（例: Heroku 流儀の postgres:// スキーム＝NoSuchModuleError）は接続前に
+            # create_engine で失敗する。ここで捕まえないと record_store の全読取が『降格＝空』契約を
+            # 破って 500 になり、server.py 起動時の schema_drift も uvicorn ごと落とす。未設定と同じ
+            # None 降格に揃え、誤設定はログで判別できるようにする（silent にしない）。
+            _logger.error(
+                "DATABASE_URL から engine を構築できません（降格＝未接続扱い）", exc_info=True
+            )
+            return None
     return _ENGINES[url]
 
 

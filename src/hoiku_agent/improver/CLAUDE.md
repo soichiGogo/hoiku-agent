@@ -7,7 +7,7 @@
 
 ## 守る制約（最も副作用が大きい層）
 
-- **root_agent とは別エントリ。** 一階の `agent.py`（root_agent＝document_pipeline）に組み込まない・
+- **root_agent とは別エントリ。** 一階の `agent.py`（root_agent＝DocTypeRouter＝月案/クラス月案/保育経過記録/保育要録の分岐）に組み込まない・
   `improver` を import しない。**自動起動しない**（手動トリガ：専用スクリプト or Web の SSE 駆動）。
   **確定/承認画面の 👍👎＋ひとことも同じ `/api/improve`（`feedback`＝valence を実値で載せる）を再利用する起動トリガ**
   ＝新しい生成経路を作らず別エントリの原則を保つ（保存＝record_store は harness の別フロー・§5）。

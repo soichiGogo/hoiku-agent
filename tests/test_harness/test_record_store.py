@@ -417,13 +417,48 @@ def test_class_monthly_seed_inputs_composes_uncovered_diaries_records_and_plans(
         now=_NOW,
     )
     seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
-    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-07-10"]  # 未反映だけ
+    # 6/20 は はるとくん には反映済みだが、記録の無い めいちゃん には未反映 → 児童別境界で保持する
+    # （クラス一律 max 境界だと 6/20 が丸ごと落ち めいちゃん の姿が消えていた欠陥の是正）。
+    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-06-20", "2026-07-10"]
     assert [r["period"] for r in seed["class_record_entries"]] == ["2026-04〜2026-06"]
     assert [p["month"] for p in seed["past_class_plans"]] == ["2026-07"]
 
 
+def test_class_monthly_seed_keeps_lagging_child_diary_before_others_boundary(db):
+    """記録が遅れている児（途中入園児等）の日誌が、記録の進んだ児の境界より前でも seed に残る（児童別境界）。"""
+    # A は 4〜6月の記録あり（境界 6/30）／B は記録なし（途中入園）。
+    rs.save_document(
+        "child_record",
+        {"period": "2026-04〜2026-06", "child_id": "Aちゃん", "age_band": "0-2"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    # 6/15 の日誌に B だけが登場（A の境界より前だが B には未反映）。
+    rs.save_document(
+        "diary",
+        _diary_entry("2026-06-15", children=("Bちゃん",)),
+        author_kind="caregiver",
+        now=_NOW,
+    )
+    seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
+    # クラス一律 max 境界（6/30）なら 6/15 は落ちるが、B は未反映なので保持されるのが正しい。
+    assert [e["date"] for e in seed["class_diary_entries"]] == ["2026-06-15"]
+
+
+def test_covered_until_by_child_is_per_child(db):
+    """covered_until_by_child は児童別の反映済み最終日を返し、記録の無い児は現れない（境界なし＝全未反映）。"""
+    records = [
+        {"child_id": "Aちゃん", "period": "2026-04〜2026-06"},
+        {"child_id": "Aちゃん", "period": "2026-07〜2026-09"},  # 最大を採る
+        {"child_id": "Cちゃん", "period": "2026-04〜2026-06"},
+        {"child_id": "Dちゃん", "period": "自由記述"},  # 解釈不能は寄与しない
+    ]
+    by_child = rs.covered_until_by_child(records)
+    assert by_child == {"Aちゃん": date(2026, 9, 30), "Cちゃん": date(2026, 6, 30)}
+
+
 def test_class_monthly_seed_inputs_without_records_includes_all_diaries(db):
-    """経過記録が1件も無ければ全日誌が未反映（前月末まで）＝境界 None の安全側。"""
+    """経過記録が1件も無ければ全日誌が未反映（年度初〜前月末）＝境界なしの安全側。"""
     rs.save_document("diary", _diary_entry("2026-06-20"), author_kind="caregiver", now=_NOW)
     rs.save_document("diary", _diary_entry("2026-07-10"), author_kind="caregiver", now=_NOW)
     rs.save_document("diary", _diary_entry("2026-08-01"), author_kind="caregiver", now=_NOW)
@@ -644,9 +679,80 @@ def test_month_date_range_and_prev_month():
 def test_period_date_range_parses_month_span_or_none():
     assert rs.period_date_range("2026-04〜2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
     assert rs.period_date_range("2026-04~2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
+    # 全角チルダ U+FF5E（Windows IME 既定で最頻出）・EN DASH も区切りとして受ける（取込・手入力の表記ゆれ）。
+    assert rs.period_date_range("2026-04～2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
+    assert rs.period_date_range("2026-04–2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
     # 期制は園差＝自由記述。月〜月以外は None（黙って誤解釈せず呼び出し側がサンプルへ降格）。
     assert rs.period_date_range("1学期") is None
     assert rs.period_date_range("2026-06〜2026-04") is None  # 逆転も None
+
+
+def test_normalize_month_zero_pads_or_raises():
+    assert rs.normalize_month("2026-7") == "2026-07"
+    assert rs.normalize_month("2026-07") == "2026-07"
+    assert rs.normalize_month(" 2026-12 ") == "2026-12"
+    for bad in ("2026", "2026/07", "2026-13", "令和8年7月", ""):
+        with pytest.raises(ValueError):
+            rs.normalize_month(bad)
+
+
+def test_month_is_normalized_so_dedupe_and_ordering_hold(db):
+    """非ゼロ詰め月（"2026-7"）でも target_month はゼロ詰めに揃い、同月の版が分裂しない・辞書順比較が効く。"""
+    a = {"month": "2026-7", "child_id": "はるとくん", "age_band": "0-2"}
+    b = {"month": "2026-07", "child_id": "はるとくん", "age_band": "0-2"}
+    assert rs.save_document("monthly", a, author_kind="ai", now=_NOW)["status"] == "saved"
+    assert rs.save_document("monthly", b, author_kind="caregiver", now=_NOW)["status"] == "saved"
+    # "2026-7" と "2026-07" は同一書類（版が積まれる）＝dedupe_key が分裂しない。
+    assert len([d for d in rs.list_documents() if d["doc_type"] == "monthly"]) == 1
+    # クラス月案の履歴 seed も "2026-7" の before_month で July 自身を除外できる（辞書順比較の前提を守る）。
+    rs.save_document(
+        "class_monthly", {"month": "2026-7", "age_band": "0-2", "monthly_goal": "g"}, now=_NOW
+    )
+    rs.save_document(
+        "class_monthly", {"month": "2026-06", "age_band": "0-2", "monthly_goal": "g"}, now=_NOW
+    )
+    plans = rs.list_class_monthly_entries("0-2", before_month="2026-7")
+    assert [p["month"] for p in plans] == ["2026-06"]  # July 自身は含まれない
+
+
+def test_approve_version_conflict_and_audit_detail(db):
+    """編集→承認の競合：expected_version_seq が現行版と食い違えば承認を拒否し、証跡に版番号を残す。"""
+    entry = _diary_entry("2026-07-03")
+    rs.save_document("diary", entry, author_kind="ai", now=_NOW)  # v1
+    rs.save_document("diary", entry, author_kind="caregiver", now=_NOW)  # v2（別編集が積まれた）
+    # 保育士が v1 を見たまま承認 → 現行は v2 なので拒否（取り違え防止）。
+    stale = rs.approve_document("diary", entry, actor="A", now=_NOW, expected_version_seq=1)
+    assert stale["status"] == "error" and stale["code"] == "version_conflict"
+    assert rs.list_documents()[0]["status"] != "approved"
+    # 現行版（v2）を指定すれば承認でき、証跡に承認した版番号が残る（save と対称）。
+    ok = rs.approve_document("diary", entry, actor="園長", now=_NOW, expected_version_seq=2)
+    assert ok["status"] == "approved" and ok["version_seq"] == 2
+    approve_events = [e for e in rs.list_audit_events() if e["action"] == "approve"]
+    assert approve_events and approve_events[-1]["detail"].get("version_seq") == 2
+
+
+def test_write_error_generic_for_db_failure_but_detail_for_input(db):
+    """入力 ValueError は安全な文言をそのまま返し、DB 障害（SQLAlchemyError）は一般化して SQL を露出しない。"""
+    import sqlalchemy as _sa
+
+    # 入力エラー（date 欠落）＝原因が分かる文言を保育士へ返す。
+    r = rs.save_document("diary", {"age_band": "0-2"}, author_kind="ai", now=_NOW)
+    assert r["status"] == "error" and "date" in r["detail"]
+    # DB 障害＝raw str(exc)（SQL 文・投入値）を返さず一般化＋コード。
+    err = rs._write_error(_sa.exc.SQLAlchemyError("[SQL: INSERT …] [parameters: ('秘密',)]"))
+    assert err["code"] == "db_write_failed"
+    assert "SQL" not in err["detail"] and "秘密" not in err["detail"]
+
+
+def test_actor_is_clamped_to_column_width(db):
+    """正当に長い担当者名（IAP 表示名＋email 等）でも VARCHAR(100) を超えず保存できる（PG で落ちない）。"""
+    long_actor = "あ" * 250
+    entry = _diary_entry("2026-07-09")
+    rs.save_document("diary", entry, author_kind="caregiver", actor=long_actor, now=_NOW)
+    rs.approve_document("diary", entry, actor=long_actor, now=_NOW)
+    stored = {e["actor"] for e in rs.list_audit_events()}
+    assert stored == {long_actor[:100]}
+    assert all(len(a) <= 100 for a in stored)
 
 
 # ──────────────────────────── クラス（組）マスタ・所属（名簿管理・日誌 roster の素） ────────────────────────────

@@ -52,6 +52,10 @@ function blankEntry({ className, ageBand, date, roster }) {
 }
 
 export function makeDiaryForm({ area, status }) {
+  // 承認済み＝公式記録にロック済みか。校正AIの「提案を反映」は render() でフォームを作り直すため、
+  // 承認後に押されると全欄が編集可能へ戻ってしまう。承認時にこのフラグを立て、再マウント時に再ロックする。
+  let approved = false;
+
   // 必須項目の充足チェックの見た目（保存＝再チェックのたびに更新）。
   function setValidation(node, problems, checked) {
     if (!checked) {
@@ -112,6 +116,7 @@ export function makeDiaryForm({ area, status }) {
 
   async function open(seed) {
     area.innerHTML = "";
+    approved = false; // 新しい日誌を開くたびにロック状態をリセットする
     if (status) status.setSubject(seed.className || "クラス");
 
     // タグ語彙・様式テンプレ（本文セクションの順序/ラベル）を取得（失敗しても編集自体は可能）。
@@ -141,6 +146,19 @@ export function makeDiaryForm({ area, status }) {
     const vNode = el("div", "validation");
     setValidation(vNode, [], false);
     editor.panel._body.appendChild(vNode);
+
+    // 承認済み＝公式記録へロック（入力欄＋校正AIボタン＋提案一覧を無効化）。校正の「提案を反映」が
+    // フォームを作り直しても、承認中はこの関数で再ロックし編集可能へ戻さない（docflow のロックと同じ一貫性）。
+    function lockForm() {
+      editor.panel
+        .querySelectorAll("input, textarea, select, .de-tag, .de-add, .de-rm")
+        .forEach((n) => {
+          n.setAttribute("disabled", "");
+          n.classList.add("locked");
+        });
+      proofBtn.disabled = true;
+      proofList.innerHTML = "";
+    }
 
     // 校正AI（日本語チェック・言い換え提案）＝提案のみ・採否は保育士（自動書換はしない・自分の言葉を尊重）。
     const proof = el("div", "proofread");
@@ -289,12 +307,8 @@ export function makeDiaryForm({ area, status }) {
           await adk.approveRecord(KIND, editor.collect(), actorName()),
           "承認記録",
         );
-        editor.panel
-          .querySelectorAll("input, textarea, select, .de-tag, .de-add, .de-rm")
-          .forEach((n) => {
-            n.setAttribute("disabled", "");
-            n.classList.add("locked");
-          });
+        approved = true;
+        lockForm(); // 入力欄＋校正AIボタン＋提案一覧を無効化（校正経由の巻き戻しを防ぐ）
         bar.innerHTML = "";
         bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
       } catch (e) {
@@ -307,6 +321,7 @@ export function makeDiaryForm({ area, status }) {
     editor.panel._body.appendChild(bar);
 
     area.appendChild(editor.panel);
+    if (approved) lockForm(); // 承認済みのまま再マウントされたら（校正反映等）即ロックへ戻す
     if (rosterEmpty) {
       banner(
         area,

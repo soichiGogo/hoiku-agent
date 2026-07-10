@@ -29,6 +29,18 @@ from ..schemas import (
 )
 
 
+def _month_format_problem(month: str) -> str | None:
+    """対象月が YYYY-M(M)（年4桁・月1〜12）として解釈できなければ違反メッセージを返す（空なら別途「未記入」）。
+
+    schema 側の `MonthStr` がゼロ詰めに正規化するので通常はゼロ詰め済みだが、明らかに壊れた月
+    （"2026/07"・"令和8年7月"・"2026-13" 等）を型不成立として早期に可視化する（辞書順比較・集積の前提＝§10）。
+    """
+    y_s, sep, m_s = month.strip().partition("-")
+    if not (sep and y_s.isdigit() and m_s.isdigit() and 1 <= int(m_s) <= 12):
+        return f"対象月（month）は YYYY-MM 形式（例 2026-07）が必要（辞書順比較・集積の前提＝§10）: {month!r}"
+    return None
+
+
 def _required_tag_type(age_band: AgeBand) -> tuple[type, str]:
     """年齢分岐の必須タグ体系を返す（0–2＝3つの視点 / 3–5＝5領域・§10）。
 
@@ -109,6 +121,10 @@ def validate_monthly_fields(plan: MonthlyPlan) -> list[str]:
     # ── 必須欄の充足（空文字も "未記入" 扱い） ── §10 月案：フィールド×依存元
     if not plan.month.strip():
         problems.append("対象月（month）が未記入")
+    elif (month_problem := _month_format_problem(plan.month)) is not None:
+        problems.append(month_problem)
+    if not plan.child_id.strip():
+        problems.append("対象児（child_id）が未記入（個別月案は児童別＝§10）")
     if not plan.prev_child_state.strip():
         problems.append("前月の子どもの姿が未記入（L2 還流の入力＝§10）")
     if not plan.nurturing_life.strip():
@@ -158,6 +174,8 @@ def validate_class_monthly_fields(plan: ClassMonthlyPlan) -> list[str]:
     # ── 必須欄の充足（空文字も "未記入" 扱い） ──
     if not plan.month.strip():
         problems.append("対象月（month）が未記入")
+    elif (month_problem := _month_format_problem(plan.month)) is not None:
+        problems.append(month_problem)
     if not plan.monthly_goal.strip():
         problems.append("今月の保育目標が未記入（クラス全体のねらい＝§18）")
     if not plan.prev_month_state.strip():
@@ -254,6 +272,13 @@ def validate_nursery_record_fields(record: NurseryRecord) -> list[str]:
     if not record.development_notes:
         problems.append(
             "保育の展開と子どもの育ち（development_notes）が空：年齢分岐タグ付きで1つ以上必要（§19）"
+        )
+
+    # 要録は最終年度（年長＝5歳児クラス）専用で5領域固定（§19）。0–2 の要録は制度上ありえないので、
+    # 3つの視点タグで型成立してしまわないよう age_band を 3–5 に固定する（年齢分岐を畳む）。
+    if record.age_band is not AgeBand.三から五歳:
+        problems.append(
+            "保育要録は年長（3–5歳児クラス＝5領域）専用です（age_band が 0-2 は不可＝§19）"
         )
 
     # ── 年齢分岐：保育の展開に必須タグ体系を課す（年長＝5領域） ──

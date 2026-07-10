@@ -26,10 +26,13 @@
   （harness の `finalize_entry` を中継）で再 validate/整形し、結果を `PATCH …/sessions` で `final_entry`/`final_document`/
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
   ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
-- **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/run_live`・`/api/improve`・
+- **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/api/improve`・
   **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）と
-  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**を
+  **書類アーカイブ・名簿の書込（POST `/api/records*`／`/api/children`／`/api/classes`＝DB へのゴミデータ・偽承認証跡の防止）**、
+  **ADK ビルダー書込（POST `/builder/*`＝エージェント定義タンパリング防止）**を
   `config.demo_passcode`（env `DEMO_PASSCODE`）でゲートする。読み取り・静的配信は素通し。
+  **`/run_live`（WebSocket）は撤去**する（`register_web_ui`）＝パスコードゲートは HTTP ミドルウェア
+  で WebSocket スコープを素通しするため列挙してもゲートできず、UI も使わない（`/run_sse` のみ）。
 - **アップロード取込（「書類を見る」タブ）は中継のみ**：既存ファイル（PDF/Word/Excel）を既存スキーマへ
   取り込む。フォルダ（種別）から kind、（personal 種別なら）子どもフォルダから child が場所で決まる（別建ての
   種別セレクタを持たない＝ファイルシステム的操作）。フロントは `/api/parse-upload`（multipart）で解析結果 entry を
@@ -57,7 +60,7 @@
   仮名のまま）。アーカイブ未接続はセッション内だけ選択肢に足す（本名/性別は保存されず氏名欄は呼び名へ降格）。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
   **フロントは**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ビルド工程を足さない（ES モジュール直配信）。
-  （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/保育経過記録）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
+  （帳票PDF のサーバ生成＝`chohyo_pdf.py`（日誌/月案/クラス月案/保育経過記録/保育要録）はバックエンド依存で別軸：reportlab＝純 pip・システムライブラリ不要、
   日本語フォントは `web/fonts/ipaexg.ttf` を**同梱**して埋め込む＝実行時に外部取得しない＝ローカル完結は保つ。）
 - **帳票PDF（現場でそのまま綴じる最終形＝§18）は presentation**：確定 entry を園の様式に近い罫線帳票へ描くだけ
   （型の保証・validation は harness＝§5・ここは描画のみ）。日誌/月案の欄順は `write_draft`/`write_monthly_draft`（標準様式）と
@@ -187,7 +190,7 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   **既存 `docedit.js` の編集フォームで確認・修正**→`finalizeEdit`→`saveRecord(author_kind="imported")`→`loadTree`。取込先が未接続（store≠ok）のときは取り込めない〔正直に降格〕）／`ui.js`・`app.js`（**クラス月案作成時に前月・当該クラスの日誌で評価・反省が未記入のものを `getDiaryMeta`〔`/api/records/diary-meta`〕で検出し「N/D を記入」チップを出す＝`checkPrevMonthEvaluations`。チップは `switchTab("records")`＋`records.openDoc(id,{edit,focus:"evaluation"})` で当該日誌の評価欄へ飛ぶ＝生成はブロックしない。決定B〔評価をクラス月案の集計に反映〕の記入を促す動線**）・`styles.css`・`index.html`。
 - `fonts/` … 帳票PDF に埋め込む日本語フォント（`ipaexg.ttf`＝IPAex ゴシック）＋ライセンス（IPA Font License v1.0）。
 - `templates/` … `docx_fill` が流し込む**園の実 Word 様式（空欄フォーム・PII なし）**：`child_record.docx`（保育経過記録）・
-  `monthly_0_2.docx`／`monthly_3_5.docx`（月間指導計画）。`COPY src ./src` で同梱＝実行時に外部取得しない（ローカル完結）。
+  `monthly_0_2.docx`／`monthly_3_5.docx`（月間指導計画）・`nursery_record.docx`（保育要録）。`COPY src ./src` で同梱＝実行時に外部取得しない（ローカル完結）。
 
 ## 入口
 

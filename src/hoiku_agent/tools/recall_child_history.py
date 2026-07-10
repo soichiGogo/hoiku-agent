@@ -55,6 +55,13 @@ async def recall_child_history(
     except ValueError:
         # Runner に MemoryService 未設定（ローカル/未接続）。降格。
         return [{"text": f"[memory未接続] child_id={child_id}（Memory Bank 未設定）"}]
+    except Exception as e:  # noqa: BLE001
+        # Memory Bank 接続時の一時的な API 障害（ServiceUnavailable/DeadlineExceeded/権限 等）。
+        # ツール例外は ADK が re-raise し authoring ループ全体を中断させるため、search_guideline と
+        # 同じ降格姿勢に揃える（「降格すべき場面で例外で落とさない」＝§5）。未設定とは文言を分ける。
+        return [
+            {"text": f"[memory取得失敗] child_id={child_id}（一時的なエラー: {type(e).__name__}）"}
+        ]
     results = [
         {"text": text}
         for entry in (getattr(response, "memories", None) or [])

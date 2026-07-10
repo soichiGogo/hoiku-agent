@@ -144,9 +144,10 @@ def build_review_instruction(base: str) -> Callable[[ReadonlyContext], str]:
     """
 
     def provider(ctx: ReadonlyContext) -> str:
-        scope, digests, reflections = _DOC_TYPE_ROUTING.get(
-            ctx.state.get("doc_type"), _DEFAULT_ROUTING
-        )
+        # doc_type は router と同じ正規化（strip）で引く＝パイプラインの分岐先と reviewer の scope/集積が
+        # 一致する（空白付き doc_type でルータは正しく振り分けたのに reviewer だけ既定へ落ちるのを防ぐ）。
+        doc_type = (ctx.state.get("doc_type") or "").strip()
+        scope, digests, reflections = _DOC_TYPE_ROUTING.get(doc_type, _DEFAULT_ROUTING)
         return _compose(base, scope, ctx.state, digests, reflections)
 
     return provider

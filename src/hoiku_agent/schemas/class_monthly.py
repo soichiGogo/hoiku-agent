@@ -25,6 +25,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
+from .document import MonthStr  # 対象月のゼロ詰め正規化（月案と共用＝二重定義しない）
 from .enums import AgeBand
 
 # author が null / 省略で送っても parse を落とさず空文字へ寄せる自由記述 str（document.py と同型）。
@@ -83,7 +84,7 @@ class ClassMonthlyPlan(BaseModel):
     決定的にそろえる（AI が行を欠く/並べ替えても帳票・フォームが常に7行で描ける＝型の保証）。
     """
 
-    month: str = Field(description="対象月（YYYY-MM）")
+    month: MonthStr = Field(description="対象月（YYYY-MM・ゼロ詰め正規化）")
     age_band: AgeBand
     class_name: _BlankableStr = Field(
         default="", description="クラス名（例: ひよこ組・任意・手書き相当）"

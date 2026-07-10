@@ -140,6 +140,27 @@ def test_fill_child_record_fills_header_and_period():
     assert "2026-04〜2026-06" in period_tbl.rows[0].cells[-1].text
 
 
+def test_fill_child_record_writes_special_notes():
+    """総合所見・配慮特記・家庭連携・次期に向けてが「特記事項」表に流し込まれる（帳票PDFと内容非対称にしない）。"""
+    entry = ChildRecord(
+        period="2026-04〜2026-06",
+        age_band=AgeBand.三から五歳,
+        child_id="ゆいちゃん",
+        development_notes=[DevelopmentNote(description="a", tags=[FiveDomains.健康])],
+        overall_note="遊びの世界を広げている",
+        care_notes="午睡時の見守りに配慮",
+        family_liaison="連絡帳で成長を共有",
+        next_aims="友だちとの協同遊びを深める",
+    ).model_dump(mode="json")
+    tables = _tables(fill_docx("child_record", entry))
+    notes = next(t for t in tables if t.rows[0].cells[0].text.strip() == "特記事項")
+    text = notes.rows[0].cells[-1].text
+    assert "遊びの世界を広げている" in text
+    assert "午睡時の見守りに配慮" in text
+    assert "連絡帳で成長を共有" in text
+    assert "友だちとの協同遊びを深める" in text
+
+
 def test_supported_kinds_has_monthly():
     assert "monthly" in supported_kinds()
 

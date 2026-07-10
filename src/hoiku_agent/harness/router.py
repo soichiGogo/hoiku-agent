@@ -1,12 +1,14 @@
 """harness：doc_type 分岐ルータ（決定的）。
 
-設計コンテキスト §5「harness＝どの欄を・何の書類か」/ §10「doc_type／年齢分岐」。
-書類種別（保育日誌 / 月案 / 保育経過記録 / 保育要録）で実行するパイプラインを決定的に振り分ける。分岐は
-LLM ではなく harness の制御（state["doc_type"] を読むだけ・"何を書くか" の判断は配下の LlmAgent）。
+設計コンテキスト §5「harness＝どの欄を・何の書類か」/ §10「doc_type／年齢分岐」/ §18/§19。
+AI 生成書類の種別（個別月案 / クラス月案 / 保育経過記録 / 保育要録）で実行するパイプラインを決定的に
+振り分ける。分岐は LLM ではなく harness の制御（state["doc_type"] を読むだけ・"何を書くか" の判断は
+配下の LlmAgent）。**保育日誌は AI 生成を退役（手入力＝web で AI を通さない・ヒアリング 2026-07）**した
+ためルータに載らない。
 
 root_agent（agent.py）の実体。`adk run` / `adk web` は doc_type を state に入れないため**既定は
-保育日誌**（v0 日誌先行＝§3。既存デモの挙動は不変）。月案を回すときは呼び出し側が
-state["doc_type"]="月案"（と前月日誌 state["prev_month_entries"]）を seed する（scripts/run_monthly.py）。
+クラス月案**（§18＝園の実様式・product は doc_type を明示するので既定に来るのは dev 用途だけ）。各書類を
+回すときは呼び出し側が state["doc_type"] と seed を渡す（scripts/run_class_monthly.py・run_monthly.py 等）。
 """
 
 from __future__ import annotations

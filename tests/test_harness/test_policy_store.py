@@ -96,6 +96,25 @@ def test_supersede_missing_or_inactive_raises():
         )
 
 
+def test_supersede_into_existing_active_duplicate_raises():
+    """置換後に同 scope の別 active カードと本文完全一致になる場合は弾く（add_card と対称の重複ガード）。"""
+    book = PolicyBook()
+    book = ps.add_card(book, _card("card-0001", PolicyScope.共通, "個人名を書かない"))
+    book = ps.add_card(book, _card("card-0002", PolicyScope.共通, "仮名で表す"))
+    # card-0002 を card-0001 と同一本文へ置換 → 二枚の active が同文になるので拒否。
+    dup = _card("card-0003", PolicyScope.共通, "個人名を書かない", when=T2)
+    with pytest.raises(ValueError, match="同じ内容"):
+        ps.supersede_card(book, old_id="card-0002", new_card=dup)
+
+
+def test_supersede_with_same_body_as_old_is_allowed():
+    """置換対象自身と同一本文（body 据え置きの更新）は許す（old は superseded になるため二重にならない）。"""
+    book = ps.add_card(PolicyBook(), _card("card-0001", PolicyScope.共通, "個人名を書かない"))
+    same = _card("card-0002", PolicyScope.共通, "個人名を書かない", when=T2)
+    out = ps.supersede_card(book, old_id="card-0001", new_card=same)
+    assert [c.id for c in ps.active_cards(out, PolicyScope.共通)] == ["card-0002"]
+
+
 def test_remove_card_soft_deletes():
     book = _seeded()
     out = ps.remove_card(book, card_id="card-0002", summary="取り下げ", when=T2)
