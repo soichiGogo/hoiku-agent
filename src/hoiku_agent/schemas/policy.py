@@ -106,7 +106,7 @@ REFERENCE_SOURCE_META: dict[ReferenceSource, tuple[str, str]] = {
     ),
     ReferenceSource.class_roster: (
         "クラスの在籍児名簿",
-        "クラス・園児マスタの在籍児一覧です（0–2 の個人目標の対象）。",
+        "クラス・園児マスタに登録された現在の在籍児です。",
     ),
 }
 

@@ -13,6 +13,7 @@ import pytest
 
 from hoiku_agent.harness import policy_store as ps
 from hoiku_agent.schemas.policy import (
+    REFERENCE_SOURCE_META,
     PolicyBook,
     PolicyCard,
     PolicyCardKind,
@@ -362,6 +363,11 @@ def test_db_store_status(policy_db, monkeypatch):
 
 
 # ──────────────────────────── DB book へのシード参照カード補完（語彙拡張の追随） ────────────────────────────
+
+
+def test_every_reference_source_has_display_metadata():
+    """参照語彙を追加しても改善エージェントの表示・prompt生成を壊さない。"""
+    assert set(REFERENCE_SOURCE_META) == set(ReferenceSource)
 
 
 def _reference_seed_book() -> PolicyBook:
