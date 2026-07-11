@@ -4,9 +4,7 @@
 test_monthly_e2e と対称に、クラス月案パス（園の実様式・区分×領域グリッド＋0–2 の個人目標）を実 ADK
 ランタイムで end-to-end に回す（creds 不要・無料・決定的）。担保する結合経路:
   1. ルータ分岐   doc_type=="クラス月案" → class_monthly_pipeline
-  2. 集積還流     ①クラス児童の保育経過記録（class_record_prep→class_records_digest）
-                 ②それまでのクラス月案（class_plan_prep→class_plan_digest）
-                 ③経過記録に未反映の期間の日誌（class_diary_prep→class_diary_digest・境界＝①の期間末）
+  2. 集積還流     author が3系統の候補を fetch_reference で選択取得（未反映境界は harness）
                  ＋評価・反省（class_diary_reflections・決定B）
   3. 確定         class_monthly finalize が ClassMonthlyPlan を復元→検査→整形（final_document）
   4. 年齢分岐     0–2 は個人目標必須／3–5 は不要（園フォームに 0–2 だけ個人目標小表がある）
@@ -205,21 +203,9 @@ def test_class_monthly_path_aggregates_inputs_and_finalizes():
     final_state, _ = _run(author, reviewer, state)
 
     # ②-1 クラス児童の保育経過記録が child_id 別に集計され state に乗る
-    records_digest = final_state.get("class_records_digest") or {}
-    assert set(records_digest) == {"はるとくん", "ゆいちゃん"}
-    assert records_digest["はるとくん"]["periods"] == ["2026-03〜2026-05"]
-    # ②-2 それまでのクラス月案が月順の履歴に集計される
-    plan_digest = final_state.get("class_plan_digest") or []
-    assert [r["month"] for r in plan_digest] == ["2026-05", "2026-06"]
-    assert plan_digest[0]["teacher_evaluation"] == "水遊びで発散できた"
-    # ②-3 未反映期間の日誌だけが集計される（経過記録の境界＝5/31 より後＝6月分のみ）
-    digest = final_state.get("class_diary_digest") or {}
-    assert set(digest) == {"はるとくん", "ゆいちゃん"}
-    assert digest["はるとくん"]["note_count"] == 2  # 6/12・6/26（5/20 は反映済みで除外）
-    # ②-3' 振り返り（評価・反省）も未反映分だけ日付順に別チャネルで state に乗る（決定B）
-    reflections = final_state.get("class_diary_reflections") or []
-    assert [r["date"] for r in reflections] == ["2026-06-12", "2026-06-13", "2026-06-26"]
-    assert reflections[0]["self_review"] == "素材を十分用意できた"
+    assert "class_records_digest" not in final_state
+    assert "class_plan_digest" not in final_state
+    assert "class_diary_digest" not in final_state
     # ③ 確定：ClassMonthlyPlan が復元・検査通過・園様式で整形される
     assert final_state.get("finalize_parse_error") is None
     assert final_state.get("validation") == []

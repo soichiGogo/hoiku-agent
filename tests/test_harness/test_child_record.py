@@ -2,7 +2,7 @@
 
 設計コンテキスト §19（保育経過記録（期ごと）・L3 還流）/ §16（決定的ロジックは pytest 必須）。
 LLM 非依存・高速。月案（test_monthly.py）と対称の検査を保育経過記録でも担保する。
-DigestPrepAgent の入出力キー一般化（月案既定キーの後方互換）もここで検証する。
+参照候補の取得・集計は tests/test_harness/test_reference.py で検証する。
 """
 
 from __future__ import annotations
@@ -14,7 +14,6 @@ from hoiku_agent.harness import (
     validate_child_record_fields,
     write_child_record_draft,
 )
-from hoiku_agent.harness.monthly import DigestPrepAgent
 from hoiku_agent.schemas import (
     AgeBand,
     ChildRecord,
@@ -150,24 +149,3 @@ def test_finalize_child_record_dict_roundtrip():
     payload = json.loads(_record().model_dump_json())
     draft = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
     assert finalize_child_record_document(draft).ok
-
-
-# ──────────────────────── DigestPrepAgent（キー一般化） ────────────────────────
-
-
-def test_digest_prep_agent_defaults_keep_monthly_keys():
-    """既定キーは月案（prev_month_entries → prev_month_digest）＝後方互換。"""
-    agent = DigestPrepAgent(name="monthly_prep")
-    assert agent.input_key == "prev_month_entries"
-    assert agent.output_key == "prev_month_digest"
-
-
-def test_digest_prep_agent_accepts_period_keys():
-    """保育経過記録（L3 還流）は period_entries → period_digest を配線できる。"""
-    agent = DigestPrepAgent(
-        name="period_prep",
-        input_key="period_entries",
-        output_key="period_digest",
-    )
-    assert agent.input_key == "period_entries"
-    assert agent.output_key == "period_digest"
