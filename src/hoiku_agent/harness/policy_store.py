@@ -34,6 +34,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import db
 from ..schemas.policy import (
+    REFERENCE_SOURCE_META,
     PolicyBook,
     PolicyCard,
     PolicyCardKind,
@@ -531,11 +532,17 @@ _SCOPE_DOC_LABEL: dict[PolicyScope, str] = {
 
 def card_view(card: PolicyCard) -> dict:
     """カード1枚をフロント/API 用の JSON-serializable dict に変換する（決定的）。"""
+    references = []
+    for rule in card.references:
+        label, description = REFERENCE_SOURCE_META[rule.source]
+        references.append(
+            {**rule.model_dump(mode="json"), "label": label, "description": description}
+        )
     return {
         "id": card.id,
         "kind": card.kind.value,
         "body": card.body,
-        "references": [rule.model_dump(mode="json") for rule in card.references],
+        "references": references,
         "scope": card.scope.value,
         "doc_type": _SCOPE_DOC_TYPE[card.scope],
         "doc_label": _SCOPE_DOC_LABEL[card.scope],

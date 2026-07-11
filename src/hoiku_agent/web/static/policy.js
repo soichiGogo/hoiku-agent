@@ -45,22 +45,82 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
       (card.source ? `<span class="pcard-src">${iconHTML("caregiver")}${esc(card.source)}</span>` : "") +
       (card.date ? `<span class="pcard-date">${esc(card.date)}</span>` : "");
     if (card.kind === "reference_policy") {
-      const rules = (card.references || []).map((r) =>
-        `<label class="reference-rule"><input type="checkbox" data-source="${esc(r.source)}" ${r.enabled ? "checked" : ""}> ${esc(r.source)} <input class="reference-note" data-note="${esc(r.source)}" value="${esc(r.note || "")}" placeholder="メモ"></label>`
-      ).join("");
-      node.innerHTML = `<div class="pcard-body">参照する資料の既定</div><div class="reference-rules">${rules}</div><button type="button" class="btn-subtle reference-save">保存</button><div class="pcard-meta">${meta}</div>`;
-      node.querySelector(".reference-save").addEventListener("click", async () => {
-        const references = (card.references || []).map((r) => ({
+      node.classList.add("reference-card");
+      const rules = (card.references || []).map((r) => {
+        const inputId = `reference-${card.id}-${r.source}`;
+        const noteId = `${inputId}-note`;
+        return `<div class="reference-rule${r.enabled ? "" : " is-off"}" data-rule="${esc(r.source)}">` +
+          `<label class="reference-toggle" for="${esc(inputId)}">` +
+          `<input id="${esc(inputId)}" type="checkbox" data-source="${esc(r.source)}" ${r.enabled ? "checked" : ""}>` +
+          `<span class="reference-track" aria-hidden="true"></span>` +
+          `<span class="reference-state">${r.enabled ? "参照する" : "参照しない"}</span></label>` +
+          `<div class="reference-copy"><label class="reference-label" for="${esc(inputId)}">${esc(r.label)}</label>` +
+          `<span class="reference-description">${esc(r.description)}</span></div>` +
+          `<label class="reference-note-label" for="${esc(noteId)}"><span>園の方針メモ（任意）</span>` +
+          `<input id="${esc(noteId)}" class="reference-note" data-note="${esc(r.source)}" value="${esc(r.note || "")}" placeholder="園の方針メモ（任意）"></label></div>`;
+      }).join("");
+      node.innerHTML = `<div class="reference-head"><div class="reference-title">参照する資料</div>` +
+        `<p>この書類の下書きを作るとき、AI が参照する資料です。</p></div>` +
+        `<div class="reference-rules">${rules}</div><div class="reference-actions">` +
+        `<button type="button" class="btn btn-primary reference-save" disabled>${iconHTML("check")}<span>変更を保存</span></button>` +
+        `<span class="reference-feedback" role="status" aria-live="polite"></span></div>` +
+        `<div class="pcard-meta">${meta}</div>`;
+
+      const save = node.querySelector(".reference-save");
+      const feedback = node.querySelector(".reference-feedback");
+      const initial = JSON.stringify((card.references || []).map((r) => ({
+        source: r.source, enabled: r.enabled, note: r.note || null,
+      })));
+      const collect = () => (card.references || []).map((r) => {
+        const note = node.querySelector(`[data-note="${r.source}"]`).value.trim();
+        return {
           source: r.source,
           enabled: node.querySelector(`[data-source="${r.source}"]`).checked,
-          note: node.querySelector(`[data-note="${r.source}"]`).value || null,
-        }));
-        const updated = await adk.updateReferencePolicy({ scope: card.scope, references, version: bookVersion });
-        renderDeck(updated);
+          note: note || null,
+        };
+      });
+      const updateDirty = () => {
+        save.disabled = JSON.stringify(collect()) === initial;
+        feedback.textContent = "";
+      };
+      node.querySelectorAll("[data-source]").forEach((input) => input.addEventListener("change", () => {
+        const row = input.closest(".reference-rule");
+        row.classList.toggle("is-off", !input.checked);
+        row.querySelector(".reference-state").textContent = input.checked ? "参照する" : "参照しない";
+        updateDirty();
+      }));
+      node.querySelectorAll("[data-note]").forEach((input) => input.addEventListener("input", updateDirty));
+      save.addEventListener("click", async () => {
+        save.disabled = true;
+        save.setAttribute("aria-busy", "true");
+        save.innerHTML = `<span class="spinner"></span><span>保存中</span>`;
+        feedback.textContent = "";
+        try {
+          const updated = await adk.updateReferencePolicy({
+            scope: card.scope, references: collect(), version: bookVersion,
+          });
+          renderDeck(updated);
+          const saved = grid.querySelector(`[data-card-id="${card.id}"] .reference-feedback`);
+          if (saved) {
+            saved.textContent = "保存しました";
+            setTimeout(() => { if (saved.isConnected) saved.textContent = ""; }, 3000);
+          }
+        } catch (error) {
+          if (error.status === 409) {
+            renderDeck(await adk.getPolicy());
+            banner(grid, "err", "他の端末で更新されています。最新の内容を読み込みました。もう一度変更してください。");
+          } else {
+            banner(node, "err", error.detail || error.message || "参照する資料を保存できませんでした。");
+            save.disabled = false;
+            save.removeAttribute("aria-busy");
+            save.innerHTML = `${iconHTML("check")}<span>変更を保存</span>`;
+          }
+        }
       });
     } else {
       node.innerHTML = `<div class="pcard-body">${esc(card.body)}</div><div class="pcard-meta">${meta}</div>`;
     }
+    node.dataset.cardId = card.id || "";
     return node;
   }
   function historyEl(h) {

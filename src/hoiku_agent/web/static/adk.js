@@ -49,7 +49,12 @@ export async function getPolicy() {
     const r = await fetch("/api/policy");
     if (!r.ok) return { cards: [], history: [], store: "unavailable" };
     const j = await r.json();
-    return { cards: j.cards || [], history: j.history || [], store: j.store || "unavailable" };
+    return {
+      cards: j.cards || [],
+      history: j.history || [],
+      store: j.store || "unavailable",
+      version: j.version ?? 0,
+    };
   } catch {
     return { cards: [], history: [], store: "unavailable" };
   }
@@ -61,8 +66,13 @@ export async function updateReferencePolicy(payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.detail || "既定参照を保存できませんでした");
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const error = new Error(data.detail || "既定参照を保存できませんでした");
+    error.status = r.status;
+    error.detail = data.detail || "";
+    throw error;
+  }
   return data;
 }
 
