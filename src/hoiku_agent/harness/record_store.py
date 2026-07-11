@@ -776,6 +776,7 @@ def touch_user(email: str, *, google_subject: str = "", now: datetime) -> dict:
         return {"status": "skipped"}
     try:
         with Session(eng) as session, session.begin():
+            workspace_created = False
             user = (
                 session.scalar(sa.select(User).where(User.google_subject == subject))
                 if subject
@@ -787,6 +788,7 @@ def touch_user(email: str, *, google_subject: str = "", now: datetime) -> dict:
                 workspace = Workspace(name=email[:100], created_at=now, updated_at=now)
                 session.add(workspace)
                 session.flush()
+                workspace_created = True
                 user = User(
                     email=email,
                     google_subject=subject or None,
@@ -810,6 +812,7 @@ def touch_user(email: str, *, google_subject: str = "", now: datetime) -> dict:
                 workspace = Workspace(name=email[:100], created_at=now, updated_at=now)
                 session.add(workspace)
                 session.flush()
+                workspace_created = True
                 user.workspace_id = workspace.id
             return {
                 "status": "ok",
@@ -817,6 +820,9 @@ def touch_user(email: str, *, google_subject: str = "", now: datetime) -> dict:
                 "display_name": user.display_name,
                 "active": user.active,
                 "workspace_id": str(user.workspace_id),
+                # 新規に個人領域を作った呼び出しだけ True（users の UNIQUE によりプロセス横断でも
+                # 高々1回）＝初回ログインのデフォルト seed 投入（web/workspace.py）の単発トリガ。
+                "workspace_created": workspace_created,
             }
     except SQLAlchemyError as e:
         return _write_error(e)
@@ -952,40 +958,60 @@ def process_due_deletion_requests(*, now: datetime) -> dict:
             )
             for req in requests:
                 workspace = req.workspace_id
-                document_ids = sa.select(DocumentRecord.id).where(
-                    DocumentRecord.workspace_id == workspace
-                )
-                session.execute(sa.delete(Feedback).where(Feedback.workspace_id == workspace))
-                session.execute(
-                    sa.delete(AuditEvent).where(AuditEvent.document_id.in_(document_ids))
-                )
-                session.execute(
-                    sa.delete(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids))
-                )
-                session.execute(
-                    sa.delete(DocumentRecord).where(DocumentRecord.workspace_id == workspace)
-                )
-                session.execute(sa.delete(Child).where(Child.workspace_id == workspace))
-                session.execute(sa.delete(Class).where(Class.workspace_id == workspace))
-                # policy/notation は JSON ブック1行。workspaces 導入前のテーブルなので key で同じ境界を
-                # 表現している（routes と同じ命名）。SQLAlchemy ORM を重ねず生テーブルで消す。
-                inspector = sa.inspect(session.bind)
-                if inspector.has_table("policy_books"):
-                    session.execute(
-                        sa.text("DELETE FROM policy_books WHERE id = :id"),
-                        {"id": f"workspace:{workspace}"},
-                    )
-                if inspector.has_table("notation_books"):
-                    session.execute(
-                        sa.text("DELETE FROM notation_books WHERE id = :id"),
-                        {"id": f"workspace:{workspace}"},
-                    )
+                _purge_workspace_rows(session, workspace)
                 session.execute(
                     sa.delete(DeletionRequest).where(DeletionRequest.workspace_id == workspace)
                 )
                 session.execute(sa.delete(User).where(User.workspace_id == workspace))
                 session.execute(sa.delete(Workspace).where(Workspace.id == workspace))
             return {"status": "ok", "processed": len(requests)}
+    except SQLAlchemyError as e:
+        return _write_error(e)
+
+
+def _purge_workspace_rows(session: Session, workspace: uuid.UUID) -> None:
+    """workspace のデータ行（書類・版・監査・フィードバック・園児・クラス・指針/表記ブック）を消す。
+
+    アカウント削除（`process_due_deletion_requests`）と「データを初期化」（`purge_workspace_data`）の
+    共用消去手順＝FK 依存の順序をここに1つ。User/Workspace/DeletionRequest の扱いは呼び出し側が決める。
+    """
+    document_ids = sa.select(DocumentRecord.id).where(DocumentRecord.workspace_id == workspace)
+    session.execute(sa.delete(Feedback).where(Feedback.workspace_id == workspace))
+    session.execute(sa.delete(AuditEvent).where(AuditEvent.document_id.in_(document_ids)))
+    session.execute(sa.delete(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids)))
+    session.execute(sa.delete(DocumentRecord).where(DocumentRecord.workspace_id == workspace))
+    session.execute(sa.delete(Child).where(Child.workspace_id == workspace))
+    session.execute(sa.delete(Class).where(Class.workspace_id == workspace))
+    # policy/notation は JSON ブック1行。workspaces 導入前のテーブルなので key で同じ境界を
+    # 表現している（routes と同じ命名）。SQLAlchemy ORM を重ねず生テーブルで消す。
+    inspector = sa.inspect(session.bind)
+    if inspector.has_table("policy_books"):
+        session.execute(
+            sa.text("DELETE FROM policy_books WHERE id = :id"),
+            {"id": f"workspace:{workspace}"},
+        )
+    if inspector.has_table("notation_books"):
+        session.execute(
+            sa.text("DELETE FROM notation_books WHERE id = :id"),
+            {"id": f"workspace:{workspace}"},
+        )
+
+
+def purge_workspace_data(workspace_id: str | uuid.UUID | None) -> dict:
+    """workspace のデータを即時消去する（「データを初期化」の消去段＝web `/api/account/reset`）。
+
+    アカウント削除（30日遅延の `process_due_deletion_requests`）と違い、**User/Workspace/削除依頼/
+    利用枠（llm_budget_windows）は残す**＝ログインとコスト管理を継続したままデータだけ初期状態へ
+    戻せる。seed の再投入は `demo_seed.reset_workspace` が担う。未接続は skipped。
+    """
+    eng = _engine()
+    if eng is None:
+        return {"status": "skipped", "reason": "DATABASE_URL 未設定（アーカイブ降格）"}
+    try:
+        workspace = _workspace_uuid(workspace_id)
+        with Session(eng) as session, session.begin():
+            _purge_workspace_rows(session, workspace)
+            return {"status": "ok"}
     except SQLAlchemyError as e:
         return _write_error(e)
 

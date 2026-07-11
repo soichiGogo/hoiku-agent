@@ -88,6 +88,13 @@
   「回した証拠」＝カード内蔵の変更履歴（decided_by 含む）。
 - `db.py` … harness 共通の DB 接続基盤（engine キャッシュ・Declarative Base・JSONB variant）。
   record_store と policy_store が同じ `DATABASE_URL` を共有するための最小インフラ＝ドメインロジックを置かない。
+- `demo_seed_data.py`／`demo_seed.py` … **デモ用デフォルト seed**（実在しない仮名のみ・§14）：データ部
+  （名簿 ROSTER 30人・CLASSES＝ひよこ組/あおぞら組・確定書類チェーン 日誌12/クラス月案6/保育経過記録9/要録1・
+  承認フロー体感用の UNAPPROVED）とロジック部（`validate_all`＝全 entry の型成立検査／`seed_workspace`＝
+  finalize_entry→save_document/approve_document の冪等投入・種別×児×期間で既存スキップ／`reset_workspace`＝
+  `record_store.purge_workspace_data`→再 seed）。**初回ログイン（web/workspace.py の provision_user）と
+  「データを初期化」（web `/api/account/reset`）と CLI（scripts/seed_children.py・seed_documents.py＝薄いラッパ）が
+  同じ実体を呼ぶ**（二重実装しない・§5）。LLM 非依存・clock 外部注入・未接続は skipped 降格。
 - `record_store.py` … 書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL
   PostgreSQL・Phase 1）。本文は JSON（PG は JSONB）が SSOT・検索キーだけ列昇格・版管理
   （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。読取は L2/L3 seed（`list_diary_entries`）に
