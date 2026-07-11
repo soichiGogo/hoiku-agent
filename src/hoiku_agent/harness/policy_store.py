@@ -404,9 +404,45 @@ def load_book_meta(
             row = session.get(PolicyBookRecord, book_id)
         if row is None:
             return _load_local(_POLICY_PATH), 0
-        return PolicyBook.model_validate(row.book), row.version
+        return _merge_seed_reference_cards(PolicyBook.model_validate(row.book)), row.version
 
     return _load_local(path or _POLICY_PATH), None
+
+
+def _merge_seed_reference_cards(book: PolicyBook) -> PolicyBook:
+    """保存済み book に、同梱シードの reference_policy を後方互換で補完する（DB 読取時の正規化）。
+
+    参照語彙（ReferenceSource）はコードの機能拡張で増える（例: class_roster＝在籍児名簿 2026-07-11）。
+    DB の book はシード適用後に独立して育つため、旧い book には新語彙のカード/ルールが無く、
+    既定参照の提示（render_for_doc）にも編集 UI（/api/policy/reference は既存ルールの on/off のみ）
+    にも現れない＝コードは対応済みなのに book だけ取り残される drift になる。ここでは
+    - scope に reference_policy カードが無ければシードのカードを足す（agentic 参照化以前の book）
+    - カードはあってもシードにある source のルールが欠けていれば末尾に足す（語彙拡張の追随）
+    だけを行い、**既存ルール（保育士が enabled=False にした判断・note）には触れない**。
+    読取時の補完で保存はしない（次の書込みで自然に乗る）。シードが読めない環境は無変更（降格）。
+    """
+    try:
+        seed = _load_local(_POLICY_PATH)
+    except Exception:  # noqa: BLE001 シード欠落/破損で読取本流を止めない（補完なしで返す）
+        return book
+    for seed_card in seed.cards:
+        if seed_card.kind != PolicyCardKind.reference_policy:
+            continue
+        target = reference_policy_card(book, seed_card.scope)
+        if target is None:
+            used = {c.id for c in book.cards}
+            card = (
+                seed_card
+                if seed_card.id not in used
+                else seed_card.model_copy(update={"id": next_card_id(book)})
+            )
+            book.cards.append(card)
+            continue
+        known = {rule.source for rule in target.references}
+        missing = [rule for rule in seed_card.references if rule.source not in known]
+        if missing:
+            target.references = [*target.references, *missing]
+    return book
 
 
 def _load_local(path: Path) -> PolicyBook:
