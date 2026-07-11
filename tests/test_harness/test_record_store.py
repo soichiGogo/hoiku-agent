@@ -106,6 +106,29 @@ def test_approve_sets_status_and_audit_trail(db):
     assert ("finalize", "") in actions
 
 
+def test_approval_candidate_and_memory_sync_are_version_scoped(db):
+    """同期済み印は承認した版だけに付き、編集で新しい版が積まれると未同期へ戻る。"""
+    entry = _diary_entry("2026-07-11")
+    saved = rs.save_document("diary", entry, author_kind="caregiver", now=_NOW)
+    candidate = rs.get_approval_candidate("diary", entry, expected_version_seq=saved["version_seq"])
+    assert candidate["status"] == "ready" and candidate["memory_synced"] is False
+    approved = rs.approve_document(
+        "diary",
+        entry,
+        actor="園長",
+        now=_NOW,
+        expected_version_seq=saved["version_seq"],
+        memory_synced_version_id=candidate["version_id"],
+        memory_status="synced",
+    )
+    assert approved["memory_status"] == "synced"
+    assert rs.list_documents()[0]["memory_synced"] is True
+
+    rs.save_document("diary", entry, author_kind="caregiver", now=_NOW)
+    doc = rs.list_documents()[0]
+    assert doc["status"] == "finalized" and doc["memory_synced"] is False
+
+
 def test_approve_unsaved_document_errors(db):
     r = rs.approve_document("diary", _diary_entry("2026-07-02"), actor="園長", now=_NOW)
     assert r["status"] == "error"

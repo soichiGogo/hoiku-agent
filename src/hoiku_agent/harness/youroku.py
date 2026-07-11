@@ -11,7 +11,7 @@
       → authoring_loop（[nursery_record_author → reviewer → ApprovalGate] を巡回・日誌/月案/保育経過記録と共用）
       → finalize(kind="nursery_record")（NurseryRecord を復元→validate_nursery_record_fields/
         write_nursery_record_draft）
-      → [after_agent_callback] persist_visit_to_memory（保育士の明示承認＋型成立のとき書き戻し・§9）
+      → 承認後のMemory Bank書き戻しは web `/api/records/approve`（§9）
 
 L4 還流の入力（その児のそれまでの保育経過記録＝**全期・年度跨ぎ含む**。依存モデル 2026-07：「対応する
 児童の作成済み過去のものすべて」・日誌は足さない）は session state["record_entries"]（ChildRecord の
@@ -35,7 +35,6 @@ from .aggregate import child_record_digest
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
-    persist_visit_to_memory,
 )
 
 if TYPE_CHECKING:
@@ -100,7 +99,7 @@ def build_nursery_record_pipeline(
     保育経過記録の build_child_record_pipeline と対称。先頭に RecordDigestPrepAgent（L4 還流の決定的集計＝
     それまでの保育経過記録すべて・入力=record_entries／出力=record_digest）を置き、巡回は
     build_authoring_loop（日誌・月案・保育経過記録と共用。NEEDS_REVISION で nursery_record_author が再作成）、
-    finalize は kind="nursery_record"。after_agent_callback も共用（明示承認＋型成立で書き戻し・§9）。
+    finalize は kind="nursery_record"。承認後の書き戻しはWeb承認APIへ一本化する。
     author_model/reviewer_model は通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(
@@ -110,5 +109,4 @@ def build_nursery_record_pipeline(
             build_authoring_loop(build_nursery_record_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="nursery_record"),
         ],
-        after_agent_callback=persist_visit_to_memory,
     )

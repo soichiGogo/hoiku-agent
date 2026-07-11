@@ -63,7 +63,6 @@ from .schema_check import (
 # （tools 側の薄いラッパは上記の実体を submodule 直参照しており、循環は回避済み）。
 # router は各パイプライン（月案＝monthly / クラス月案＝class_monthly / 保育経過記録 / 要録）を束ねるため
 # 各パイプラインの後に置く（保育日誌は AI 生成を退役＝ルータに載せない。pipeline.py は共用機構のみ）。
-from .pipeline import CAREGIVER_APPROVAL_KEY, mark_caregiver_approved
 from .monthly import build_monthly_pipeline
 from .class_monthly import build_class_monthly_pipeline
 from .child_record import build_child_record_pipeline
@@ -76,8 +75,6 @@ __all__ = [
     "build_child_record_pipeline",
     "build_nursery_record_pipeline",
     "build_root_agent",
-    "mark_caregiver_approved",
-    "CAREGIVER_APPROVAL_KEY",
     "validate_fields",
     "validate_monthly_fields",
     "validate_class_monthly_fields",

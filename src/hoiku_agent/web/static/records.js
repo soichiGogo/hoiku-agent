@@ -346,7 +346,12 @@ export function makeRecords(ui) {
         apBtn.innerHTML = `<span class="spinner"></span>承認中…`;
         msg.classList.add("hidden");
         try {
-          const r = await adk.approveRecord(doc.doc_type, doc.entry || {}, actorName());
+          const r = await adk.approveRecord(
+            doc.doc_type,
+            doc.entry || {},
+            actorName(),
+            doc.version_seq,
+          );
           if (r.status === "approved") {
             await loadTree();
             await select(doc.id, ui.tree.querySelector(`.fsrow.is-file[data-id="${doc.id}"]`) || null);
