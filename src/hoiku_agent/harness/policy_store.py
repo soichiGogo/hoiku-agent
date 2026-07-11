@@ -36,10 +36,12 @@ from . import db
 from ..schemas.policy import (
     PolicyBook,
     PolicyCard,
+    PolicyCardKind,
     PolicyChange,
     PolicyChangeAction,
     PolicyScope,
     PolicyStatus,
+    ReferenceRule,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -93,7 +95,28 @@ def find_exact_duplicate(book: PolicyBook, scope: PolicyScope, body: str) -> Pol
     意味的な矛盾はここでは見ない（それは改善エージェント＝LLM の責務）。完全重複（二重登録）だけを弾く。
     """
     target = body.strip()
-    return next((c for c in active_cards(book, scope) if c.body.strip() == target), None)
+    return next(
+        (
+            c
+            for c in active_cards(book, scope)
+            if c.kind == PolicyCardKind.guideline and c.body.strip() == target
+        ),
+        None,
+    )
+
+
+def reference_policy_card(book: PolicyBook, scope: PolicyScope) -> PolicyCard | None:
+    """scope の active reference_policy を返す。実質1枚という不変条件は更新時に保証する。"""
+    return next(
+        (c for c in active_cards(book, scope) if c.kind == PolicyCardKind.reference_policy),
+        None,
+    )
+
+
+def enabled_reference_rules(book: PolicyBook, scope: PolicyScope) -> list[ReferenceRule]:
+    """scope の既定参照から enabled な規則だけを保存順で返す。"""
+    card = reference_policy_card(book, scope)
+    return [rule for rule in card.references if rule.enabled] if card else []
 
 
 # ──────────────────────────── 変更（純関数・新 PolicyBook を返す） ────────────────────────────
@@ -112,11 +135,13 @@ def add_card(
     id 重複・本文空・同 scope の完全重複は ValueError（fail-loud＝SSOT を黙って壊さない）。
     history に add を1件追記する（timestamp＝card.created_at・decided_by＝即反映の決定者）。
     """
-    if not card.body.strip():
+    if card.kind == PolicyCardKind.guideline and not card.body.strip():
         raise ValueError("カード本文（body）が空です")
     if find_card(book, card.id) is not None:
         raise ValueError(f"カード id が重複しています: {card.id}")
-    if find_exact_duplicate(book, card.scope, card.body) is not None:
+    if card.kind == PolicyCardKind.reference_policy and reference_policy_card(book, card.scope):
+        raise ValueError(f"reference_policy は scope ごとに1枚です: {card.scope.value}")
+    if card.kind == PolicyCardKind.guideline and find_exact_duplicate(book, card.scope, card.body):
         raise ValueError(
             f"同じ内容のカードが既にあります（{card.scope.value}）: {_truncate(card.body)}"
         )
@@ -218,11 +243,42 @@ def remove_card(
     return book.model_copy(update={"cards": cards, "history": [*book.history, change]})
 
 
+def update_reference_policy(
+    book: PolicyBook,
+    *,
+    scope: PolicyScope,
+    references: list[ReferenceRule],
+    when,
+    decided_by: str = "保育士",
+) -> PolicyBook:
+    """scope の reference_policy を直接更新する（UI 設定編集用・純関数）。"""
+    target = reference_policy_card(book, scope)
+    if target is None:
+        raise ValueError(f"reference_policy が見つかりません: {scope.value}")
+    if len({r.source for r in references}) != len(references):
+        raise ValueError("同じ reference source を重複して指定できません")
+    cards = [
+        c.model_copy(update={"references": references, "updated_at": when})
+        if c.id == target.id
+        else c
+        for c in book.cards
+    ]
+    change = PolicyChange(
+        timestamp=when,
+        action=PolicyChangeAction.supersede,
+        card_id=target.id,
+        summary=f"{scope.value}の既定参照を更新",
+        source="設定画面",
+        decided_by=decided_by,
+    )
+    return book.model_copy(update={"cards": cards, "history": [*book.history, change]})
+
+
 # ──────────────────────────── テキスト再生（純関数） ────────────────────────────
 
 
 def _render_bullets(book: PolicyBook, scope: PolicyScope) -> list[str]:
-    cards = active_cards(book, scope)
+    cards = [c for c in active_cards(book, scope) if c.kind == PolicyCardKind.guideline]
     if not cards:
         return ["- （未登録）"]
     return [f"- {c.body.strip()}" for c in cards]
@@ -284,6 +340,15 @@ def render_for_doc(book: PolicyBook, scope: PolicyScope) -> str:
     lines += [_SCOPE_HEADINGS[PolicyScope.共通], "", *_render_bullets(book, PolicyScope.共通)]
     if scope is not PolicyScope.共通:
         lines += ["", _SCOPE_HEADINGS[scope], "", *_render_bullets(book, scope)]
+    rules = enabled_reference_rules(book, scope)
+    lines += ["", "## この書類で参照する既定資料"]
+    if rules:
+        lines += [
+            f"- {rule.source.value}" + (f"（{rule.note}）" if rule.note else "") for rule in rules
+        ]
+        lines += ["", "作成前に fetch_reference で上記の資料を取得してください。"]
+    else:
+        lines += ["- （有効な既定参照なし）"]
     return "\n".join(lines)
 
 
@@ -468,7 +533,9 @@ def card_view(card: PolicyCard) -> dict:
     """カード1枚をフロント/API 用の JSON-serializable dict に変換する（決定的）。"""
     return {
         "id": card.id,
+        "kind": card.kind.value,
         "body": card.body,
+        "references": [rule.model_dump(mode="json") for rule in card.references],
         "scope": card.scope.value,
         "doc_type": _SCOPE_DOC_TYPE[card.scope],
         "doc_label": _SCOPE_DOC_LABEL[card.scope],
