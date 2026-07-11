@@ -34,6 +34,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import db
 from ..schemas.policy import (
+    REFERENCE_SOURCE_META,
     PolicyBook,
     PolicyCard,
     PolicyCardKind,
@@ -250,6 +251,7 @@ def update_reference_policy(
     references: list[ReferenceRule],
     when,
     decided_by: str = "保育士",
+    source: str = "設定画面",
 ) -> PolicyBook:
     """scope の reference_policy を直接更新する（UI 設定編集用・純関数）。"""
     target = reference_policy_card(book, scope)
@@ -268,7 +270,7 @@ def update_reference_policy(
         action=PolicyChangeAction.supersede,
         card_id=target.id,
         summary=f"{scope.value}の既定参照を更新",
-        source="設定画面",
+        source=source,
         decided_by=decided_by,
     )
     return book.model_copy(update={"cards": cards, "history": [*book.history, change]})
@@ -404,9 +406,73 @@ def load_book_meta(
             row = session.get(PolicyBookRecord, book_id)
         if row is None:
             return _load_local(_POLICY_PATH), 0
-        return PolicyBook.model_validate(row.book), row.version
+        return _merge_seed_reference_cards(PolicyBook.model_validate(row.book)), row.version
 
     return _load_local(path or _POLICY_PATH), None
+
+
+def _merge_seed_reference_cards(book: PolicyBook) -> PolicyBook:
+    """保存済み book に、同梱シードの reference_policy を後方互換で補完する（DB 読取時の正規化）。
+
+    参照語彙（ReferenceSource）はコードの機能拡張で増える（例: class_roster＝在籍児名簿 2026-07-11）。
+    DB の book はシード適用後に独立して育つため、旧い book には新語彙のカード/ルールが無く、
+    既定参照の提示（render_for_doc）にも編集 UI（/api/policy/reference は既存ルールの on/off のみ）
+    にも現れない＝コードは対応済みなのに book だけ取り残される drift になる。ここでは
+    - scope に reference_policy カードが**一度も存在しなければ**シードのカードを足す
+      （agentic 参照化以前の book。retired/superseded を含め1枚でもあれば「保育士/運用の判断あり」
+      とみなし復活させない）
+    - active カードにシードにある source のルールが欠けていれば末尾に足す（語彙拡張の追随）
+    だけを行い、**既存ルール（保育士が enabled=False にした判断・note）には触れない**。
+    読取時の補完で保存はしない（次の書込みで自然に乗る）。シードが読めない環境は無変更（降格）。
+    """
+    seed = _load_seed_for_merge()
+    if seed is None:
+        return book
+    for seed_card in seed.cards:
+        if seed_card.kind != PolicyCardKind.reference_policy:
+            continue
+        ever_existed = any(
+            c.kind == PolicyCardKind.reference_policy and c.scope == seed_card.scope
+            for c in book.cards
+        )
+        target = reference_policy_card(book, seed_card.scope)
+        if target is None:
+            if ever_existed:
+                continue  # 取り下げ済み＝判断を尊重（黙って復活させない）
+            used = {c.id for c in book.cards}
+            card = seed_card.model_copy(  # キャッシュ共有インスタンスを book 間で使い回さない
+                deep=True,
+                update={} if seed_card.id not in used else {"id": next_card_id(book)},
+            )
+            book.cards.append(card)
+            continue
+        known = {rule.source for rule in target.references}
+        missing = [
+            rule.model_copy(deep=True) for rule in seed_card.references if rule.source not in known
+        ]
+        if missing:
+            target.references = [*target.references, *missing]
+    return book
+
+
+# シードは同梱ファイルで実行中は不変＝(パス, mtime) キーの1枠キャッシュで毎読取のディスク IO を避ける
+# （load_book_meta は prompt 組み立てのたびに呼ばれる高頻度パス。テストは path/mtime が変わるので追随する）。
+_SEED_CACHE: dict[str, object] = {}
+
+
+def _load_seed_for_merge() -> PolicyBook | None:
+    try:
+        key = (str(_POLICY_PATH), _POLICY_PATH.stat().st_mtime_ns)
+    except OSError:
+        return None  # シード不在＝補完なし（降格）
+    if _SEED_CACHE.get("key") != key:
+        try:
+            _SEED_CACHE["book"] = _load_local(_POLICY_PATH)
+        except Exception:  # noqa: BLE001 シード破損で読取本流を止めない（補完なしで返す）
+            _SEED_CACHE["book"] = None
+        _SEED_CACHE["key"] = key
+    book = _SEED_CACHE.get("book")
+    return book if isinstance(book, PolicyBook) else None
 
 
 def _load_local(path: Path) -> PolicyBook:
@@ -531,11 +597,17 @@ _SCOPE_DOC_LABEL: dict[PolicyScope, str] = {
 
 def card_view(card: PolicyCard) -> dict:
     """カード1枚をフロント/API 用の JSON-serializable dict に変換する（決定的）。"""
+    references = []
+    for rule in card.references:
+        label, description = REFERENCE_SOURCE_META[rule.source]
+        references.append(
+            {**rule.model_dump(mode="json"), "label": label, "description": description}
+        )
     return {
         "id": card.id,
         "kind": card.kind.value,
         "body": card.body,
-        "references": [rule.model_dump(mode="json") for rule in card.references],
+        "references": references,
         "scope": card.scope.value,
         "doc_type": _SCOPE_DOC_TYPE[card.scope],
         "doc_label": _SCOPE_DOC_LABEL[card.scope],

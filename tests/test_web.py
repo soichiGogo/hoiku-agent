@@ -126,6 +126,16 @@ def test_policy_route_returns_cards_and_history() -> None:
     # seed（共通/月案）が読める環境ではカードが入る。カード形（doc_type/body）も確認。
     if body["cards"]:
         assert {"id", "body", "doc_type", "doc_label"} <= body["cards"][0].keys()
+    reference_cards = [card for card in body["cards"] if card.get("kind") == "reference_policy"]
+    assert reference_cards
+    assert all(
+        rule.get("label") and rule.get("description")
+        for card in reference_cards
+        for rule in card["references"]
+    )
+    rules = {rule["source"]: rule for card in reference_cards for rule in card["references"]}
+    assert rules["period_diary"]["label"] == "期間内の保育日誌"
+    assert rules["period_diary"]["description"] == "作成対象の期間に書かれた日誌です。"
 
 
 def test_list_apps_has_root_agent() -> None:
@@ -142,6 +152,25 @@ def test_llm_budget_requires_google_login_when_enabled(monkeypatch) -> None:
     assert c.post("/run_sse", json={}).status_code == 401
     assert c.post("/api/improve", json={"diff": "x"}).status_code == 401
     assert c.get("/api/config").status_code == 401
+
+
+def test_improver_resume_rejects_different_workspace(monkeypatch) -> None:
+    """保留中の改善セッションは開始時と異なる workspace から再開できない。"""
+    from hoiku_agent.web import improver_stream
+
+    sid = "workspace-bound-session"
+    improver_stream._SESSIONS[sid] = (object(), "adk-session", "owner-workspace")
+    monkeypatch.setattr(improver_stream, "resolve_workspace_id", lambda request, now: None)
+    try:
+        response = _client().post(
+            "/api/improve/resume",
+            json={"session_id": sid, "function_call_id": "ask-1", "answer": "反映する"},
+        )
+    finally:
+        improver_stream._SESSIONS.pop(sid, None)
+
+    assert response.status_code == 200
+    assert "この改善セッションを再開する権限がありません" in response.text
 
 
 def test_llm_budget_limit_returns_clear_message(monkeypatch) -> None:
@@ -1041,6 +1070,7 @@ def test_class_monthly_seed_endpoint_composes_three_inputs(records_db) -> None:
     assert [e["date"] for e in body["class_diary_entries"]] == ["2026-07-10"]  # 未反映だけ
     assert [r["period"] for r in body["class_record_entries"]] == ["2026-04〜2026-06"]
     assert [p["month"] for p in body["past_class_plans"]] == ["2026-07"]
+    assert body["class_roster"] == []  # 名簿未整備＝空を正直に返す（フロントは「名簿未登録」表示）
     # month 不正は 400（黙って誤解釈しない）
     bad = c.get("/api/records/class-monthly-seed", params={"age_band": "0-2", "month": "abc"})
     assert bad.status_code == 400

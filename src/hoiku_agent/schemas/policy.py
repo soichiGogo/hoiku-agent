@@ -74,6 +74,37 @@ class ReferenceSource(str, Enum):
     past_class_plans = "past_class_plans"
     uncovered_class_diaries = "uncovered_class_diaries"
     prev_month_diaries = "prev_month_diaries"
+    class_roster = (
+        "class_roster"  # クラスの在籍児名簿（クラス・園児マスタ＝0–2 個人目標の対象の与件）
+    )
+
+
+REFERENCE_SOURCE_META: dict[ReferenceSource, tuple[str, str]] = {
+    ReferenceSource.period_diary: (
+        "期間内の保育日誌",
+        "作成対象の期間に書かれた日誌です。",
+    ),
+    ReferenceSource.prev_child_records: (
+        "前回までの保育経過記録",
+        "同じ子どもの過去の期の経過記録すべてです。",
+    ),
+    ReferenceSource.class_child_records: (
+        "クラス児童の保育経過記録",
+        "クラス在籍児の経過記録すべてです。",
+    ),
+    ReferenceSource.past_class_plans: (
+        "これまでのクラス月案",
+        "過去に確定したクラス月案です。",
+    ),
+    ReferenceSource.uncovered_class_diaries: (
+        "経過記録に未反映の日誌",
+        "まだ経過記録にまとめていない期間の日誌です。",
+    ),
+    ReferenceSource.prev_month_diaries: (
+        "前月の保育日誌",
+        "前の月に書かれた日誌です。",
+    ),
+}
 
 
 class ReferenceRule(BaseModel):

@@ -45,22 +45,82 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
       (card.source ? `<span class="pcard-src">${iconHTML("caregiver")}${esc(card.source)}</span>` : "") +
       (card.date ? `<span class="pcard-date">${esc(card.date)}</span>` : "");
     if (card.kind === "reference_policy") {
-      const rules = (card.references || []).map((r) =>
-        `<label class="reference-rule"><input type="checkbox" data-source="${esc(r.source)}" ${r.enabled ? "checked" : ""}> ${esc(r.source)} <input class="reference-note" data-note="${esc(r.source)}" value="${esc(r.note || "")}" placeholder="メモ"></label>`
-      ).join("");
-      node.innerHTML = `<div class="pcard-body">参照する資料の既定</div><div class="reference-rules">${rules}</div><button type="button" class="btn-subtle reference-save">保存</button><div class="pcard-meta">${meta}</div>`;
-      node.querySelector(".reference-save").addEventListener("click", async () => {
-        const references = (card.references || []).map((r) => ({
+      node.classList.add("reference-card");
+      const rules = (card.references || []).map((r) => {
+        const inputId = `reference-${card.id}-${r.source}`;
+        const noteId = `${inputId}-note`;
+        return `<div class="reference-rule${r.enabled ? "" : " is-off"}" data-rule="${esc(r.source)}">` +
+          `<label class="reference-toggle" for="${esc(inputId)}">` +
+          `<input id="${esc(inputId)}" type="checkbox" data-source="${esc(r.source)}" ${r.enabled ? "checked" : ""}>` +
+          `<span class="reference-track" aria-hidden="true"></span>` +
+          `<span class="reference-state">${r.enabled ? "参照する" : "参照しない"}</span></label>` +
+          `<div class="reference-copy"><label class="reference-label" for="${esc(inputId)}">${esc(r.label)}</label>` +
+          `<span class="reference-description">${esc(r.description)}</span></div>` +
+          `<label class="reference-note-label" for="${esc(noteId)}"><span>園の方針メモ（任意）</span>` +
+          `<input id="${esc(noteId)}" class="reference-note" data-note="${esc(r.source)}" value="${esc(r.note || "")}" placeholder="園の方針メモ（任意）"></label></div>`;
+      }).join("");
+      node.innerHTML = `<div class="reference-head"><div class="reference-title">参照する資料</div>` +
+        `<p>この書類の下書きを作るとき、AI が参照する資料です。</p></div>` +
+        `<div class="reference-rules">${rules}</div><div class="reference-actions">` +
+        `<button type="button" class="btn btn-primary reference-save" disabled>${iconHTML("check")}<span>変更を保存</span></button>` +
+        `<span class="reference-feedback" role="status" aria-live="polite"></span></div>` +
+        `<div class="pcard-meta">${meta}</div>`;
+
+      const save = node.querySelector(".reference-save");
+      const feedback = node.querySelector(".reference-feedback");
+      const initial = JSON.stringify((card.references || []).map((r) => ({
+        source: r.source, enabled: r.enabled, note: r.note || null,
+      })));
+      const collect = () => (card.references || []).map((r) => {
+        const note = node.querySelector(`[data-note="${r.source}"]`).value.trim();
+        return {
           source: r.source,
           enabled: node.querySelector(`[data-source="${r.source}"]`).checked,
-          note: node.querySelector(`[data-note="${r.source}"]`).value || null,
-        }));
-        const updated = await adk.updateReferencePolicy({ scope: card.scope, references, version: bookVersion });
-        renderDeck(updated);
+          note: note || null,
+        };
+      });
+      const updateDirty = () => {
+        save.disabled = JSON.stringify(collect()) === initial;
+        feedback.textContent = "";
+      };
+      node.querySelectorAll("[data-source]").forEach((input) => input.addEventListener("change", () => {
+        const row = input.closest(".reference-rule");
+        row.classList.toggle("is-off", !input.checked);
+        row.querySelector(".reference-state").textContent = input.checked ? "参照する" : "参照しない";
+        updateDirty();
+      }));
+      node.querySelectorAll("[data-note]").forEach((input) => input.addEventListener("input", updateDirty));
+      save.addEventListener("click", async () => {
+        save.disabled = true;
+        save.setAttribute("aria-busy", "true");
+        save.innerHTML = `<span class="spinner"></span><span>保存中</span>`;
+        feedback.textContent = "";
+        try {
+          const updated = await adk.updateReferencePolicy({
+            scope: card.scope, references: collect(), version: bookVersion,
+          });
+          renderDeck(updated);
+          const saved = grid.querySelector(`[data-card-id="${card.id}"] .reference-feedback`);
+          if (saved) {
+            saved.textContent = "保存しました";
+            setTimeout(() => { if (saved.isConnected) saved.textContent = ""; }, 3000);
+          }
+        } catch (error) {
+          if (error.status === 409) {
+            renderDeck(await adk.getPolicy());
+            banner(grid, "err", "他の端末で更新されています。最新の内容を読み込みました。もう一度変更してください。");
+          } else {
+            banner(node, "err", error.detail || error.message || "参照する資料を保存できませんでした。");
+            save.disabled = false;
+            save.removeAttribute("aria-busy");
+            save.innerHTML = `${iconHTML("check")}<span>変更を保存</span>`;
+          }
+        }
       });
     } else {
       node.innerHTML = `<div class="pcard-body">${esc(card.body)}</div><div class="pcard-meta">${meta}</div>`;
     }
+    node.dataset.cardId = card.id || "";
     return node;
   }
   function historyEl(h) {
@@ -189,6 +249,40 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     proposedPanel = panel;
   }
 
+  function referenceDiffList(rules) {
+    const list = el("div", "reference-diff-list");
+    (rules || []).forEach((rule) => {
+      const row = el("div", `reference-diff-row ${rule.enabled ? "is-on" : "is-off"}`);
+      row.innerHTML = `<span class="reference-diff-label">${esc(rule.label)}</span>` +
+        `<span class="reference-diff-state">${rule.enabled ? "参照する" : "参照しない"}</span>`;
+      list.appendChild(row);
+    });
+    return list;
+  }
+
+  function renderReferenceProposed(result) {
+    lastProposal = result;
+    cur = null;
+    const proposal = result.proposal || {};
+    const panel = el("div", "ppropose reference-proposal");
+    panel.innerHTML = `<div class="ppropose-head">${iconHTML("edit")}参照する資料の変更案` +
+      `<span class="label-draft">${iconHTML("ask")}確認前</span></div>`;
+    const compare = el("div", "reference-diff");
+    const before = el("div", "reference-diff-col");
+    before.appendChild(el("div", "reference-diff-head", "変更前"));
+    before.appendChild(referenceDiffList(proposal.before));
+    const arrow = el("div", "reference-diff-arrow", "→");
+    arrow.setAttribute("aria-hidden", "true");
+    const after = el("div", "reference-diff-col");
+    after.appendChild(el("div", "reference-diff-head", "変更後"));
+    after.appendChild(referenceDiffList(proposal.after));
+    compare.append(before, arrow, after);
+    panel.appendChild(compare);
+    if (proposal.reason) panel.appendChild(el("p", "ppropose-note", proposal.reason));
+    flow.appendChild(panel);
+    proposedPanel = panel;
+  }
+
   /* ---------- 競合の比較相談（HITL・既存↔新を並べる） ---------- */
   function renderConflictCompare(item) {
     cur = null;
@@ -277,6 +371,21 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     toStep(3, "done");
   }
 
+  function onReferenceCommitted(result) {
+    if (result.status !== "committed") {
+      banner(flow, "info", "反映されませんでした：" + (result.detail || result.status || "不明"));
+      return;
+    }
+    if (proposedPanel) {
+      const label = proposedPanel.querySelector(".label-draft");
+      if (label) {
+        label.className = "label-final";
+        label.innerHTML = `${iconHTML("check")}反映済み`;
+      }
+    }
+    toStep(3, "done");
+  }
+
   function onError(detail) {
     procStop();
     banner(flow, "err", "エラー: " + detail);
@@ -300,7 +409,10 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
         if (item.name === "propose_policy_card") {
           toStep(1, "working");
           phase("既存の指針と重ならないか精査しています", "working");
-        } else if (item.name === "commit_policy_card") {
+        } else if (item.name === "propose_reference_update") {
+          toStep(1, "working");
+          phase("参照する資料の変更案を整えています", "working");
+        } else if (item.name === "commit_policy_card" || item.name === "commit_reference_update") {
           toStep(3, "working");
           phase("指針に反映しています", "working");
         } else {
@@ -312,7 +424,9 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
         if (item.id && toolBadges[item.id]) markToolDone(toolBadges[item.id]);
         const r = item.result || {};
         if (item.name === "propose_policy_card" && r.proposal) renderProposed(r);
+        else if (item.name === "propose_reference_update" && r.proposal) renderReferenceProposed(r);
         else if (item.name === "commit_policy_card") onCommitted(r);
+        else if (item.name === "commit_reference_update") onReferenceCommitted(r);
         break;
       }
       case "needs_input":

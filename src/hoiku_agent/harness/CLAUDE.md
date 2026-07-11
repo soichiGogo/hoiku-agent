@@ -67,7 +67,7 @@
   pipeline は `[authoring_loop → finalize]` のみ。候補は state に seed し、author/reviewer が fetch_reference を
   呼ぶと `reference.py` が既存 aggregate を使って決定的に集計し、reference_manifest を残す（§5/§12）。
 - `monthly.py` … 月案 authoring_loop→finalize。前月日誌は fetch_reference(prev_month_diaries) で取得（§10）。
-- `class_monthly.py` … クラス月案 authoring_loop→finalize。3系統の候補と児童別未反映境界は reference.py が担当。
+- `class_monthly.py` … クラス月案 authoring_loop→finalize。3系統の候補＋在籍児名簿（class_roster）と児童別未反映境界は reference.py が担当。
   個別月案（1児）と別 doc_type＝**文書の年齢帯単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は
   0–2/3–5 共通＝3つの視点分岐を課さない（様式忠実）。grid の正準7行そろえは
   `schemas/class_monthly.ClassMonthlyPlan` の model_validator（レイアウトのデータは GRID_ROWS に1つ）。
@@ -93,9 +93,9 @@
   （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。読取は L2/L3 seed（`list_diary_entries`）に
   加え `list_child_record_entries`（指定児の保育経過記録の最新版・**全期・`exclude_period` で作成対象の期を除外**＝
   要録 L4／保育経過記録「前回まで」seed・年間マトリクス帳票の過去期埋め込み用。列割当・年度の同定は描画側
-  web/chohyo_pdf の責務＝ここは引くだけ）／**クラス月案 seed 3系統（依存モデル 2026-07）**＝`covered_until`
+  web/chohyo_pdf の責務＝ここは引くだけ）／**クラス月案 seed（3系統＋在籍児名簿・依存モデル 2026-07）**＝`covered_until`
   （経過記録の期間終了日の最大＝未反映境界・純関数）・`list_class_child_record_entries`（名簿優先・降格は
-  age_band フィルタ）・`list_class_monthly_entries`（過去クラス月案・月順）・`class_monthly_seed_inputs`（3系統の
+  age_band フィルタ）・`list_class_monthly_entries`（過去クラス月案・月順）・`class_roster`（在籍児名簿＝0–2 個人目標の対象の与件・分類は `_roster_children` を seed と共用）・`class_monthly_seed_inputs`（3系統＋名簿の
   決定的合成＝scripts/web 共用）。クラス単位書類（diary/class_monthly）の dedupe_key は**年齢帯を含む**
   （同日・別クラスの版混線防止）／`get_document`（単一書類の現行版全文＝本文 entry・
   整形テキスト・確定/編集の区別＝「書類を見る」タブの閲覧・不在/不正 id/未接続は None）。**LLM もパイプラインも呼ばない**

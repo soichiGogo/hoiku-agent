@@ -63,6 +63,7 @@
     },
     {
       "id": "card-0006", "scope": "月案", "kind": "reference_policy", "body": "月案作成時の既定参照", "references": [
+        {"source": "class_roster", "enabled": true, "note": "クラスの在籍児名簿（0–2 個人目標は在籍児全員が基準）"},
         {"source": "prev_month_diaries", "enabled": true, "note": "個別月案の前月日誌"},
         {"source": "class_child_records", "enabled": true, "note": "クラス児童の保育経過記録すべて"},
         {"source": "past_class_plans", "enabled": true, "note": "それまでのクラス月案すべて"},

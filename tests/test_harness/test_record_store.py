@@ -347,6 +347,14 @@ def test_age_band_for_birthdate_uses_the_fiscal_year_start():
     assert rs.age_band_for_birthdate(None, as_of) is None
 
 
+def test_roster_age_band_treats_midyear_birth_as_infant():
+    """名簿分類は年度初日より後の出生（途中入園の0歳児）を "0-2" に入れる（None で落とさない）。"""
+    fs = date(2026, 4, 1)
+    assert rs.roster_age_band(date(2026, 5, 10), fs) == "0-2"
+    assert rs.roster_age_band(date(2023, 4, 1), fs) == "3-5"
+    assert rs.roster_age_band(None, fs) is None
+
+
 def test_list_class_child_record_entries_prefers_roster(db):
     """クラス児童の保育経過記録＝名簿（Class）優先で全期（年度跨ぎ・別帯で書かれた過去記録も）を引く。"""
     cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
@@ -507,6 +515,59 @@ def test_class_monthly_seed_inputs_invalid_month_fails_loud(db):
     """month 不正は ValueError（黙って誤解釈しない＝呼び出し側が降格/400 を決める）。"""
     with pytest.raises(ValueError):
         rs.class_monthly_seed_inputs("0-2", "でたらめ")
+
+
+def test_class_roster_lists_children_of_the_age_band_with_age_labels(db):
+    """在籍児名簿＝seed と同じ分類（年度4/1時点の年齢帯）＋対象月1日時点の月齢ラベル・表示名順。"""
+    cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "はるとくん", given_name="はると", gender="male", birthdate=date(2025, 4, 10), now=_NOW
+    )
+    rs.upsert_child(
+        "さくらちゃん", given_name="さくら", gender="female", birthdate=date(2022, 5, 1), now=_NOW
+    )
+    rs.upsert_child("ゆいちゃん", given_name="ゆい", gender="female", now=_NOW)  # 生年月日未登録
+    for name in ("はるとくん", "さくらちゃん", "ゆいちゃん"):
+        rs.assign_child_to_class(name, cid, now=_NOW)
+    roster = rs.class_roster("0-2", "2026-08")
+    assert roster == [
+        {"child_id": "はるとくん", "age_months": "1歳3か月", "class_name": "ひよこ組"}
+    ]
+    # 3–5 側には さくらちゃん だけ（生年月日未登録の児は年齢帯を推測せずどちらにも出さない）。
+    assert [r["child_id"] for r in rs.class_roster("3-5", "2026-08")] == ["さくらちゃん"]
+
+
+def test_class_roster_includes_midyear_newborn(db):
+    """年度4/1より後に生まれた途中入園の0歳児も名簿に載る（記録ゼロの新入園児を落とさない）。"""
+    cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "あおくん", given_name="あお", gender="male", birthdate=date(2026, 5, 10), now=_NOW
+    )
+    rs.assign_child_to_class("あおくん", cid, now=_NOW)
+    roster = rs.class_roster("0-2", "2026-08")
+    assert [r["child_id"] for r in roster] == ["あおくん"]
+    assert roster[0]["age_months"] == "0歳2か月"  # 対象月 2026-08 の1日時点
+
+
+def test_class_roster_empty_and_invalid_inputs(db, monkeypatch):
+    """名簿未整備・未接続は空（呼び出し側が「名簿なし」を正直表示）。month 不正は fail-loud。"""
+    assert rs.class_roster("0-2", "2026-08") == []
+    with pytest.raises(ValueError):
+        rs.class_roster("0-2", "でたらめ")
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.class_roster("0-2", "2026-08") == []
+
+
+def test_class_monthly_seed_inputs_include_class_roster(db):
+    """seed 合成に④在籍児名簿が載る（クラス・園児マスタ→クラス月案の与件・0–2 個人目標の対象）。"""
+    cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "はるとくん", given_name="はると", gender="male", birthdate=date(2025, 4, 10), now=_NOW
+    )
+    rs.assign_child_to_class("はるとくん", cid, now=_NOW)
+    seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
+    assert [r["child_id"] for r in seed["class_roster"]] == ["はるとくん"]
 
 
 def test_missing_target_is_error(db):

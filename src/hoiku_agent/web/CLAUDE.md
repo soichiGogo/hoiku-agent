@@ -1,6 +1,6 @@
 # web/ ＝ 保育士向け配布 UI（層A・配信の presentation）
 
-`指針を育てる` の reference_policy カードは source の on/off とメモを直接編集できる。保存は `PATCH /api/policy/reference` を使い、PolicyBook の version 楽観ロックと workspace 書込境界に従う。improver は guideline のみを提案・commit する。
+`指針を育てる` の reference_policy カードは source の on/off とメモを直接編集できる。保存は `PATCH /api/policy/reference` を使い、PolicyBook の version 楽観ロックと workspace 書込境界に従う。improver も自然言語の修正メモから reference_policy の変更案を作り、`ask_caregiver` の確認後だけ即反映する（決定的実体は `policy_store.update_reference_policy`）。
 
 ここで Claude がすること：審査員・保育士が**1枚で触れる UI**を提供し、3責務（harness/agents/improver）を
 そのまま見せる。生成ロジックは持たない。設計コンテキスト §11（Cloud Run 直ホスト）／北極星。
@@ -14,7 +14,9 @@
   **自前 Runner を組まない**（server.py の方針・§9）。harness/agents/schemas は不変のまま動く。
 - improver（二階）だけは discoverable app でない（root_agent を持たない＝improver/CLAUDE.md）ため、
   `improver_stream.py` が `build_improver_agent` を InMemoryRunner で SSE 駆動する（run_improver.py と同型・
-  **別エントリの原則は維持**。一階の root_agent には載せない）。
+  **別エントリの原則は維持**。一階の root_agent には載せない）。PolicyBook は共有
+  `workspace.resolve_workspace_id` で検証済み request の workspace に束縛し、book_id をLLM引数へ出さない。
+  resume は開始時の workspace_id と再開requestを照合してから保育士回答を渡す。
 
 ## 守る制約
 
@@ -121,7 +123,7 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `harness.memory_writeback` で子ども別fact化→Memory同期完了後にapproved。接続済み障害は503で承認保留、
   `memory_synced_version_id` で同じ版の二重投入防止）／
   `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
-  `/api/records/class-monthly-seed`（クラス月案 seed 3系統＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
+  `/api/records/class-monthly-seed`（クラス月案 seed 3系統＋在籍児名簿 class_roster＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
   `/api/records/child-record-entries`（全期・`exclude_period` で作成対象の期を除外＝要録 L4／保育経過記録「前回まで」seed）／
   `/api/records/feedback`（**書類フィードバック＝👍👎＋ひとこと**＝`record_store.save_feedback`/`list_feedback` の中継・POST 保存は
   Google Sign-In の workspace 境界・actor は `_resolve_actor`／GET 一覧は読取素通し・リテラル路なので `/api/records/{id}` より前に宣言）／
@@ -133,6 +135,8 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   未サインインは 403・Google 認証済みの自己書込）・**`/api/notation`**（ひらがな表記DX＝`harness/notation_store` の
   CRUD 中継・GET一覧/POST追加/PATCH編集/DELETE削除・now 注入＋version 楽観ロックの read-modify-write・**書込は公開デモの
   Google Sign-In の workspace 境界で保護**・読取は素通し・種別不正=400/重複競合=409）＋利用枠 middleware（`/api/eval-baseline` は v1 で撤去）。`/` は案内画面を返す（dev UI は `/dev-ui/` 温存）。
+- `workspace.py` … 署名付き Google session の subject から `record_store.touch_user` を通じて workspace_id を
+  解決する共有認可境界。routes と improver_stream が共用し、request body・LLM出力から workspace を受けない。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
   **線形様式（日誌/個別月案/要録）の本文セクション順序・ラベルは `template_store` から駆動**（テキスト整形と共通の SSOT・種別→flowable は chohyo_pdf が持つ）。保育経過記録マトリクス・クラス月案グリッドは非線形のため対象外（各 story wrapper のコード）。
   日本語は `web/fonts/ipaexg.ttf`（IPAex ゴシック・再配布可＝IPA Font License v1.0）を埋め込む。描画のみ（§5）。
