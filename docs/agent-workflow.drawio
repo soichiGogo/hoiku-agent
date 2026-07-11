@@ -106,7 +106,7 @@
         <mxCell id="make-band" value="つくる" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFFFFF;fillOpacity=35;strokeColor=#CDD8E3;strokeWidth=1.5;verticalAlign=top;align=left;spacingTop=14;spacingLeft=18;fontColor=#52697E;fontSize=17;fontStyle=1;fontFamily=Helvetica;arcSize=16;" vertex="1" parent="1">
           <mxGeometry x="45" y="300" width="1580" height="315" as="geometry" />
         </mxCell>
-        <mxCell id="prep-card" value="harness / 準備&#10;過去書類を集積&#10;対象指針を前置" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#E3F5E9;strokeColor=#4CA66D;strokeWidth=2;shadow=1;arcSize=18;fontColor=#176438;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="prep-card" value="harness / 参照候補&#10;候補データを安全に用意&#10;指針・参照ポリシーを提示" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#E3F5E9;strokeColor=#4CA66D;strokeWidth=2;shadow=1;arcSize=18;fontColor=#176438;fontSize=15;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="80" y="385" width="230" height="125" as="geometry" />
         </mxCell>
 
@@ -116,7 +116,7 @@
         <mxCell id="author-title" value="作成 AI（単一 LlmAgent）" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontColor=#4937AA;fontSize=20;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="author-card">
           <mxGeometry x="35" y="18" width="410" height="32" as="geometry" />
         </mxCell>
-        <mxCell id="author-gather" value="必要な情報を判断&#10;指針を検索・履歴を参照&#10;不足だけ保育士へ質問" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#B9ACF1;strokeWidth=1.5;arcSize=16;fontColor=#5543B6;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="author-card">
+        <mxCell id="author-gather" value="必要な情報を判断&#10;fetch_reference で候補を取得&#10;不足だけ保育士へ質問" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#B9ACF1;strokeWidth=1.5;arcSize=16;fontColor=#5543B6;fontSize=14;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="author-card">
           <mxGeometry x="25" y="65" width="195" height="105" as="geometry" />
         </mxCell>
         <mxCell id="author-arrow" value="→" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontColor=#7A63DD;fontSize=27;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="author-card">
@@ -126,7 +126,7 @@
           <mxGeometry x="260" y="65" width="195" height="105" as="geometry" />
         </mxCell>
 
-        <mxCell id="review-card" value="レビュー AI&#10;指針・論理・表現を&#10;別の観点で点検" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#F3EFFF;strokeColor=#7A63DD;strokeWidth=2;shadow=1;arcSize=18;fontColor=#4937AA;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
+        <mxCell id="review-card" value="レビュー AI&#10;指針・論理・表現と&#10;参照実績を点検" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#F3EFFF;strokeColor=#7A63DD;strokeWidth=2;shadow=1;arcSize=18;fontColor=#4937AA;fontSize=16;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
           <mxGeometry x="870" y="385" width="190" height="125" as="geometry" />
         </mxCell>
         <mxCell id="check-card" value="harness / 確定前検査&#10;型・年齢分岐・様式&#10;表記正規化" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#E3F5E9;strokeColor=#4CA66D;strokeWidth=2;shadow=1;arcSize=18;fontColor=#176438;fontSize=15;fontStyle=1;fontFamily=Helvetica;" vertex="1" parent="1">
