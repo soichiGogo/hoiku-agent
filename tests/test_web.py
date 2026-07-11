@@ -35,11 +35,11 @@ def _sign_in_with_google(c: TestClient, monkeypatch, *, email: str = "sensei@exa
         lambda credential: auth.GoogleUser(subject="google-subject-123", email=email),
     )
     welcome = c.get("/?next=/app/")  # popup callback 用の戻り先と session CSRF token を作る。
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     r = c.post(
         "/auth/google",
         json={"credential": "signed-token"},
-        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+        headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
     assert r.status_code == 200 and r.json()["redirect"] == "/app/"
 
@@ -1235,9 +1235,7 @@ def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
     c.get("/")
-    r = c.post(
-        "/auth/google", json={"credential": "token"}, headers={"X-Google-Login-CSRF": "wrong"}
-    )
+    r = c.post("/auth/google", json={"credential": "token"}, headers={"X-Login-CSRF": "wrong"})
     assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
 
 
@@ -1258,14 +1256,14 @@ def test_google_callback_uses_double_submit_cookie_not_session(monkeypatch) -> N
     )
     c = _client()
     welcome = c.get("/")
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     assert c.cookies.get(auth.LOGIN_CSRF_COOKIE) == auth.login_csrf_cookie_value(csrf)
     c.cookies.delete("session")
 
     response = c.post(
         "/auth/google",
         json={"credential": "signed-token"},
-        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+        headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
 
     assert response.status_code == 200
@@ -1293,18 +1291,18 @@ def test_google_login_survives_browser_auto_requests(monkeypatch) -> None:
     )
     c = _client()
     welcome = c.get("/")
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     # ブラウザの自動 favicon 要求＝公開アセットとして返し、ログイン導線（/?next=…）へ流さない。
     favicon = c.get("/favicon.ico", headers={"Sec-Fetch-Mode": "no-cors"})
     assert favicon.status_code == 200
     assert favicon.headers["content-type"] == "image/png"
     # 別タブ等で案内が再描画されても、有効な cookie の token を使い回す（回転させない）。
     rerender = c.get("/")
-    assert re.search(r'"X-Google-Login-CSRF": "([^"]+)"', rerender.text).group(1) == csrf
+    assert re.search(r'"X-Login-CSRF": "([^"]+)"', rerender.text).group(1) == csrf
     r = c.post(
         "/auth/google",
         json={"credential": "signed-token"},
-        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+        headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
     assert r.status_code == 200 and r.json()["redirect"] == "/app/"
 
@@ -1334,12 +1332,12 @@ def test_google_callback_rejects_cross_origin_post(monkeypatch) -> None:
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
     welcome = c.get("/")
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     r = c.post(
         "/auth/google",
         headers={
             "Origin": "https://accounts.google.com",
-            "X-Google-Login-CSRF": csrf,
+            "X-Login-CSRF": csrf,
         },
         json={"credential": "invalid"},
     )

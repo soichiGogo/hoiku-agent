@@ -296,7 +296,7 @@ def _login_control(csrf_token: str) -> str:
             credentials: "same-origin",
             headers: {{
               "Content-Type": "application/json",
-              "X-Google-Login-CSRF": {encoded_csrf_token}
+              "X-Login-CSRF": {encoded_csrf_token}
             }},
             body: JSON.stringify({{credential: response.credential}})
           }});
@@ -1122,7 +1122,10 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 {"error": "ログイン設定が不足しています", "code": "auth_unavailable"},
                 status_code=503,
             )
-        if not auth.login_csrf_matches(request, request.headers.get("x-google-login-csrf", "")):
+        # ヘッダ名は X-Google-* を避ける：Cloud Run（Google Frontend）は予約名として着信時に
+        # X-Google-* リクエストヘッダを削除するため、本番だけ token が届かず全ログインが
+        # csrf_failed になる（ローカルの uvicorn 直では剥がれず気づけない＝2026-07 の本番障害）。
+        if not auth.login_csrf_matches(request, request.headers.get("x-login-csrf", "")):
             return JSONResponse(
                 {"error": "ログインをもう一度お試しください", "code": "csrf_failed"},
                 status_code=400,
