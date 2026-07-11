@@ -50,6 +50,29 @@ def test_plain_string_source_is_coerced_like_adk_tool_args():
     assert state["reference_manifest"] == [{"source": "period_diary", "count": 0, "empty": True}]
 
 
+def test_fetch_class_roster_lists_members_and_records_manifest():
+    """在籍児名簿（クラス・園児マスタ）＝dict 列をそのまま列挙（0–2 個人目標の対象の与件）。"""
+    state = {
+        "class_roster": [
+            {"child_id": "はるとくん", "age_months": "1歳3か月", "class_name": "ひよこ組"},
+            {"child_id": "", "age_months": "", "class_name": ""},  # 呼び名空の行は数えない
+        ]
+    }
+    result = fetch_reference_from_state(state, ReferenceSource.class_roster)
+    assert result["count"] == 1
+    assert result["empty"] is False
+    assert "はるとくん" in result["content"]
+    assert "1歳3か月" in result["content"]
+    assert state["reference_manifest"] == [{"source": "class_roster", "count": 1, "empty": False}]
+
+
+def test_fetch_class_roster_empty_returns_honest_message():
+    """名簿未整備は「登録されていません」を返し、author が記録の登場児での作成へ降格できる。"""
+    result = fetch_reference_from_state({}, ReferenceSource.class_roster)
+    assert result["empty"] is True
+    assert "在籍児が登録されていません" in result["content"]
+
+
 def test_unknown_source_degrades_honestly_without_raising():
     state = {}
     result = fetch_reference_from_state(state, "unknown_source")

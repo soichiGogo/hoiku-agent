@@ -946,18 +946,24 @@ async function main() {
   window.addEventListener("llm-budget", (event) => status.setBudget(event.detail));
   setupActor(cfg); // config 後＝Google サインイン有無でモードを決める（表示名編集 / 自己申告）
 
-  // 子ども選択肢：アーカイブ（児童マスタ）があればそこから、無ければ従来の仮名ロスターに降格。
-  // マスタの子が増えるとそのまま選択肢に出る（auto-create＝書類に登場した子・§14 実名はDBのみ）。
-  let recordChildNames = RECORD_CHILDREN;
-  if (cfg.records_connected) {
-    const dbChildren = await adk.getChildren();
-    const names = dbChildren.map((c) => c.display_name);
-    if (names.length) {
-      recordChildNames = names;
-      // 誕生日を控えておき、年齢帯（0-2/3-5）を満年齢で自動判定できるようにする（ageBandOf）。
-      for (const c of dbChildren) if (c.birthdate) BIRTHDATE_OF[c.display_name] = c.birthdate;
-    }
+  // 子ども選択肢：DB 接続時は児童マスタが正（0件なら空のまま「園児が未登録」を正直に案内＝
+  // 架空児をあたかも実在の候補のように出さない）。未接続だけデモ用の仮名ロスターへ降格。
+  // 配列は childCombo と閉包共有＝ in-place 更新でタブ切替後の再取得（loadDiaryClasses）が候補に追従する
+  // （クラス・園児タブで登録した児がリロード無しで対象児コンボに出る）。
+  const recordChildNames = cfg.records_connected ? [] : [...RECORD_CHILDREN];
+  function updateChildEmptyNote() {
+    $("doc-child-empty").hidden = !(cfg.records_connected && recordChildNames.length === 0);
   }
+  function applyDbChildren(dbChildren) {
+    recordChildNames.length = 0;
+    for (const c of dbChildren) {
+      recordChildNames.push(c.display_name);
+      // 誕生日を控えておき、年齢帯（0-2/3-5）を満年齢で自動判定できるようにする（ageBandOf）。
+      if (c.birthdate) BIRTHDATE_OF[c.display_name] = c.birthdate;
+    }
+    updateChildEmptyNote();
+  }
+  updateChildEmptyNote();
 
   // ══ 書類を作る（日誌/月案/保育経過記録を種別セグメントで統合） ══════════════════
   // フロー本体（HITL・ステッパー・編集フォーム・承認・PDF・アーカイブ）は makeDocFlow 1実装の共用で、
@@ -985,6 +991,7 @@ async function main() {
       // 3–5 児がフォールバックの 0-2 に誤判定され author プロンプト・タグ語彙がずれるのを防ぐ）。
       const dn = res.display_name || composeDisplayName(given_name, gender);
       if (birthdate) BIRTHDATE_OF[dn] = birthdate;
+      $("doc-child-empty").hidden = true; // 1人登録された＝「園児が未登録」の案内を畳む
       return { ok: true, displayName: res.display_name };
     },
   });
@@ -1000,6 +1007,9 @@ async function main() {
     diaryClasses = cl.classes || [];
     for (const k of Object.keys(diaryRosterOf)) delete diaryRosterOf[k];
     for (const k of kids) if (k.class_id) (diaryRosterOf[k.class_id] ||= []).push(k.display_name);
+    // 同じ取得で対象児コンボ（経過記録/要録）も追従させる＝クラス・園児タブで登録した児を
+    // 「書類を作る」タブへ戻った時点で反映（起動時1回構築の取り残しを解消）。
+    applyDbChildren(kids);
     renderDiaryClassSelector();
   }
   function renderDiaryClassSelector() {
@@ -1154,20 +1164,30 @@ async function main() {
     const ageBandLabel = classAge();
     const ageBand = AGE_BAND_VALUE[ageBandLabel] || "0-2";
     status.setSubject(ageBandLabel);
-    // seed 3系統（依存モデル 2026-07）＝①クラス児童の保育経過記録すべて ②それまでのクラス月案
-    // ③経過記録に未反映の期間の日誌（境界計算はサーバ側 harness に1つ）。未接続/該当なしは
-    // ③だけ仮名サンプルへ降格（①②は 0 件＝digest が降格メッセージを出す）。
+    // seed 3系統＋在籍児名簿（依存モデル 2026-07）＝①クラス児童の保育経過記録すべて ②それまでのクラス月案
+    // ③経過記録に未反映の期間の日誌（境界計算はサーバ側 harness に1つ）④クラスの在籍児名簿
+    // （クラス・園児マスタ＝0–2 個人目標の対象）。未接続/該当なしは③だけ仮名サンプルへ降格
+    // （①②は 0 件＝digest が降格メッセージ・④は空＝「名簿未登録」を正直表示し記録の登場児で作る）。
     const pm = prevMonth(month);
     let source = "アーカイブ";
-    let seed3 = { class_diary_entries: [], class_record_entries: [], past_class_plans: [] };
+    let seed3 = {
+      class_diary_entries: [],
+      class_record_entries: [],
+      past_class_plans: [],
+      class_roster: [],
+    };
     if (cfg.records_connected) seed3 = await adk.getClassMonthlySeed(ageBand, month);
+    seed3.class_roster ||= [];
     if (!seed3.class_diary_entries.length && !seed3.class_record_entries.length) {
       seed3.class_diary_entries = sampleClassPrevEntries(ageBand);
       source = "サンプル";
     }
+    const rosterNote = seed3.class_roster.length
+      ? `在籍児 ${seed3.class_roster.length}名（名簿）`
+      : "名簿未登録（記録の登場児で作成）";
     $("monthly-seed-count").textContent =
       `経過記録 ${seed3.class_record_entries.length}・月案 ${seed3.past_class_plans.length}・` +
-      `日誌 ${seed3.class_diary_entries.length} 件（${source}）`;
+      `日誌 ${seed3.class_diary_entries.length} 件（${source}）・${rosterNote}`;
     // 前月日誌で評価・反省が未記入のものを検出して記入導線を出す（生成はブロックしない＝並行）。
     checkPrevMonthEvaluations(pm, ageBand);
     const seed = { doc_type: "クラス月案", ...seed3 };

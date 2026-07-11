@@ -1041,6 +1041,7 @@ def test_class_monthly_seed_endpoint_composes_three_inputs(records_db) -> None:
     assert [e["date"] for e in body["class_diary_entries"]] == ["2026-07-10"]  # 未反映だけ
     assert [r["period"] for r in body["class_record_entries"]] == ["2026-04〜2026-06"]
     assert [p["month"] for p in body["past_class_plans"]] == ["2026-07"]
+    assert body["class_roster"] == []  # 名簿未整備＝空を正直に返す（フロントは「名簿未登録」表示）
     # month 不正は 400（黙って誤解釈しない）
     bad = c.get("/api/records/class-monthly-seed", params={"age_band": "0-2", "month": "abc"})
     assert bad.status_code == 400

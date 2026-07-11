@@ -121,7 +121,7 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `harness.memory_writeback` で子ども別fact化→Memory同期完了後にapproved。接続済み障害は503で承認保留、
   `memory_synced_version_id` で同じ版の二重投入防止）／
   `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
-  `/api/records/class-monthly-seed`（クラス月案 seed 3系統＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
+  `/api/records/class-monthly-seed`（クラス月案 seed 3系統＋在籍児名簿 class_roster＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
   `/api/records/child-record-entries`（全期・`exclude_period` で作成対象の期を除外＝要録 L4／保育経過記録「前回まで」seed）／
   `/api/records/feedback`（**書類フィードバック＝👍👎＋ひとこと**＝`record_store.save_feedback`/`list_feedback` の中継・POST 保存は
   Google Sign-In の workspace 境界・actor は `_resolve_actor`／GET 一覧は読取素通し・リテラル路なので `/api/records/{id}` より前に宣言）／

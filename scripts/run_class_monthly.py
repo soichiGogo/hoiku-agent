@@ -5,13 +5,14 @@
 （＝年齢帯）単位で書く。
 
 このスクリプトは:
-1. seed 3系統を読む（依存モデル 2026-07）＝ `record_store.class_monthly_seed_inputs` の合成:
+1. seed（3系統＋在籍児名簿）を読む（依存モデル 2026-07）＝ `record_store.class_monthly_seed_inputs` の合成:
    ① クラス児童の作成済み保育経過記録すべて（全期・名簿優先） ② それまでのクラス月案すべて
-   ③ 保育経過記録に未反映の期間の当該クラスの日誌（境界＝①の期間末）。
+   ③ 保育経過記録に未反映の期間の当該クラスの日誌（境界＝①の期間末）
+   ④ クラスの在籍児名簿（クラス・園児マスタ＝0–2 個人目標の対象の与件・名簿未整備は空）。
    `--prev-entries-file`（JSON 配列）は③を手渡しで差し替える。未接続/該当なしは
    同梱の仮名サンプル（③のみ・複数児）へ降格。
 2. session state に doc_type="クラス月案" と class_record_entries・past_class_plans・
-   class_diary_entries を seed して root_agent を回す。
+   class_diary_entries・class_roster を seed して root_agent を回す。
 3. author が reference_policy に従い3系統を fetch_reference で選択取得し、
    クラス全体のねらい・区分×領域グリッド・0–2 の個人目標を生成（計画の連続性・
    PDCA）→ reviewer → finalize（検査・整形）。
@@ -144,7 +145,12 @@ def _archive_seed_inputs(month: str, age_band: str) -> dict:
     try:
         return record_store.class_monthly_seed_inputs(age_band, month)
     except ValueError:
-        return {"class_diary_entries": [], "class_record_entries": [], "past_class_plans": []}
+        return {
+            "class_diary_entries": [],
+            "class_record_entries": [],
+            "past_class_plans": [],
+            "class_roster": [],
+        }
 
 
 async def _run(month: str, age_band: str, seed: dict) -> None:
@@ -216,6 +222,11 @@ def main() -> None:
         f"[seed] クラス児童の保育経過記録 {len(seed['class_record_entries'])} 件 / "
         f"それまでのクラス月案 {len(seed['past_class_plans'])} 件（いずれも書類アーカイブ・"
         f"未接続は 0 件降格）"
+    )
+    roster = seed.get("class_roster") or []
+    print(
+        f"[seed] 在籍児名簿 {len(roster)} 名"
+        + ("（名簿未整備/未接続＝記録の登場児で作成）" if not roster else "（クラス・園児マスタ）")
     )
     print(
         f"[seed] 未反映期間の日誌 {len(seed['class_diary_entries'])} 件"
