@@ -68,6 +68,22 @@ def login_csrf_cookie_value(token: str) -> str:
     return f"{token}.{signature}"
 
 
+def current_login_csrf(request: Request) -> str | None:
+    """受信 cookie の署名済み login CSRF token を検証して返す（不在・無効・鍵不足は None）。
+
+    ブラウザは favicon 等の自動リクエストや別タブでも案内画面へ到達し得るため、描画のたびに
+    token を発行し直すと、表示中のページへ埋めた token と cookie が食い違い、正しいログイン
+    まで拒否してしまう。有効な cookie の token を使い回し、案内画面の再描画を冪等にする。
+    """
+    raw = request.cookies.get(LOGIN_CSRF_COOKIE)
+    if not isinstance(raw, str) or not settings.session_secret:
+        return None
+    token = raw.rsplit(".", 1)[0]
+    if not token:
+        return None
+    return token if hmac.compare_digest(raw, login_csrf_cookie_value(token)) else None
+
+
 def login_csrf_matches(request: Request, token: str) -> bool:
     """popup callback の header とサーバ署名済み HttpOnly cookie を照合する。"""
     expected = request.cookies.get(LOGIN_CSRF_COOKIE)
