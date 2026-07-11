@@ -128,6 +128,20 @@ def age_band_for_birthdate(birthdate: date | None, as_of: date) -> str | None:
     return "0-2" if years <= 2 else "3-5"
 
 
+def roster_age_band(birthdate: date | None, fiscal_start: date) -> str | None:
+    """名簿分類用の年齢帯＝年度初日時点の満年齢。年度初日より後の出生は "0-2"（途中入園の0歳児）。
+
+    `age_band_for_birthdate` は「基準日より後の出生は推測せず None」を守る汎用判定だが、名簿の
+    分類では年度途中に生まれた在籍児は定義上 0歳児（"0-2"）に属する（None で除外すると
+    「記録がまだ無い新入園児を落とさない」という名簿の目的そのものが崩れる）。生年月日未登録のみ None。
+    """
+    if birthdate is None:
+        return None
+    if birthdate > fiscal_start:
+        return "0-2"
+    return age_band_for_birthdate(birthdate, fiscal_start)
+
+
 def fiscal_year_start_for_year(fiscal_year: str, *, fallback: date | None = None) -> date:
     """年度文字列（YYYY）の4月1日を返す。空/不正は fallback の属する年度に降格する。"""
     try:
@@ -1615,7 +1629,7 @@ def _roster_children(
             .order_by(Child.display_name)
         )
         if (not cls.fiscal_year or cls.fiscal_year == str(reference_date.year))
-        and age_band_for_birthdate(child.birthdate, reference_date) == age_band
+        and roster_age_band(child.birthdate, reference_date) == age_band
     ]
 
 
@@ -1870,7 +1884,7 @@ def _class_view(c: Class, children: Iterable[Child] = ()) -> dict:
     age_bands = [
         band
         for band in AGE_BANDS
-        if any(age_band_for_birthdate(child.birthdate, reference_date) == band for child in members)
+        if any(roster_age_band(child.birthdate, reference_date) == band for child in members)
     ]
     view = {
         "id": str(c.id),

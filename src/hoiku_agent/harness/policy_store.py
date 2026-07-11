@@ -416,33 +416,61 @@ def _merge_seed_reference_cards(book: PolicyBook) -> PolicyBook:
     DB の book はシード適用後に独立して育つため、旧い book には新語彙のカード/ルールが無く、
     既定参照の提示（render_for_doc）にも編集 UI（/api/policy/reference は既存ルールの on/off のみ）
     にも現れない＝コードは対応済みなのに book だけ取り残される drift になる。ここでは
-    - scope に reference_policy カードが無ければシードのカードを足す（agentic 参照化以前の book）
-    - カードはあってもシードにある source のルールが欠けていれば末尾に足す（語彙拡張の追随）
+    - scope に reference_policy カードが**一度も存在しなければ**シードのカードを足す
+      （agentic 参照化以前の book。retired/superseded を含め1枚でもあれば「保育士/運用の判断あり」
+      とみなし復活させない）
+    - active カードにシードにある source のルールが欠けていれば末尾に足す（語彙拡張の追随）
     だけを行い、**既存ルール（保育士が enabled=False にした判断・note）には触れない**。
     読取時の補完で保存はしない（次の書込みで自然に乗る）。シードが読めない環境は無変更（降格）。
     """
-    try:
-        seed = _load_local(_POLICY_PATH)
-    except Exception:  # noqa: BLE001 シード欠落/破損で読取本流を止めない（補完なしで返す）
+    seed = _load_seed_for_merge()
+    if seed is None:
         return book
     for seed_card in seed.cards:
         if seed_card.kind != PolicyCardKind.reference_policy:
             continue
+        ever_existed = any(
+            c.kind == PolicyCardKind.reference_policy and c.scope == seed_card.scope
+            for c in book.cards
+        )
         target = reference_policy_card(book, seed_card.scope)
         if target is None:
+            if ever_existed:
+                continue  # 取り下げ済み＝判断を尊重（黙って復活させない）
             used = {c.id for c in book.cards}
-            card = (
-                seed_card
-                if seed_card.id not in used
-                else seed_card.model_copy(update={"id": next_card_id(book)})
+            card = seed_card.model_copy(  # キャッシュ共有インスタンスを book 間で使い回さない
+                deep=True,
+                update={} if seed_card.id not in used else {"id": next_card_id(book)},
             )
             book.cards.append(card)
             continue
         known = {rule.source for rule in target.references}
-        missing = [rule for rule in seed_card.references if rule.source not in known]
+        missing = [
+            rule.model_copy(deep=True) for rule in seed_card.references if rule.source not in known
+        ]
         if missing:
             target.references = [*target.references, *missing]
     return book
+
+
+# シードは同梱ファイルで実行中は不変＝(パス, mtime) キーの1枠キャッシュで毎読取のディスク IO を避ける
+# （load_book_meta は prompt 組み立てのたびに呼ばれる高頻度パス。テストは path/mtime が変わるので追随する）。
+_SEED_CACHE: dict[str, object] = {}
+
+
+def _load_seed_for_merge() -> PolicyBook | None:
+    try:
+        key = (str(_POLICY_PATH), _POLICY_PATH.stat().st_mtime_ns)
+    except OSError:
+        return None  # シード不在＝補完なし（降格）
+    if _SEED_CACHE.get("key") != key:
+        try:
+            _SEED_CACHE["book"] = _load_local(_POLICY_PATH)
+        except Exception:  # noqa: BLE001 シード破損で読取本流を止めない（補完なしで返す）
+            _SEED_CACHE["book"] = None
+        _SEED_CACHE["key"] = key
+    book = _SEED_CACHE.get("book")
+    return book if isinstance(book, PolicyBook) else None
 
 
 def _load_local(path: Path) -> PolicyBook:

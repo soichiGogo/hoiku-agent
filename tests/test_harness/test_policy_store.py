@@ -431,6 +431,18 @@ def test_db_load_backfills_only_missing_rules_and_keeps_caregiver_choice(policy_
     assert rules[ReferenceSource.class_roster].enabled is True  # 新語彙だけ補完
 
 
+def test_db_backfill_does_not_revive_retired_reference_card(policy_db):
+    """取り下げ済み（retired）の reference_policy カードは復活させない（判断の尊重＝黙って戻さない）。"""
+    _write_seed(_reference_seed_book())
+    old = PolicyBook()
+    old.cards.append(
+        _reference_seed_book().cards[0].model_copy(update={"status": PolicyStatus.retired})
+    )
+    ps.save_book(old)
+    book, _ = ps.load_book_meta()
+    assert ps.reference_policy_card(book, PolicyScope.月案) is None
+
+
 def test_db_backfill_avoids_card_id_collision(policy_db):
     """DB book が同じ id を別カードで使っていたら、補完カードは次の空き id を採る（id 一意を壊さない）。"""
     _write_seed(_reference_seed_book())

@@ -8,6 +8,7 @@ from ..schemas import ChildRecord, ClassMonthlyPlan, DiaryEntry, ReferenceSource
 from .aggregate import (
     child_record_digest,
     class_plan_history_digest,
+    class_roster_rows,
     collect_reflections,
     format_class_plan_history_for_prompt,
     format_class_roster_for_prompt,
@@ -93,11 +94,9 @@ def fetch_reference_from_state(state: dict, source: ReferenceSource | str) -> di
         content = format_class_plan_history_for_prompt(class_plan_history_digest(plans))
         count = len(plans)
     elif source == ReferenceSource.class_roster:
-        # 名簿（クラス・園児マスタ）＝pydantic 書類ではなく名簿 view の dict 列。呼び名が空の行は数えない
-        # （count＝author が個人目標の対象にできる在籍児数。空は「名簿なし」の正直な降格メッセージ）。
-        names = [
-            row for row in rows if isinstance(row, dict) and str(row.get("child_id") or "").strip()
-        ]
+        # 名簿（クラス・園児マスタ）＝pydantic 書類ではなく名簿 view の dict 列。有効行の判定は
+        # aggregate.class_roster_rows に1つ（count＝manifest の在籍児数と本文の母集合を揃える）。
+        names = class_roster_rows(rows)
         content = format_class_roster_for_prompt(names)
         count = len(names)
     else:
