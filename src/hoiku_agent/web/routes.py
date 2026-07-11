@@ -31,7 +31,15 @@ from ..config import settings
 from ..harness import llm_budget, notation_store, policy_store, record_store, template_store
 from ..harness.finalize import finalize_entry
 from ..harness.pipeline import MAX_REVIEW_ITERATIONS
-from ..schemas import FiveDomains, NotationKind, NotationRule, TenNoSugata, ThreeViewpoint
+from ..schemas import (
+    FiveDomains,
+    NotationKind,
+    NotationRule,
+    PolicyScope,
+    ReferenceRule,
+    TenNoSugata,
+    ThreeViewpoint,
+)
 from .chohyo_pdf import render_pdf
 from .docx_fill import fill_docx
 from .docx_fill import supported_kinds as docx_supported_kinds
@@ -62,6 +70,14 @@ class NotationAddRequest(BaseModel):
     replacement: str = ""  # 変換先（例: 子ども）
     kind: str = "ひらがな化"  # NotationKind の値
     note: str = ""  # なぜこの表記か
+
+
+class ReferencePolicyUpdateRequest(BaseModel):
+    """既定参照の直接編集。version は policy_books の楽観ロックに使う。"""
+
+    scope: PolicyScope
+    references: list[ReferenceRule]
+    version: int
 
 
 class NotationUpdateRequest(BaseModel):
@@ -477,11 +493,34 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         """
         try:
             book_id = f"workspace:{_workspace_id(request, datetime.now())}"
-            view = policy_store.book_view(policy_store.load_book(book_id=book_id))
+            book, version = policy_store.load_book_meta(book_id=book_id)
+            view = policy_store.book_view(book)
+            view["version"] = version
             view["store"] = policy_store.store_status()
             return view
         except Exception:  # noqa: BLE001  未配線/壊れは閲覧降格（偽の中身を出さない）
             return {"cards": [], "history": [], "store": "unavailable"}
+
+    @app.patch("/api/policy/reference")
+    def web_policy_reference(req: ReferencePolicyUpdateRequest, request: Request):
+        """reference_policy を保育士が直接編集する。既存の楽観ロックで競合を拒否する。"""
+        book_id = f"workspace:{_workspace_id(request, datetime.now())}"
+        try:
+            book, current_version = policy_store.load_book_meta(book_id=book_id)
+            if current_version != req.version:
+                raise ValueError("指針が別の操作で更新されました。再読み込みしてください")
+            updated = policy_store.update_reference_policy(
+                book,
+                scope=req.scope,
+                references=req.references,
+                when=datetime.now(),
+            )
+            policy_store.save_book(updated, if_version=req.version, book_id=book_id)
+            view = policy_store.book_view(updated)
+            view.update({"version": req.version + 1, "store": policy_store.store_status()})
+            return {"status": "ok", **view}
+        except ValueError as e:
+            return JSONResponse({"status": "rejected", "detail": str(e)}, status_code=409)
 
     # ── 表記ルール辞書（ひらがな表記DX＝harness/notation_store の中継・§5）─────────────────
     # 決定的実体は harness に1つ（CRUD＋正規化）。ここは now 注入＋楽観ロックの read-modify-write を
