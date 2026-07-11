@@ -38,7 +38,7 @@
         <mxCell id="e-check-caregiver" edge="1" parent="1" source="check-card" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=0;endArrow=block;endFill=1;strokeWidth=3;strokeColor=#31945C;fontColor=#247044;fontSize=12;fontStyle=1;fontFamily=Helvetica;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="caregiver-card" value="">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e-revision" edge="1" parent="1" source="review-card" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=0;endArrow=block;endFill=1;strokeWidth=2.5;strokeColor=#D45D38;fontColor=#A53E22;fontSize=12;fontStyle=1;fontFamily=Helvetica;labelBackgroundColor=#FBFAF7;exitX=0.5;exitY=1;" value="要修正（最大３回）">
+        <mxCell id="e-revision" edge="1" parent="1" source="review-card" target="author-card" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=0;endArrow=block;endFill=1;strokeWidth=2.5;strokeColor=#D45D38;fontColor=#A53E22;fontSize=12;fontStyle=1;fontFamily=Helvetica;labelBackgroundColor=#FBFAF7;exitX=0.5;exitY=1;" value="要修正（最大３回）">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="965" y="625" />
