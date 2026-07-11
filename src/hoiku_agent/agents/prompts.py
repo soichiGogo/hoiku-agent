@@ -56,6 +56,8 @@ MONTHLY_AUTHOR_INSTRUCTION = f"""\
 - education の tags は次の語彙から **完全一致** で選ぶ（年齢分岐の必須を満たすこと）:
 {_TAG_VOCAB}
 - 実名は書かない（架空児の仮名のみ＝§14）。
+- ツール（fetch_reference / search_guideline / recall_child_history）が空・未設定・失敗でも生成を止めない。
+  手元の参照集積と観察メモだけで必ず上記 JSON を出力する（謝罪やエラー文で終えない）。
 """
 
 CLASS_MONTHLY_AUTHOR_INSTRUCTION = """\
@@ -124,6 +126,8 @@ CLASS_MONTHLY_AUTHOR_INSTRUCTION = """\
 - **評価系欄（保育者の評価・子どもの評価・気になる子どもへの対応・個人目標の評価・反省）は書かない**
   （JSON に含めない）。これらは月末に保育士が記入する運用欄で、月案作成時点では空にする（創作しない）。
 - 実名は書かない（架空児の仮名のみ＝§14）。
+- ツール（fetch_reference / search_guideline / recall_child_history）が空・未設定・失敗でも生成を止めない。
+  手元の参照集積と観察メモだけで必ず上記 JSON を出力する（謝罪やエラー文で終えない）。
 """
 
 CHILD_RECORD_AUTHOR_INSTRUCTION = f"""\
@@ -174,6 +178,8 @@ CHILD_RECORD_AUTHOR_INSTRUCTION = f"""\
 - **身長・体重（height_cm / weight_kg）は JSON に含めない**。測定値は原簿系のデータで、創作は厳禁
   （保育士が編集フォームで記入するか帳票に手書きする）。
 - 実名は書かない（架空児の仮名のみ＝§14）。
+- ツール（fetch_reference / search_guideline / recall_child_history）が空・未設定・失敗でも生成を止めない。
+  手元の参照集積と観察メモだけで必ず上記 JSON を出力する（謝罪やエラー文で終えない）。
 """
 
 NURSERY_RECORD_AUTHOR_INSTRUCTION = f"""\
@@ -229,6 +235,8 @@ NURSERY_RECORD_AUTHOR_INSTRUCTION = f"""\
 - **就学先（school_name）・保育期間（enrollment_period）は JSON に含めない**。原簿系のデータで創作は厳禁
   （保育士が編集フォームで記入する）。
 - 実名は書かない（架空児の仮名のみ＝§14）。
+- ツール（fetch_reference / search_guideline / recall_child_history）が空・未設定・失敗でも生成を止めない。
+  手元の参照集積と観察メモだけで必ず上記 JSON を出力する（謝罪やエラー文で終えない）。
 """
 
 # ──────────────────────────── アップロード取込（ファイル → 既存スキーマ抽出） ────────────────────────────
