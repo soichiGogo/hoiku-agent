@@ -34,6 +34,7 @@ from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import db
 from ..schemas.policy import (
+    REFERENCE_SOURCE_META,
     PolicyBook,
     PolicyCard,
     PolicyCardKind,
@@ -250,6 +251,7 @@ def update_reference_policy(
     references: list[ReferenceRule],
     when,
     decided_by: str = "保育士",
+    source: str = "設定画面",
 ) -> PolicyBook:
     """scope の reference_policy を直接更新する（UI 設定編集用・純関数）。"""
     target = reference_policy_card(book, scope)
@@ -268,7 +270,7 @@ def update_reference_policy(
         action=PolicyChangeAction.supersede,
         card_id=target.id,
         summary=f"{scope.value}の既定参照を更新",
-        source="設定画面",
+        source=source,
         decided_by=decided_by,
     )
     return book.model_copy(update={"cards": cards, "history": [*book.history, change]})
@@ -595,11 +597,17 @@ _SCOPE_DOC_LABEL: dict[PolicyScope, str] = {
 
 def card_view(card: PolicyCard) -> dict:
     """カード1枚をフロント/API 用の JSON-serializable dict に変換する（決定的）。"""
+    references = []
+    for rule in card.references:
+        label, description = REFERENCE_SOURCE_META[rule.source]
+        references.append(
+            {**rule.model_dump(mode="json"), "label": label, "description": description}
+        )
     return {
         "id": card.id,
         "kind": card.kind.value,
         "body": card.body,
-        "references": [rule.model_dump(mode="json") for rule in card.references],
+        "references": references,
         "scope": card.scope.value,
         "doc_type": _SCOPE_DOC_TYPE[card.scope],
         "doc_label": _SCOPE_DOC_LABEL[card.scope],
