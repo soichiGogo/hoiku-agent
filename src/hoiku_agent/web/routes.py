@@ -29,7 +29,14 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 from ..config import settings
-from ..harness import llm_budget, notation_store, policy_store, record_store, template_store
+from ..harness import (
+    demo_seed,
+    llm_budget,
+    notation_store,
+    policy_store,
+    record_store,
+    template_store,
+)
 from ..harness.finalize import finalize_entry
 from ..harness.memory_writeback import approved_memory_facts, persist_approved_facts
 from ..harness.pipeline import MAX_REVIEW_ITERATIONS
@@ -49,7 +56,7 @@ from . import auth
 from .proofread import proofread_entry
 from . import upload_extract
 from .upload_parse import parse_uploaded_file
-from .workspace import resolve_workspace_id
+from .workspace import provision_user, resolve_user, resolve_workspace_id
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
@@ -455,14 +462,14 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
         workspace_id = ""
         if signed_in:
             # サインイン済み＝users へ auto-provision し、設定済みなら表示名を返す（DB I/O は threadpool へ）。
+            # 初回ログイン（新規 workspace）はデフォルト seed も投入される（workspace.provision_user）。
             user = await run_in_threadpool(
-                record_store.touch_user,
-                signed_in.email,
-                google_subject=signed_in.subject,
-                now=datetime.now(),
+                resolve_user,
+                request,
+                datetime.now(),
             )
-            display_name = str(user.get("display_name") or "")
-            workspace_id = str(user.get("workspace_id") or "")
+            display_name = str((user or {}).get("display_name") or "")
+            workspace_id = str((user or {}).get("workspace_id") or "")
         return {
             "app_name": APP_NAME,
             # ADK session の user_id も workspace に結び、Google account 間で会話 state を共有しない。
@@ -816,7 +823,7 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
         signed_in = auth.current_google_user(request)
         if not signed_in:
             return declared
-        user = record_store.touch_user(signed_in.email, google_subject=signed_in.subject, now=now)
+        user = resolve_user(request, now) or {}
         display = str(user.get("display_name") or "").strip()
         return f"{display}（{signed_in.email}）" if display else signed_in.email
 
@@ -860,6 +867,27 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
         result = record_store.request_workspace_deletion(
             signed_in.email, google_subject=signed_in.subject, now=datetime.now()
         )
+        return JSONResponse(result)
+
+    @app.post("/api/account/reset")
+    async def web_reset_account_data(request: Request):
+        """個人 workspace のデータを即時初期化する（ヘッダ「データを初期化」の実体）。
+
+        書類・園児・クラス・フィードバック・指針/表記のカスタムを消してデフォルト seed へ戻す
+        （`demo_seed.reset_workspace`）。User/Workspace/利用枠は残す＝ログイン継続（アカウント削除
+        ＝30日遅延の deletion-request とは別物）。未サインインは 403（fail-closed）、DB 未接続は
+        skipped で正直に返す。LLM 非課金＝利用枠の対象外・DB I/O は threadpool で回す。
+        """
+        signed_in = auth.current_google_user(request)
+        if not signed_in:
+            return JSONResponse(
+                {"error": "サインインが必要です", "code": "auth_required"}, status_code=403
+            )
+        now = datetime.now()
+        workspace_id = await run_in_threadpool(resolve_workspace_id, request, now)
+        if workspace_id is None:
+            return JSONResponse({"status": "skipped", "reason": "workspace を解決できません"})
+        result = await run_in_threadpool(demo_seed.reset_workspace, workspace_id, now=now)
         return JSONResponse(result)
 
     @app.post("/api/records")
@@ -1255,12 +1283,13 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
             )
         auth.sign_in(request, user)
         # 初回は users へ作り、既存 IAP の email 行には Google subject を補完する。DB 未接続の降格は
-        # ログイン自体を妨げない（identity の検証済み session が証跡の正）。
+        # ログイン自体を妨げない（identity の検証済み session が証跡の正）。新規 workspace には
+        # デフォルト seed（クラス・園児・書類チェーン）をここで投入する（workspace.provision_user）。
         await run_in_threadpool(
-            record_store.touch_user,
+            provision_user,
             user.email,
-            google_subject=user.subject,
-            now=datetime.now(),
+            user.subject,
+            datetime.now(),
         )
         target = _safe_next(str(request.session.pop("post_login_path", "/app/")))
         response = JSONResponse({"redirect": target})
