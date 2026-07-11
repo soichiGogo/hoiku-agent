@@ -1,6 +1,6 @@
 """eval ゲートの決定ロジック（純関数・§12）の単体テスト（LLM 非依存・高速）。
 
-設計コンテキスト §12/§16：ゲートの判定式（軸平均→main 比 非劣化＋must_fix 0）は決定的ロジックなので
+設計コンテキスト §12/§16：ゲートの判定式（軸平均→main 比の許容幅内＋must_fix 0）は決定的ロジックなので
 pytest で必須。ADK の採点（要 creds）から切り離した純関数として検証し、「偽の緑を出さない」を担保する。
 ADK 駆動部（_score_cases_with_adk）は要 creds のためここでは回さない（tests/test_eval.py が降格を見る）。
 """
@@ -96,6 +96,17 @@ def test_decide_red_on_regression():
     assert gate.decide_gate(0.79, 0.80, 0) is False
 
 
+def test_decide_allows_one_cell_judge_variance_but_rejects_two_cells():
+    # 9ケース×3軸＝27セル。1セル差は1/27≈0.037、2セル差は2/27≈0.074。
+    margin = 0.05
+    assert gate.decide_gate(26 / 27, 1.0, 0, non_inferiority_margin=margin) is True
+    assert gate.decide_gate(25 / 27, 1.0, 0, non_inferiority_margin=margin) is False
+
+
+def test_decide_never_uses_margin_for_must_fix():
+    assert gate.decide_gate(1.0, 1.0, 1, non_inferiority_margin=0.05) is False
+
+
 # ──────────────────────── extract_rubric_scores ────────────────────────
 
 
@@ -181,6 +192,7 @@ def test_committed_gate_policy_and_judge_sampling_are_hardened():
     policy = gate.load_gate_policy()
     assert set(policy["axis_minimums"]) == set(gate.AXIS_RUBRIC_IDS)
     assert all(0 < value <= 1 for value in policy["axis_minimums"].values())
+    assert policy["non_inferiority_margin"] == 0.05
     config = json.loads(gate._TEST_CONFIG.read_text(encoding="utf-8"))
     metric = config["criteria"][gate.RUBRIC_METRIC]
     assert metric["judge_model_options"]["num_samples"] >= 3
