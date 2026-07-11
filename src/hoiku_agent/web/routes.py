@@ -315,7 +315,10 @@ def _login_control(csrf_token: str) -> str:
 def _welcome_page(request: Request) -> HTMLResponse:
     """案内画面テンプレートへ Google client ID を最小限だけ差し込んで返す。"""
     template = _WELCOME_TEMPLATE_PATH.read_text(encoding="utf-8")
-    csrf_token = auth.issue_login_csrf()
+    # 有効な cookie の token は使い回す＝別タブや自動リクエスト由来の再描画で回転させない
+    # （回転すると表示中ページに埋めた token と cookie が食い違い、正しいログインが csrf_failed になる）。
+    # 同値の set_cookie は有効期限（10分）の更新として機能する。
+    csrf_token = auth.current_login_csrf(request) or auth.issue_login_csrf()
     response = HTMLResponse(template.replace("{{LOGIN_CONTROL}}", _login_control(csrf_token)))
     if settings.google_signin_enabled:
         response.set_cookie(
@@ -331,12 +334,22 @@ def _welcome_page(request: Request) -> HTMLResponse:
 
 def _is_public_auth_path(path: str) -> bool:
     """未ログインでも到達できるのは案内・Google callback・その表示資産だけ。"""
-    return path in {"/", "/auth/google", "/privacy", "/terms"} or path.startswith("/public/")
+    return path in {"/", "/auth/google", "/favicon.ico", "/privacy", "/terms"} or path.startswith(
+        "/public/"
+    )
 
 
 def _auth_denied(request: Request, *, unavailable: bool = False):
-    """画面は案内へ戻し、API/実行口は HTML でなく機械可読な失敗を返す。"""
-    if request.url.path.startswith(("/api/", "/run", "/dev/", "/builder/", "/apps/", "/list-apps")):
+    """画面遷移は案内へ戻し、API/実行口・サブリソース要求は HTML でなく機械可読な失敗を返す。"""
+    api_like = request.url.path.startswith(
+        ("/api/", "/run", "/dev/", "/builder/", "/apps/", "/list-apps")
+    )
+    # favicon・manifest 等、ブラウザが自動発行するサブリソース要求（Sec-Fetch-Mode≠navigate）を
+    # 案内画面へリダイレクトすると、案内の再描画が post_login_path を汚染する（過去には login CSRF
+    # token も回転させログイン不能を起こした）。案内へ戻すのは画面遷移（navigate。ヘッダを送らない
+    # 旧環境は従来どおり案内へ）だけにする。
+    is_navigation = request.headers.get("sec-fetch-mode", "navigate").lower() == "navigate"
+    if api_like or not is_navigation:
         code = "auth_unavailable" if unavailable else "auth_required"
         message = "ログイン設定が不足しています" if unavailable else "ログインが必要です"
         return JSONResponse(
@@ -1174,6 +1187,12 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     @app.get("/public/welcome.css")
     async def _welcome_stylesheet():
         return FileResponse(_STATIC_DIR / "welcome.css", media_type="text/css")
+
+    @app.get("/favicon.ico")
+    async def _favicon():
+        # ブラウザが案内画面の直後に自動要求する favicon をログイン導線（/?next=…）へ流さない。
+        # 認証前でも配れる公開アセットとして同梱ロゴを返す（PNG は現行ブラウザが favicon として解釈する）。
+        return FileResponse(_STATIC_DIR / "brand-logo-120.png", media_type="image/png")
 
     @app.get("/privacy")
     async def _privacy_policy():
