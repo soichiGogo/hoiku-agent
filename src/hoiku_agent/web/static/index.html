@@ -51,6 +51,11 @@
 
         <label class="field-label" id="doc-child-label">対象児（仮名）</label>
         <div id="doc-children" class="combo"></div>
+        <!-- DB 接続済みで園児マスタが空のときだけ出す正直な案内（架空児の候補は出さない） -->
+        <div id="doc-child-empty" class="seed-note" hidden>
+          <span data-ic="users"></span>
+          <span>園児が未登録です。上の欄に名前を入力して登録するか、「クラス・園児」タブで登録してください。</span>
+        </div>
 
         <!-- 日誌の入力欄（手入力＝クラスを選ぶと在籍児が並ぶ。AI 生成はしない＝ヒアリング 2026-07） -->
         <div id="doc-fields-diary" class="doc-fields">
