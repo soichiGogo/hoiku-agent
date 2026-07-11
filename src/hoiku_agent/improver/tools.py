@@ -27,6 +27,7 @@ from ..schemas.policy import (
     REFERENCE_SOURCE_META,
     PolicyCard,
     PolicyScope,
+    PolicyStatus,
     ReferenceRule,
     ReferenceSource,
 )
@@ -257,6 +258,7 @@ def propose_policy_card(
     Returns:
         {status, proposal:{scope,body,rationale,source,op,supersede_id,note},
          exact_duplicate:{id,body}|None, declared_conflicts:[{id,body,scope}],
+         inactive_conflict_ids:[id], unknown_conflict_ids:[id],
          has_conflict:bool, guidance:str}
     """
     sc = _parse_scope(scope)
@@ -271,20 +273,23 @@ def propose_policy_card(
     book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
     dup = policy_store.find_exact_duplicate(book, sc, body)
     declared = []
+    inactive_ids = []  # 置換済み・取り下げ済みカードを現行指針として再採用しない
     unknown_ids = []  # 申告されたが存在しない競合カード id（黙って捨てず素通りさせない）
     for cid in (c.strip() for c in conflicts_with.split(",")):
         if not cid:
             continue
         card = policy_store.find_card(book, cid)
-        if card is not None:
+        if card is not None and card.status == PolicyStatus.active:
             declared.append(card)
+        elif card is not None:
+            inactive_ids.append(cid)
         else:
             unknown_ids.append(cid)
 
     op = "supersede" if declared else "add"
     supersede_id = declared[0].id if declared else ""
-    # 不明 id は「競合を意図したが id が誤り」の可能性が高いので競合ありとして扱い、素通りを防ぐ。
-    has_conflict = bool(declared) or dup is not None or bool(unknown_ids)
+    # 不明・非現行 id は競合参照の見直しが必要なので、競合ありとして扱い素通りを防ぐ。
+    has_conflict = bool(declared) or dup is not None or bool(inactive_ids) or bool(unknown_ids)
 
     if dup is not None:
         guidance = (
@@ -296,6 +301,12 @@ def propose_policy_card(
             "意味的競合あり：ask_caregiver で既存カードと新案を比較相談し、保育士に "
             "『既存を残す／新しい案に置きかえる(supersede)／両方活かして統合』を選んでもらう。"
             "決定後に commit_policy_card で即反映。"
+        )
+    elif inactive_ids:
+        guidance = (
+            f"申告された競合カードは現行指針ではありません（{', '.join(inactive_ids)}）。"
+            "置換済み・取り下げ済みカードを競合相手として扱わず、read_policy_cards が返す active カードだけで "
+            "競合を確認し直してください。"
         )
     elif unknown_ids:
         guidance = (
@@ -324,6 +335,7 @@ def propose_policy_card(
         "declared_conflicts": [
             {"id": c.id, "body": c.body, "scope": c.scope.value} for c in declared
         ],
+        "inactive_conflict_ids": inactive_ids,
         "unknown_conflict_ids": unknown_ids,
         "has_conflict": has_conflict,
         "guidance": guidance,
