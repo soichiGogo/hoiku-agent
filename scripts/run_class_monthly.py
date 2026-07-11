@@ -12,8 +12,8 @@
    同梱の仮名サンプル（③のみ・複数児）へ降格。
 2. session state に doc_type="クラス月案" と class_record_entries・past_class_plans・
    class_diary_entries を seed して root_agent を回す。
-3. 3つの prep が決定的に集計（class_records_digest / class_plan_digest / class_diary_digest）→
-   クラス月案 author がクラス全体のねらい・区分×領域グリッド・0–2 の個人目標を生成（計画の連続性・
+3. author が reference_policy に従い3系統を fetch_reference で選択取得し、
+   クラス全体のねらい・区分×領域グリッド・0–2 の個人目標を生成（計画の連続性・
    PDCA）→ reviewer → finalize（検査・整形）。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:
@@ -183,16 +183,7 @@ async def _run(month: str, age_band: str, seed: dict) -> None:
         app_name=_APP_NAME, user_id=_USER_ID, session_id=session.id
     )
     print("\n--- 最終 state ---")
-    print(
-        "class_records_digest:",
-        json.dumps(final.state.get("class_records_digest"), ensure_ascii=False),
-    )
-    print(
-        "class_plan_digest:", json.dumps(final.state.get("class_plan_digest"), ensure_ascii=False)
-    )
-    print(
-        "class_diary_digest:", json.dumps(final.state.get("class_diary_digest"), ensure_ascii=False)
-    )
+    print("reference_manifest:", final.state.get("reference_manifest"))
     print("validation:", final.state.get("validation"))
     print("final_document:\n", final.state.get("final_document"))
 

@@ -9,7 +9,7 @@ seed しづらいので、デモ/検証はこの入口を使う）。
 1. それまでの保育経過記録を読む。優先順位＝ `--entries-file`（JSON 配列）＞ 書類アーカイブ
    （`DATABASE_URL` 設定時・record_store から指定児の全期の保育経過記録を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
 2. session state に doc_type="保育要録" と record_entries を seed して root_agent（DocTypeRouter）を回す。
-3. RecordDigestPrepAgent（record_prep）が child_id 別に集計（state["record_digest"]）→ 要録 author が
+3. 要録 author が reference_policy に従い fetch_reference(prev_child_records) で候補を取得し、
    保育の展開・個人の重点・最終年度に至るまでの育ちへ再構成（開示前提＝小学校引継ぎ）→ reviewer →
    要録 finalize（NurseryRecord を検査・整形）。
 
@@ -145,7 +145,7 @@ async def _run(fiscal_year: str, child_id: str, record_entries: list[dict]) -> N
         app_name=_APP_NAME, user_id=_USER_ID, session_id=session.id
     )
     print("\n--- 最終 state ---")
-    print("record_digest:", json.dumps(final.state.get("record_digest"), ensure_ascii=False))
+    print("reference_manifest:", final.state.get("reference_manifest"))
     print("validation:", final.state.get("validation"))
     print("final_document:\n", final.state.get("final_document"))
 

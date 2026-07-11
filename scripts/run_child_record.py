@@ -11,8 +11,7 @@ seed しづらいので、デモ/検証はこの入口を使う）。
    2026-07）をアーカイブから引く（未接続/初回は 0 件＝降格）。
 2. session state に doc_type="保育経過記録" と period_entries・prev_record_entries を seed して
    root_agent（DocTypeRouter）を回す。
-3. DigestPrepAgent（period_prep）が期間日誌を、RecordDigestPrepAgent（prev_record_prep）が前回までの
-   記録を child_id 別に集計（state["period_digest"]/["prev_records_digest"]）→ 保育経過記録 author が
+3. 保育経過記録 author が reference_policy に従い fetch_reference で期間日誌と前回までの記録を選択取得し、
    前期からの連続性を踏まえ領域別の叙述・総合所見へ再構成（開示前提の表現）→ reviewer →
    保育経過記録 finalize（ChildRecord を検査・整形）。
 
@@ -212,11 +211,7 @@ async def _run(
         app_name=_APP_NAME, user_id=_USER_ID, session_id=session.id
     )
     print("\n--- 最終 state ---")
-    print("period_digest:", json.dumps(final.state.get("period_digest"), ensure_ascii=False))
-    print(
-        "prev_records_digest:",
-        json.dumps(final.state.get("prev_records_digest"), ensure_ascii=False),
-    )
+    print("reference_manifest:", final.state.get("reference_manifest"))
     print("validation:", final.state.get("validation"))
     print("final_document:\n", final.state.get("final_document"))
 
