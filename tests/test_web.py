@@ -35,11 +35,11 @@ def _sign_in_with_google(c: TestClient, monkeypatch, *, email: str = "sensei@exa
         lambda credential: auth.GoogleUser(subject="google-subject-123", email=email),
     )
     welcome = c.get("/?next=/app/")  # popup callback 用の戻り先と session CSRF token を作る。
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     r = c.post(
         "/auth/google",
         json={"credential": "signed-token"},
-        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+        headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
     assert r.status_code == 200 and r.json()["redirect"] == "/app/"
 
@@ -90,6 +90,20 @@ def test_static_ui_served() -> None:
         "styles.css",
     ):
         assert c.get(f"/app/{asset}").status_code == 200, asset
+
+
+def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:
+    """編集欄は初期表示・入力の両方で内容高に追従し、欄内スクロールを作らない。"""
+    c = _client()
+    script = c.get("/app/docedit.js").text
+    styles = c.get("/app/styles.css").text
+
+    assert 't.style.height = "auto"' in script
+    assert "t.scrollHeight + borderHeight" in script
+    assert 't.addEventListener("input"' in script
+    assert "requestAnimationFrame" in script
+    assert "new ResizeObserver" in script
+    assert "textarea.de-input{overflow-y:hidden;resize:none}" in styles
 
 
 def test_root_shows_welcome() -> None:
@@ -654,6 +668,81 @@ def test_records_save_edit_approve_flow(records_db) -> None:
     # 監査証跡（誰が・いつ・何を）
     actions = [(e["action"], e["actor"]) for e in record_store.list_audit_events()]
     assert ("approve", "園長") in actions and ("edit", "保育士A") in actions
+
+
+class _ApprovalMemorySpy:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict] = []
+
+    async def add_memory(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("temporary memory failure")
+
+
+def test_approval_syncs_saved_version_to_memory_once(records_db, monkeypatch) -> None:
+    """実Web順序＝保存→承認で同期し、同じ版の再承認は二重投入しない。"""
+    memory = _ApprovalMemorySpy()
+    monkeypatch.setattr(settings, "agent_engine_id", "test-memory")
+    monkeypatch.setattr(server.app.state, "approval_memory_service", memory)
+    c = _client()
+    entry = _edit_diary_entry()
+    saved = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": entry, "author_kind": "caregiver"},
+    ).json()
+
+    body = c.post(
+        "/api/records/approve",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "actor": "園長",
+            "expected_version_seq": saved["version_seq"],
+        },
+    ).json()
+    assert body["status"] == "approved" and body["memory_status"] == "synced"
+    assert len(memory.calls) == 1
+    assert memory.calls[0]["user_id"] == "caregiver"
+    assert "child_id=架空児A" in memory.calls[0]["memories"][0].content.parts[0].text
+
+    again = c.post(
+        "/api/records/approve",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "actor": "園長",
+            "expected_version_seq": saved["version_seq"],
+        },
+    ).json()
+    assert again["memory_status"] == "already_synced"
+    assert len(memory.calls) == 1
+
+
+def test_memory_failure_keeps_document_unapproved(records_db, monkeypatch) -> None:
+    """接続済みMemory Bankが失敗したら503にし、承認済みの偽表示を作らない。"""
+    memory = _ApprovalMemorySpy(fail=True)
+    monkeypatch.setattr(settings, "agent_engine_id", "test-memory")
+    monkeypatch.setattr(server.app.state, "approval_memory_service", memory)
+    c = _client()
+    entry = _edit_diary_entry()
+    saved = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": entry, "author_kind": "caregiver"},
+    ).json()
+
+    response = c.post(
+        "/api/records/approve",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "expected_version_seq": saved["version_seq"],
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "memory_write_failed"
+    assert c.get("/api/records").json()["documents"][0]["status"] == "finalized"
 
 
 def test_add_child_registers_real_name_and_gender(records_db) -> None:
@@ -1235,9 +1324,7 @@ def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
     c.get("/")
-    r = c.post(
-        "/auth/google", json={"credential": "token"}, headers={"X-Google-Login-CSRF": "wrong"}
-    )
+    r = c.post("/auth/google", json={"credential": "token"}, headers={"X-Login-CSRF": "wrong"})
     assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
 
 
@@ -1258,14 +1345,14 @@ def test_google_callback_uses_double_submit_cookie_not_session(monkeypatch) -> N
     )
     c = _client()
     welcome = c.get("/")
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     assert c.cookies.get(auth.LOGIN_CSRF_COOKIE) == auth.login_csrf_cookie_value(csrf)
     c.cookies.delete("session")
 
     response = c.post(
         "/auth/google",
         json={"credential": "signed-token"},
-        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+        headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
 
     assert response.status_code == 200
@@ -1293,18 +1380,18 @@ def test_google_login_survives_browser_auto_requests(monkeypatch) -> None:
     )
     c = _client()
     welcome = c.get("/")
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     # ブラウザの自動 favicon 要求＝公開アセットとして返し、ログイン導線（/?next=…）へ流さない。
     favicon = c.get("/favicon.ico", headers={"Sec-Fetch-Mode": "no-cors"})
     assert favicon.status_code == 200
     assert favicon.headers["content-type"] == "image/png"
     # 別タブ等で案内が再描画されても、有効な cookie の token を使い回す（回転させない）。
     rerender = c.get("/")
-    assert re.search(r'"X-Google-Login-CSRF": "([^"]+)"', rerender.text).group(1) == csrf
+    assert re.search(r'"X-Login-CSRF": "([^"]+)"', rerender.text).group(1) == csrf
     r = c.post(
         "/auth/google",
         json={"credential": "signed-token"},
-        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+        headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
     assert r.status_code == 200 and r.json()["redirect"] == "/app/"
 
@@ -1334,12 +1421,12 @@ def test_google_callback_rejects_cross_origin_post(monkeypatch) -> None:
     monkeypatch.setattr(settings, "session_secret", "test-session-secret")
     c = _client()
     welcome = c.get("/")
-    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    csrf = re.search(r'"X-Login-CSRF": "([^"]+)"', welcome.text).group(1)
     r = c.post(
         "/auth/google",
         headers={
             "Origin": "https://accounts.google.com",
-            "X-Google-Login-CSRF": csrf,
+            "X-Login-CSRF": csrf,
         },
         json={"credential": "invalid"},
     )

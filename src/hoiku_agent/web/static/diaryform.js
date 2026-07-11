@@ -265,12 +265,19 @@ export function makeDiaryForm({ area, status }) {
       }
       const problems = res.problems || [];
       setValidation(vNode, problems, true);
+      const archive = await adk.saveRecord(
+        KIND,
+        entryNow,
+        res.formatted,
+        "caregiver",
+        actorName(),
+      );
       setArchiveNote(
         archNote,
-        await adk.saveRecord(KIND, entryNow, res.formatted, "caregiver", actorName()),
+        archive,
         "日誌のアーカイブ保存",
       );
-      return res;
+      return { ...res, archive };
     }
 
     const bar = el("div", "approve-bar");
@@ -297,10 +304,19 @@ export function makeDiaryForm({ area, status }) {
       approveBtn.disabled = true;
       saveBtn.disabled = true;
       try {
-        await save(); // 直前の編集を必ず保存・再検査してから承認する
+        const saved = await save(); // 直前の編集を必ず保存・再検査してから承認する
+        const approval = await adk.approveRecord(
+          KIND,
+          editor.collect(),
+          actorName(),
+          saved.archive && saved.archive.version_seq,
+        );
+        if (approval.status !== "approved") {
+          throw new Error(approval.detail || "承認できませんでした");
+        }
         setArchiveNote(
           archNote,
-          await adk.approveRecord(KIND, editor.collect(), actorName()),
+          approval,
           "承認記録",
         );
         approved = true;

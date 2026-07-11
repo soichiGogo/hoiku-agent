@@ -158,16 +158,28 @@ export async function saveRecord(kind, entry, renderedText, authorKind, actor) {
   }
 }
 
-// 書類の承認を記録する（承認証跡＝誰が承認したか。ADK state の caregiver_approved と並走）。
-export async function approveRecord(kind, entry, actor) {
+// 保存済みの現行版をMemory Bankへ同期してから承認する。expectedVersionSeqで並行編集を検知する。
+export async function approveRecord(kind, entry, actor, expectedVersionSeq = null) {
   try {
     const r = await fetch("/api/records/approve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, entry, actor: actor || "" }),
+      body: JSON.stringify({
+        kind,
+        entry,
+        actor: actor || "",
+        expected_version_seq: expectedVersionSeq,
+      }),
     });
-    if (!r.ok) return { status: "error", detail: "承認記録に失敗 (" + r.status + ")" };
-    return await r.json();
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return {
+        status: "error",
+        code: body.code || "approval_failed",
+        detail: body.detail || "承認に失敗 (" + r.status + ")",
+      };
+    }
+    return body;
   } catch (e) {
     return { status: "error", detail: e.message };
   }

@@ -240,6 +240,10 @@ class DocumentRecord(Base):
     )  # 保育経過記録（期間・自由記述）
     status: Mapped[str] = mapped_column(sa.String(20), default="finalized")  # finalized/approved
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid)
+    # Memory Bankへ同期済みの版。current_version_id と一致するときだけ現行版の同期完了を表す。
+    # 編集でcurrent_version_idが進めば自動的に不一致となり、次の承認で新しい版を同期する。
+    memory_synced_version_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, index=True)
+    memory_synced_at: Mapped[datetime | None] = mapped_column(sa.DateTime)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime)
 
@@ -1137,6 +1141,8 @@ def approve_document(
     workspace_id: str | uuid.UUID | None = None,
     now: datetime,
     expected_version_seq: int | None = None,
+    memory_synced_version_id: str | uuid.UUID | None = None,
+    memory_status: str = "skipped",
 ) -> dict:
     """書類を承認済み（approved）にし、証跡（audit action=approve）を残す。
 
@@ -1171,14 +1177,44 @@ def approve_document(
                     ),
                     "current_version_seq": current_seq,
                 }
+            expected_memory_version = (
+                uuid.UUID(str(memory_synced_version_id)) if memory_synced_version_id else None
+            )
+            if (
+                expected_memory_version is not None
+                and expected_memory_version != doc.current_version_id
+            ):
+                return {
+                    "status": "error",
+                    "code": "version_conflict",
+                    "detail": "Memory Bankへ同期した版と現在の版が一致しません。再度確認してください。",
+                    "current_version_seq": current_seq,
+                }
+            if doc.status == "approved" and (
+                expected_memory_version is None
+                or doc.memory_synced_version_id == expected_memory_version
+            ):
+                return {
+                    "status": "approved",
+                    "document_id": str(doc.id),
+                    "version_seq": current_seq,
+                    "memory_status": (
+                        "already_synced"
+                        if doc.memory_synced_version_id == doc.current_version_id
+                        else memory_status
+                    ),
+                }
             doc.status = "approved"
             doc.updated_at = now
+            if expected_memory_version is not None:
+                doc.memory_synced_version_id = expected_memory_version
+                doc.memory_synced_at = now
             session.add(
                 AuditEvent(
                     document_id=doc.id,
                     actor=actor,
                     action="approve",
-                    detail={"version_seq": current_seq},
+                    detail={"version_seq": current_seq, "memory_status": memory_status},
                     at=now,
                 )
             )
@@ -1186,6 +1222,52 @@ def approve_document(
                 "status": "approved",
                 "document_id": str(doc.id),
                 "version_seq": current_seq,
+                "memory_status": memory_status,
+            }
+    except (ValueError, SQLAlchemyError) as e:
+        return _write_error(e)
+
+
+def get_approval_candidate(
+    kind: str,
+    entry: dict,
+    *,
+    workspace_id: str | uuid.UUID | None = None,
+    expected_version_seq: int | None = None,
+) -> dict:
+    """承認対象の保存済み現行版を返す（Memory Bank同期前の権威的な読み取り）。
+
+    リクエスト本文は書類のdedupe特定にだけ使い、Memory Bankへ渡す本文はDBの現行版から取得する。
+    これにより、未保存の改変内容や別版を承認・記憶する競合を防ぐ。
+    """
+    eng = _engine()
+    if eng is None:
+        return {"status": "skipped", "reason": "DATABASE_URL 未設定（アーカイブ降格）"}
+    try:
+        workspace = _workspace_uuid(workspace_id)
+        with Session(eng) as session:
+            doc = _find_document(session, kind, entry, workspace)
+            if doc is None or doc.current_version_id is None:
+                return {"status": "error", "detail": "対象の書類がアーカイブにありません（未保存）"}
+            version = session.get(DocumentVersion, doc.current_version_id)
+            if version is None:
+                return {"status": "error", "detail": "承認対象の現行版を取得できません"}
+            if expected_version_seq is not None and expected_version_seq != version.seq:
+                return {
+                    "status": "error",
+                    "code": "version_conflict",
+                    "detail": "先に別の編集が保存されています。最新の内容を確認してください。",
+                    "current_version_seq": version.seq,
+                }
+            return {
+                "status": "ready",
+                "document_id": str(doc.id),
+                "version_id": str(version.id),
+                "version_seq": version.seq,
+                "entry": version.entry,
+                "rendered_text": version.rendered_text,
+                "already_approved": doc.status == "approved",
+                "memory_synced": doc.memory_synced_version_id == version.id,
             }
     except (ValueError, SQLAlchemyError) as e:
         return _write_error(e)
@@ -1275,6 +1357,7 @@ def _doc_view(doc: DocumentRecord, child_display: str | None) -> dict:
             else (doc.target_month or doc.target_period or "")
         ),
         "status": doc.status,
+        "memory_synced": doc.memory_synced_version_id == doc.current_version_id,
         "updated_at": doc.updated_at.isoformat(),
     }
 

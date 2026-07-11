@@ -20,14 +20,15 @@
 
 - **決定的ロジック・採点を持ち込まない**（実体は harness/eval に1つ＝§5）。ここは描画と中継だけ。
 - **HITL は ADK の機構をそのまま使う**：`ask_caregiver`（LongRunningFunctionTool）で止まったら、
-  保育士の回答を `function_response` Part として `/run_sse` に再送して invocation を再開する。承認は
-  `PATCH …/sessions {state_delta:{caregiver_approved:true}}`（真の承認ゲート＝§9/§13。書き戻し自体は
-  確定パイプラインのコールバックが担う）。
+  保育士の回答を `function_response` Part として `/run_sse` に再送して invocation を再開する。承認は生成後の
+  `/api/records/approve` が保存済み現行版をMemory Bankへ同期し、成功後にDBをapprovedへ進める
+  （真の承認ゲート＝§9/§13）。ADK state PATCHやパイプラインcallbackで承認・書き戻しを代用しない。
 - **確定書類の編集（`docedit.js`）も harness 経由で再検査する**：保育士は `state["final_entry"]`（FinalizeAgent が出す
   構造化エントリ）を**標準様式の見た目の編集フォーム**で自由に直せる。保存時は編集後 entry を `POST /api/finalize-edit`
   （harness の `finalize_entry` を中継）で再 validate/整形し、結果を `PATCH …/sessions` で `final_entry`/`final_document`/
   `validation` へ反映する（型成立ゲートを編集後も効かせる）。**validate/整形を JS で再実装しない**（タグ語彙も `/api/form-meta`
-  ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は従来どおり別アクション（`caregiver_approved`）。
+  ＝schemas Enum を SSOT に。記録日・対象月は機械メタなので read-only）。承認は別アクション
+  （`/api/records/approve`＝Memory同期＋版単位の承認証跡）。
 - **配布リンクのコスト/濫用**：LLM を回す口（`/run`・`/run_sse`・`/api/improve`・
   **`/api/parse-upload`**＝アップロード取込のファイル解析・**`/api/proofread`**＝校正AI）は、
   `harness.llm_budget` が Google Sign-In subject ごとの時間枠と全体の日次枠を原子的に予約してから通す。
@@ -116,7 +117,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   `/api/config` の `docx_kinds` で UI に伝えボタン出し分け）・**`/api/parse-upload`**（アップロード取込＝multipart で
   受けたファイルを `upload_parse.parse_uploaded_file` で解析し確認・編集用 entry〔＋整形/検査結果〕を返す中継。**LLM を回す口＝
   `llm_budget` で利用枠を予約**・未対応形式/種別は 400・creds 無/LLM 失敗は 200＋parse_error で正直に降格。保存は後段の
-  `/api/records`＝`author_kind="imported"`）・**`/api/records`／`/api/records/approve`／
+  `/api/records`＝`author_kind="imported"`）・**`/api/records`／`/api/records/approve`（DB現行版を
+  `harness.memory_writeback` で子ども別fact化→Memory同期完了後にapproved。接続済み障害は503で承認保留、
+  `memory_synced_version_id` で同じ版の二重投入防止）／
   `/api/records/diary-entries`／`/api/records/diary-meta`（期間内の日誌メタ＝id・対象日・年齢帯・評価充足＝クラス月案の評価未記入検出用・リテラル路）／
   `/api/records/class-monthly-seed`（クラス月案 seed 3系統＝`record_store.class_monthly_seed_inputs` の中継・依存モデル 2026-07・非ゲート）／
   `/api/records/child-record-entries`（全期・`exclude_period` で作成対象の期を除外＝要録 L4／保育経過記録「前回まで」seed）／

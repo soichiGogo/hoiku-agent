@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import os
 from datetime import date, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from ..config import settings
 from ..harness import llm_budget, notation_store, policy_store, record_store, template_store
 from ..harness.finalize import finalize_entry
+from ..harness.memory_writeback import approved_memory_facts, persist_approved_facts
 from ..harness.pipeline import MAX_REVIEW_ITERATIONS
 from ..schemas import (
     FiveDomains,
@@ -127,11 +129,12 @@ class RecordSaveRequest(BaseModel):
 
 
 class RecordApproveRequest(BaseModel):
-    """書類の承認記録（承認証跡＝audit_events。ADK state の caregiver_approved と並走）。"""
+    """書類の承認＋Memory Bank同期（保存済み現行版だけを対象にする）。"""
 
     kind: str = "diary"
     entry: dict
     actor: str = ""
+    expected_version_seq: int | None = None
 
 
 class RecordFeedbackRequest(BaseModel):
@@ -312,7 +315,7 @@ def _login_control(csrf_token: str) -> str:
             credentials: "same-origin",
             headers: {{
               "Content-Type": "application/json",
-              "X-Google-Login-CSRF": {encoded_csrf_token}
+              "X-Login-CSRF": {encoded_csrf_token}
             }},
             body: JSON.stringify({{credential: response.credential}})
           }});
@@ -374,8 +377,11 @@ def _auth_denied(request: Request, *, unavailable: bool = False):
     return RedirectResponse(f"/?next={quote(_safe_next(request.url.path))}")
 
 
-def register_web_ui(app: FastAPI) -> FastAPI:
+def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> FastAPI:
     """`get_fast_api_app` が返した app に保育士 UI を同居させる（server.py から1回呼ぶ）。"""
+
+    # 承認APIはserver.pyが同じAgent Engine設定で構築したMemoryServiceを使う。テストはFakeへ差し替える。
+    app.state.approval_memory_service = memory_service
 
     @app.middleware("http")
     async def _google_auth_guard(request: Request, call_next):
@@ -874,15 +880,88 @@ def register_web_ui(app: FastAPI) -> FastAPI:
         )
 
     @app.post("/api/records/approve")
-    def web_approve_record(req: RecordApproveRequest, request: Request) -> dict:
-        """書類を承認済みにし証跡を残す（actor＝Google 検証済み email ＞ 自己申告）。"""
+    async def web_approve_record(req: RecordApproveRequest, request: Request):
+        """保存済み現行版をMemory Bankへ同期した後、承認済みにして証跡を残す。
+
+        Memory Bank接続済みなのに同期できない場合は503でfail-closedにし、DBのstatusをapprovedへ進めない。
+        未接続は従来どおり承認可能な降格。書き込む本文はリクエスト値でなくDB現行版を使う。
+        """
         now = datetime.now()
-        return record_store.approve_document(
+        workspace_id = _workspace_id(request, now)
+        candidate = await run_in_threadpool(
+            record_store.get_approval_candidate,
+            req.kind,
+            req.entry,
+            workspace_id=workspace_id,
+            expected_version_seq=req.expected_version_seq,
+        )
+        if candidate.get("status") != "ready":
+            return candidate
+
+        version_id = str(candidate["version_id"])
+        memory_synced_version_id: str | None = None
+        memory_status = "skipped"
+        if candidate.get("memory_synced"):
+            memory_synced_version_id = version_id
+            memory_status = "already_synced"
+        elif settings.agent_engine_id:
+            try:
+                facts = approved_memory_facts(req.kind, candidate["entry"])
+            except ValueError as exc:
+                return JSONResponse(
+                    {"status": "error", "code": "invalid_approved_entry", "detail": str(exc)},
+                    status_code=422,
+                )
+            if facts:
+                service = app.state.approval_memory_service
+                if service is None:
+                    return JSONResponse(
+                        {
+                            "status": "error",
+                            "code": "memory_service_unavailable",
+                            "detail": "Memory Bank接続設定はありますが、サービスを利用できません。承認は保留しました。",
+                        },
+                        status_code=503,
+                    )
+                user_id = f"workspace:{workspace_id}" if workspace_id else DEFAULT_USER_ID
+                try:
+                    await persist_approved_facts(
+                        service,
+                        app_name=APP_NAME,
+                        user_id=user_id,
+                        source_version_id=version_id,
+                        facts=facts,
+                    )
+                except Exception:  # noqa: BLE001  承認はfail-closed、詳細はログだけに残す
+                    logging.getLogger("hoiku_agent.memory_writeback").exception(
+                        "承認版のMemory Bank同期に失敗（document_id=%s, version_seq=%s）",
+                        candidate["document_id"],
+                        candidate["version_seq"],
+                    )
+                    return JSONResponse(
+                        {
+                            "status": "error",
+                            "code": "memory_write_failed",
+                            "detail": "Memory Bankへ反映できなかったため承認を保留しました。時間を置いて再実行してください。",
+                        },
+                        status_code=503,
+                    )
+                memory_status = "synced"
+            else:
+                # 子ども別の事実欄がないクラス書類は、子ども長期記憶への書込み対象外として処理済みにする。
+                memory_status = "not_applicable"
+            memory_synced_version_id = version_id
+
+        return await run_in_threadpool(
+            record_store.approve_document,
             req.kind,
             req.entry,
             actor=_resolve_actor(request, req.actor, now),
             now=now,
-            workspace_id=_workspace_id(request, now),
+            workspace_id=workspace_id,
+            expected_version_seq=candidate["version_seq"],
+            memory_synced_version_id=memory_synced_version_id,
+            memory_status=memory_status,
         )
 
     @app.get("/api/records")
@@ -1161,7 +1240,10 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 {"error": "ログイン設定が不足しています", "code": "auth_unavailable"},
                 status_code=503,
             )
-        if not auth.login_csrf_matches(request, request.headers.get("x-google-login-csrf", "")):
+        # ヘッダ名は X-Google-* を避ける：Cloud Run（Google Frontend）は予約名として着信時に
+        # X-Google-* リクエストヘッダを削除するため、本番だけ token が届かず全ログインが
+        # csrf_failed になる（ローカルの uvicorn 直では剥がれず気づけない＝2026-07 の本番障害）。
+        if not auth.login_csrf_matches(request, request.headers.get("x-login-csrf", "")):
             return JSONResponse(
                 {"error": "ログインをもう一度お試しください", "code": "csrf_failed"},
                 status_code=400,

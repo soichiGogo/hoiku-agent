@@ -1,8 +1,8 @@
 """harness：保育要録パイプラインの順序と型の保証（§19・L4）。
 
-それまでの保育経過記録は session state ``record_entries`` に候補として seed する。要録 author が
-reference_policy に基づき ``fetch_reference(prev_child_records)`` を選択した時点で、harness.reference が
-``aggregate.child_record_digest`` により決定的に取得する。日誌は候補へ加えない。
+それまでの保育経過記録は ``record_entries`` に候補として seed する。author が reference_policy に基づき
+``fetch_reference(prev_child_records)`` を選択した時点で harness.reference が決定的に取得する。日誌は
+候補へ加えない。pipeline は authoring_loop→finalize のみで、承認時書き戻しは Web が担う（§9）。
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from google.adk.agents import SequentialAgent
 
 from ..agents import build_nursery_record_author_agent
-from .pipeline import FinalizeAgent, build_authoring_loop, persist_visit_to_memory
+from .pipeline import FinalizeAgent, build_authoring_loop
 
 if TYPE_CHECKING:
     from google.adk.models import BaseLlm
@@ -29,5 +29,4 @@ def build_nursery_record_pipeline(
             build_authoring_loop(build_nursery_record_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="nursery_record"),
         ],
-        after_agent_callback=persist_visit_to_memory,
     )
