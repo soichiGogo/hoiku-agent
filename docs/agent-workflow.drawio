@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.5.2 Chrome/142.0.7444.265 Electron/39.6.1 Safari/537.36" version="29.5.2">
   <diagram name="AIエージェントの仕組み" id="0">
-    <mxGraphModel dx="2037" dy="1344" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1672" pageHeight="941" background="#FBFAF7" math="0" shadow="0">
+    <mxGraphModel dx="1141" dy="753" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1672" pageHeight="941" background="#FBFAF7" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -121,23 +121,20 @@
         <mxCell id="context-panel" parent="1" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#F8F6FF;strokeColor=#A594EA;strokeWidth=1.5;arcSize=16;fontFamily=Helvetica;" value="" vertex="1">
           <mxGeometry height="80" width="620" x="350" y="300" as="geometry" />
         </mxCell>
-        <mxCell id="context-title" parent="context-panel" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;fontColor=#4937AA;fontSize=13;fontStyle=1;fontFamily=Helvetica;" value="作成 AI へのコンテキスト注入" vertex="1">
-          <mxGeometry height="17" width="600" x="10" y="2" as="geometry" />
+        <mxCell id="context-policy" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EEE9FF;strokeColor=none;arcSize=16;fontColor=#5847B6;fontSize=14;fontStyle=1;fontFamily=Helvetica;" value="育つ指針・参照ポリシー" vertex="1">
+          <mxGeometry height="25" width="600" x="10" y="7" as="geometry" />
         </mxCell>
-        <mxCell id="context-policy" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EEE9FF;strokeColor=none;arcSize=16;fontColor=#5847B6;fontSize=11;fontStyle=1;fontFamily=Helvetica;" value="前置指示（InstructionProvider）：育つ指針・参照ポリシー" vertex="1">
-          <mxGeometry height="18" width="600" x="10" y="20" as="geometry" />
+        <mxCell id="context-fetch" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ECF8EF;strokeColor=#62B97F;strokeWidth=1;arcSize=14;fontColor=#176438;fontSize=13;fontStyle=1;fontFamily=Helvetica;" value="過去書類・名簿" vertex="1">
+          <mxGeometry height="34" width="141" x="10" y="38" as="geometry" />
         </mxCell>
-        <mxCell id="context-fetch" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#ECF8EF;strokeColor=#62B97F;strokeWidth=1;arcSize=14;fontColor=#176438;fontSize=10;fontStyle=1;fontFamily=Helvetica;" value="fetch_reference&#xa;過去書類・名簿" vertex="1">
-          <mxGeometry height="29" width="141" x="10" y="43" as="geometry" />
+        <mxCell id="context-memory" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EEF6FF;strokeColor=#6FA7DA;strokeWidth=1;arcSize=14;fontColor=#235A8C;fontSize=13;fontStyle=1;fontFamily=Helvetica;" value="子どもの長期記憶" vertex="1">
+          <mxGeometry height="34" width="141" x="159" y="38" as="geometry" />
         </mxCell>
-        <mxCell id="context-memory" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EEF6FF;strokeColor=#6FA7DA;strokeWidth=1;arcSize=14;fontColor=#235A8C;fontSize=10;fontStyle=1;fontFamily=Helvetica;" value="recall_child_history&#xa;子どもの長期記憶" vertex="1">
-          <mxGeometry height="29" width="141" x="159" y="43" as="geometry" />
+        <mxCell id="context-guideline" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EEF6FF;strokeColor=#6FA7DA;strokeWidth=1;arcSize=14;fontColor=#235A8C;fontSize=12;fontStyle=1;fontFamily=Helvetica;" value="保育所保育指針&#xa;・10の姿" vertex="1">
+          <mxGeometry height="34" width="141" x="308" y="38" as="geometry" />
         </mxCell>
-        <mxCell id="context-guideline" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#EEF6FF;strokeColor=#6FA7DA;strokeWidth=1;arcSize=14;fontColor=#235A8C;fontSize=10;fontStyle=1;fontFamily=Helvetica;" value="search_guideline&#xa;指針・10の姿" vertex="1">
-          <mxGeometry height="29" width="141" x="308" y="43" as="geometry" />
-        </mxCell>
-        <mxCell id="context-caregiver" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFF4E9;strokeColor=#ED8A52;strokeWidth=1;arcSize=14;fontColor=#9B431F;fontSize=10;fontStyle=1;fontFamily=Helvetica;" value="ask_caregiver&#xa;不足情報" vertex="1">
-          <mxGeometry height="29" width="141" x="457" y="43" as="geometry" />
+        <mxCell id="context-caregiver" parent="context-panel" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#FFF4E9;strokeColor=#ED8A52;strokeWidth=1;arcSize=14;fontColor=#9B431F;fontSize=12;fontStyle=1;fontFamily=Helvetica;" value="不足情報を&#xa;保育士に確認" vertex="1">
+          <mxGeometry height="34" width="141" x="457" y="38" as="geometry" />
         </mxCell>
         <mxCell id="author-card" parent="1" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#F3EFFF;strokeColor=#7A63DD;strokeWidth=2.5;shadow=1;arcSize=18;fontFamily=Helvetica;" value="" vertex="1">
           <mxGeometry height="205" width="480" x="350" y="395" as="geometry" />
