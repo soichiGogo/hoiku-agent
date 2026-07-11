@@ -12,7 +12,7 @@
       → authoring_loop（[child_record_author → reviewer → ApprovalGate] を巡回・日誌/月案と共用）
       → finalize(kind="child_record")（ChildRecord を復元→validate_child_record_fields/
         write_child_record_draft）
-      → [after_agent_callback] persist_visit_to_memory（保育士の明示承認＋型成立のとき書き戻し・§9）
+      → 承認後のMemory Bank書き戻しは web `/api/records/approve`（§9）
 
 入力は session state から取る（依存モデル 2026-07＝①該当期間の日誌＋②前回までの保育経過記録）:
 - state["period_entries"]（DiaryEntry の dict 列）＝該当期間の日誌。
@@ -34,7 +34,6 @@ from .monthly import DigestPrepAgent
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
-    persist_visit_to_memory,
 )
 from .youroku import RecordDigestPrepAgent
 
@@ -53,8 +52,8 @@ def build_child_record_pipeline(
     入力=prev_record_entries／出力=prev_records_digest＝前期からの育ちの連続性の素・依存モデル 2026-07）を
     置き、巡回は build_authoring_loop（日誌・月案と共用。NEEDS_REVISION で child_record_author が再作成）、
     finalize は kind="child_record"。文書作成指針と両集積は child_record_author/reviewer の
-    InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。after_agent_callback も
-    共用（明示承認＋型成立で書き戻し・§9）。author_model/reviewer_model は通常 None（実 Gemini）。
+    InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。承認後の書き戻しは
+    Web承認APIへ一本化する。author_model/reviewer_model は通常 None（実 Gemini）。
     決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(
@@ -73,5 +72,4 @@ def build_child_record_pipeline(
             build_authoring_loop(build_child_record_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="child_record"),
         ],
-        after_agent_callback=persist_visit_to_memory,
     )

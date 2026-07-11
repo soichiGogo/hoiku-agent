@@ -656,6 +656,81 @@ def test_records_save_edit_approve_flow(records_db) -> None:
     assert ("approve", "園長") in actions and ("edit", "保育士A") in actions
 
 
+class _ApprovalMemorySpy:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls: list[dict] = []
+
+    async def add_memory(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+        if self.fail:
+            raise RuntimeError("temporary memory failure")
+
+
+def test_approval_syncs_saved_version_to_memory_once(records_db, monkeypatch) -> None:
+    """実Web順序＝保存→承認で同期し、同じ版の再承認は二重投入しない。"""
+    memory = _ApprovalMemorySpy()
+    monkeypatch.setattr(settings, "agent_engine_id", "test-memory")
+    monkeypatch.setattr(server.app.state, "approval_memory_service", memory)
+    c = _client()
+    entry = _edit_diary_entry()
+    saved = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": entry, "author_kind": "caregiver"},
+    ).json()
+
+    body = c.post(
+        "/api/records/approve",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "actor": "園長",
+            "expected_version_seq": saved["version_seq"],
+        },
+    ).json()
+    assert body["status"] == "approved" and body["memory_status"] == "synced"
+    assert len(memory.calls) == 1
+    assert memory.calls[0]["user_id"] == "caregiver"
+    assert "child_id=架空児A" in memory.calls[0]["memories"][0].content.parts[0].text
+
+    again = c.post(
+        "/api/records/approve",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "actor": "園長",
+            "expected_version_seq": saved["version_seq"],
+        },
+    ).json()
+    assert again["memory_status"] == "already_synced"
+    assert len(memory.calls) == 1
+
+
+def test_memory_failure_keeps_document_unapproved(records_db, monkeypatch) -> None:
+    """接続済みMemory Bankが失敗したら503にし、承認済みの偽表示を作らない。"""
+    memory = _ApprovalMemorySpy(fail=True)
+    monkeypatch.setattr(settings, "agent_engine_id", "test-memory")
+    monkeypatch.setattr(server.app.state, "approval_memory_service", memory)
+    c = _client()
+    entry = _edit_diary_entry()
+    saved = c.post(
+        "/api/records",
+        json={"kind": "diary", "entry": entry, "author_kind": "caregiver"},
+    ).json()
+
+    response = c.post(
+        "/api/records/approve",
+        json={
+            "kind": "diary",
+            "entry": entry,
+            "expected_version_seq": saved["version_seq"],
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["code"] == "memory_write_failed"
+    assert c.get("/api/records").json()["documents"][0]["status"] == "finalized"
+
+
 def test_add_child_registers_real_name_and_gender(records_db) -> None:
     """新規児登録＝本名（姓/名）＋性別。呼び名＋敬称（性別導出）＝display_name をサーバが合成する。"""
     c = _client()

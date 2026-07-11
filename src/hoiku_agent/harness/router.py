@@ -43,7 +43,8 @@ class DocTypeRouter(BaseAgent):
     doc_type=="月案" は個別月案、"クラス月案" はクラス月案（園の実様式・§18）、"保育経過記録" は保育経過記録、
     "保育要録" は要録（L4）のパイプラインへ。**保育日誌は AI 生成を退役**（手入力＝web の docedit→finalize_entry）
     したためルータには載らない。doc_type 未設定/未知の既定はクラス月案（product は doc_type を明示する）。選んだ
-    サブパイプラインの確定処理（after_agent_callback の書き戻し含む）はそのまま委譲する。
+    サブパイプラインの確定処理はそのまま委譲する。保育士承認後のMemory Bank書き戻しは生成後の
+    `/api/records/approve` に一本化し、ルータ／パイプラインからは発火しない。
     """
 
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:

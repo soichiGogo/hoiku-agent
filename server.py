@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 
 from google.adk.cli.fast_api import get_fast_api_app
+from google.adk.memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
 
 from hoiku_agent.config import settings
 from hoiku_agent.harness import db
@@ -56,7 +57,19 @@ app = get_fast_api_app(
 
 # 保育士向け配布 UI（B-full）を同居させる：保育士 UI＝/app/、自前 API＝/api/*、dev UI＝/dev-ui/。
 # 日誌/月案の生成は ADK ネイティブ REST をフロントが直接叩く（自前 Runner を組まない＝§9）。
-register_web_ui(app)
+# get_fast_api_app は構築したMemoryService実体を通常モードのFastAPIへ公開しないため、承認API用には
+# 同じAgent Engineを指す軽量なサービスオブジェクトを明示する（クライアントは各リクエスト内で生成される）。
+# 自前Runnerは組まず、読み取り側と同じADKのVertexAiMemoryBankServiceへ外部I/Oを委ねる。
+approval_memory_service = (
+    VertexAiMemoryBankService(
+        project=settings.google_cloud_project,
+        location=settings.google_cloud_location,
+        agent_engine_id=settings.agent_engine_id,
+    )
+    if settings.agent_engine_id
+    else None
+)
+register_web_ui(app, memory_service=approval_memory_service)
 
 # リクエストの X-Cloud-Trace-Context をログに相関させる（同一リクエストのログを Logs Explorer で束ねる）。
 install_trace_middleware(app)

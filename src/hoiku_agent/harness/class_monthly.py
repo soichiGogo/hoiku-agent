@@ -21,7 +21,7 @@
       にクラス一律 max 境界で別チャネル集約＝決定B）
       → authoring_loop（[class_monthly_author → reviewer → ApprovalGate] を巡回・共用）
       → finalize(kind="class_monthly")（ClassMonthlyPlan を復元→validate/write）
-      → [after_agent_callback] persist_visit_to_memory（明示承認＋型成立のとき書き戻し・§9）
+      → 承認後のMemory Bank書き戻しは web `/api/records/approve`（§9）
 
 呼び出し側（scripts/run_class_monthly.py・web の seed）は `record_store.class_monthly_seed_inputs` で
 3入力を合成して seed する（③の探索は当該年度内＝`fiscal_year_start`で前年度コホートを混ぜず、児童別境界
@@ -45,7 +45,6 @@ from .monthly import DigestPrepAgent
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
-    persist_visit_to_memory,
 )
 from .youroku import RecordDigestPrepAgent
 
@@ -105,8 +104,8 @@ def build_class_monthly_pipeline(
     未反映の期間の日誌集積＋評価・反省（DigestPrepAgent 共用・uncovered_by_key で境界限定）。
     巡回は build_authoring_loop（共用。NEEDS_REVISION で class_monthly_author が再作成）、finalize は
     kind="class_monthly"。文書作成指針（scope=月案を流用）と各集積は class_monthly_author/reviewer の
-    InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。after_agent_callback も
-    共用（明示承認＋型成立で書き戻し・§9）。author_model/reviewer_model は通常 None（実 Gemini）。
+    InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。承認後の書き戻しは
+    Web承認APIへ一本化する。author_model/reviewer_model は通常 None（実 Gemini）。
     決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(
@@ -131,5 +130,4 @@ def build_class_monthly_pipeline(
             build_authoring_loop(build_class_monthly_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="class_monthly"),
         ],
-        after_agent_callback=persist_visit_to_memory,
     )
