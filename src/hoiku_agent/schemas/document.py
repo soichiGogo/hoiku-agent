@@ -268,7 +268,7 @@ class ChildRecord(BaseModel):
     """保育経過記録（期ごと）（児童別・全年齢）。write_child_record_draft の出力型 /
     validate_child_record_fields の入力契約（§19）。
 
-    日誌の期間集積（state["period_digest"]＝L3 還流）を「発達の経過」「総合所見」へ流す。
+    fetch_reference で取得した期間日誌（L3 還流）を「発達の経過」「総合所見」へ流す。
     保護者の開示請求で開示され得る書類＝断定的・否定的表現を避ける（表現の点検はレビューAI／
     ここは型のみ）。期の区切り（月次/3期/4期制）は園差＝呼び出し側が seed する期間で表現し、
     期制の設定化は残課題（§18 と同じ現場依存）。
@@ -321,7 +321,7 @@ class NurseryRecord(BaseModel):
     """保育要録＝保育所児童保育要録の「保育に関する記録」（児童別・年長）。
     write_nursery_record_draft の出力型 / validate_nursery_record_fields の入力契約（§19・L4）。
 
-    最終年度の保育経過記録の集積（state["record_digest"]＝L4 還流）を「保育の展開と子どもの育ち」
+    fetch_reference で取得した保育経過記録（L4 還流）を「保育の展開と子どもの育ち」
     「個人の重点」へ流し、入所〜前年度の育ちは recall_child_history／過去年度の保育経過記録から
     「最終年度に至るまでの育ち」へ叙述する。年長（5歳児）専用のため age_band は常に 三から五歳
     （＝5領域）。就学先・保育期間など「入所に関する記録」は原簿系＝AI 生成しない任意欄（保育経過記録の
