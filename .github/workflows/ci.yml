@@ -1,7 +1,7 @@
 # 決定論 CI（毎PR・無料・LLM/GCP 非依存）。
 # ここで回すのは harness の決定ロジック・決定論E2E（FakeLlm 注入の結合テスト）・smoke と ruff。
 # 実 Gemini を呼ぶ品質ゲート（層B eval＝eval/run_gate.py の3軸 judge）は creds・課金・§18 の judge
-# 接続が要るためここには入れない。それは WIF + §18 が揃ってから別ワークフロー（nightly/手動）で追加する。
+# 接続が要るためここには入れない。専用 `eval-gate.yml` が関連PR/週次/手動にstrict実行する。
 # CLAUDE.md「開発コマンド」/ docs/architecture.md「実装状況」と整合。
 name: CI
 
