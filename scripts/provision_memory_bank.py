@@ -2,7 +2,8 @@
 
 設計コンテキスト §9/§13：子ども別長期メモリ＝Agent Engine Memory Bank。本スクリプトは「来園のたびに
 像が育つ」記憶を**保育ドメイン向けにチューニングして**用意する、再現可能な provisioning エントリ。
-（root_agent からは呼ばない。`recall_child_history`/`persist_visit_to_memory` が使う接続先を整える運用ツール。）
+（root_agent からは呼ばない。`recall_child_history` とWeb承認時の
+`memory_writeback.persist_approved_facts` が使う接続先を整える運用ツール。）
 
 何をするか:
 - Agent Engine を作成（または既存 `AGENT_ENGINE_ID` を更新）し、Memory Bank に
