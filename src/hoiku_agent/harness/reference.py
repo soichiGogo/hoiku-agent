@@ -10,6 +10,7 @@ from .aggregate import (
     class_plan_history_digest,
     collect_reflections,
     format_class_plan_history_for_prompt,
+    format_class_roster_for_prompt,
     format_digest_for_prompt,
     format_record_digest_for_prompt,
     format_reflections_for_prompt,
@@ -24,6 +25,7 @@ _STATE_KEYS: dict[ReferenceSource, tuple[str, ...]] = {
     ReferenceSource.class_child_records: ("class_record_entries",),
     ReferenceSource.past_class_plans: ("past_class_plans",),
     ReferenceSource.uncovered_class_diaries: ("class_diary_entries",),
+    ReferenceSource.class_roster: ("class_roster",),
 }
 
 
@@ -90,6 +92,14 @@ def fetch_reference_from_state(state: dict, source: ReferenceSource | str) -> di
         plans = _parse(rows, ClassMonthlyPlan)
         content = format_class_plan_history_for_prompt(class_plan_history_digest(plans))
         count = len(plans)
+    elif source == ReferenceSource.class_roster:
+        # 名簿（クラス・園児マスタ）＝pydantic 書類ではなく名簿 view の dict 列。呼び名が空の行は数えない
+        # （count＝author が個人目標の対象にできる在籍児数。空は「名簿なし」の正直な降格メッセージ）。
+        names = [
+            row for row in rows if isinstance(row, dict) and str(row.get("child_id") or "").strip()
+        ]
+        content = format_class_roster_for_prompt(names)
+        count = len(names)
     else:
         records = _parse(rows, ChildRecord)
         content = format_record_digest_for_prompt(child_record_digest(records))

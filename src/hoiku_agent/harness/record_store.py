@@ -1592,6 +1592,69 @@ def list_child_record_entries(
         return []
 
 
+def _roster_children(
+    session: Session, workspace: uuid.UUID, age_band: str, reference_date: date
+) -> list[tuple[Child, Class]]:
+    """対象年度のクラスに在籍し、生年月日から導出した年齢帯が一致する児童（名簿の決定実体・表示名順）。
+
+    「クラス（年齢帯）の在籍児」の同定はここに1つ＝クラス月案 seed（`list_class_child_record_entries`）と
+    在籍児名簿（`class_roster`）が共用する。クラスは年齢帯を保存しないため、対象年度の4月1日
+    （`reference_date`）時点の満年齢で分類する。生年月日未登録の児は年齢帯を推測せず含めない。
+    """
+    return [
+        (child, cls)
+        for child, cls in session.execute(
+            sa.select(Child, Class)
+            .join(Class, Child.class_id == Class.id)
+            .where(
+                Class.workspace_id == workspace,
+                Child.workspace_id == workspace,
+                Class.active.is_(True),
+                Child.active.is_(True),
+            )
+            .order_by(Child.display_name)
+        )
+        if (not cls.fiscal_year or cls.fiscal_year == str(reference_date.year))
+        and age_band_for_birthdate(child.birthdate, reference_date) == age_band
+    ]
+
+
+def class_roster(
+    age_band: str, month: str, *, workspace_id: str | uuid.UUID | None = None
+) -> list[dict]:
+    """クラス（年齢帯）の在籍児名簿＝クラス月案の与件（クラス・園児マスタから決定的に引く）。
+
+    0–2 の個人目標を「過去記録に登場した子」でなく**名簿の在籍児**を基準に書けるようにする
+    （記録がまだ1件も無い新入園児を落とさない・§18）。在籍児の同定は seed と同じ
+    `_roster_children`（対象年度4月1日時点の年齢帯分類）。月齢ラベルは対象月の1日時点で計算する
+    （個人目標 `age_months` の素）。名簿未整備・DB 未接続・該当なしは空を返し、fetch_reference が
+    「名簿なし」を author へ正直に降格メッセージ化する。month 不正は ValueError（呼び出し側が降格/400）。
+    """
+    if age_band not in AGE_BANDS:
+        return []
+    month = normalize_month(month)
+    reference_date = fiscal_year_start(month)
+    age_as_of = date(int(month[:4]), int(month[5:7]), 1)
+    eng = _engine()
+    if eng is None:
+        return []
+    try:
+        workspace = _workspace_uuid(workspace_id)
+        with Session(eng) as session:
+            return [
+                {
+                    "child_id": child.display_name,
+                    "age_months": (
+                        age_months_label(child.birthdate, age_as_of) if child.birthdate else ""
+                    ),
+                    "class_name": cls.name,
+                }
+                for child, cls in _roster_children(session, workspace, age_band, reference_date)
+            ]
+    except SQLAlchemyError:
+        return []
+
+
 def list_class_child_record_entries(
     age_band: str,
     *,
@@ -1617,18 +1680,7 @@ def list_class_child_record_entries(
             # 名簿優先：当該年度のクラスに在籍する児童を、生年月日から年齢帯へ分類する。
             roster_ids = [
                 child.id
-                for child, cls in session.execute(
-                    sa.select(Child, Class)
-                    .join(Class, Child.class_id == Class.id)
-                    .where(
-                        Class.workspace_id == workspace,
-                        Child.workspace_id == workspace,
-                        Class.active.is_(True),
-                        Child.active.is_(True),
-                    )
-                )
-                if (not cls.fiscal_year or cls.fiscal_year == str(reference_date.year))
-                and age_band_for_birthdate(child.birthdate, reference_date) == age_band
+                for child, _cls in _roster_children(session, workspace, age_band, reference_date)
             ]
             q = (
                 sa.select(DocumentRecord)
@@ -1725,11 +1777,12 @@ def _entry_has_uncovered_note(entry: dict, by_child: dict[str, date]) -> bool:
 def class_monthly_seed_inputs(
     age_band: str, month: str, *, workspace_id: str | uuid.UUID | None = None
 ) -> dict:
-    """クラス月案の seed 入力3点をアーカイブから決定的に合成する（依存モデル 2026-07）。
+    """クラス月案の seed 入力（3系統＋在籍児名簿）をアーカイブから決定的に合成する（依存モデル 2026-07）。
 
     ① class_record_entries＝クラス児童の作成済み保育経過記録すべて（全期・年度跨ぎ含む）
     ② past_class_plans＝当該クラスの作成済みクラス月案すべて（対象月より前・全期）
     ③ class_diary_entries＝**経過記録にまだ反映されていない当該クラスの日誌**（対象月の前月末まで）。
+    ④ class_roster＝クラスの在籍児名簿（`class_roster`＝0–2 個人目標の対象の与件・名簿未整備は空）。
        未反映判定は**児童別**（`covered_until_by_child`）＝各児の反映済み最終日より後の note を1件でも
        含む日誌を残す。クラス一律の max 境界だと記録が進んだ児に引きずられて、記録が遅れている児
        （途中入園児等）の日誌が丸ごと落ちるため（安全側＝情報を落とさない）。探索範囲は当該**年度**内に
@@ -1756,6 +1809,9 @@ def class_monthly_seed_inputs(
         "past_class_plans": list_class_monthly_entries(
             age_band, before_month=month, workspace_id=workspace_id
         ),
+        # 在籍児名簿（クラス・園児マスタ）＝0–2 個人目標の対象の与件（依存モデルの3系統に加える第4の与件。
+        # 名簿未整備・未接続は空＝fetch_reference が「名簿なし」を正直に author へ伝える）。
+        "class_roster": class_roster(age_band, month, workspace_id=workspace_id),
     }
 
 

@@ -509,6 +509,47 @@ def test_class_monthly_seed_inputs_invalid_month_fails_loud(db):
         rs.class_monthly_seed_inputs("0-2", "でたらめ")
 
 
+def test_class_roster_lists_children_of_the_age_band_with_age_labels(db):
+    """在籍児名簿＝seed と同じ分類（年度4/1時点の年齢帯）＋対象月1日時点の月齢ラベル・表示名順。"""
+    cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "はるとくん", given_name="はると", gender="male", birthdate=date(2025, 4, 10), now=_NOW
+    )
+    rs.upsert_child(
+        "さくらちゃん", given_name="さくら", gender="female", birthdate=date(2022, 5, 1), now=_NOW
+    )
+    rs.upsert_child("ゆいちゃん", given_name="ゆい", gender="female", now=_NOW)  # 生年月日未登録
+    for name in ("はるとくん", "さくらちゃん", "ゆいちゃん"):
+        rs.assign_child_to_class(name, cid, now=_NOW)
+    roster = rs.class_roster("0-2", "2026-08")
+    assert roster == [
+        {"child_id": "はるとくん", "age_months": "1歳3か月", "class_name": "ひよこ組"}
+    ]
+    # 3–5 側には さくらちゃん だけ（生年月日未登録の児は年齢帯を推測せずどちらにも出さない）。
+    assert [r["child_id"] for r in rs.class_roster("3-5", "2026-08")] == ["さくらちゃん"]
+
+
+def test_class_roster_empty_and_invalid_inputs(db, monkeypatch):
+    """名簿未整備・未接続は空（呼び出し側が「名簿なし」を正直表示）。month 不正は fail-loud。"""
+    assert rs.class_roster("0-2", "2026-08") == []
+    with pytest.raises(ValueError):
+        rs.class_roster("0-2", "でたらめ")
+    monkeypatch.setattr(settings, "database_url", "")
+    rs.reset_engine_cache()
+    assert rs.class_roster("0-2", "2026-08") == []
+
+
+def test_class_monthly_seed_inputs_include_class_roster(db):
+    """seed 合成に④在籍児名簿が載る（クラス・園児マスタ→クラス月案の与件・0–2 個人目標の対象）。"""
+    cid = rs.upsert_class("ひよこ組", "2026", now=_NOW)["id"]
+    rs.upsert_child(
+        "はるとくん", given_name="はると", gender="male", birthdate=date(2025, 4, 10), now=_NOW
+    )
+    rs.assign_child_to_class("はるとくん", cid, now=_NOW)
+    seed = rs.class_monthly_seed_inputs("0-2", "2026-08")
+    assert [r["child_id"] for r in seed["class_roster"]] == ["はるとくん"]
+
+
 def test_missing_target_is_error(db):
     r = rs.save_document("diary", {"age_band": "0-2"}, author_kind="ai", now=_NOW)
     assert r["status"] == "error"

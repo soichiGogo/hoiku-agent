@@ -74,6 +74,9 @@ class ReferenceSource(str, Enum):
     past_class_plans = "past_class_plans"
     uncovered_class_diaries = "uncovered_class_diaries"
     prev_month_diaries = "prev_month_diaries"
+    class_roster = (
+        "class_roster"  # クラスの在籍児名簿（クラス・園児マスタ＝0–2 個人目標の対象の与件）
+    )
 
 
 class ReferenceRule(BaseModel):
