@@ -1,7 +1,7 @@
 """層B 評価ゲートの実体（決定的な合否判定）。
 
 設計コンテキスト §12：評価ゲート＝AI版回帰テスト。緑（auto-merge 可）の条件は
-**全ケース・全 rubric の採点完了、品質 floor 達成、PR の eval 平均が main 比で低下なし、かつ
+**全ケース・全 rubric の採点完了、品質 floor 達成、PR の eval 平均が main 比の非劣化マージン内、かつ
 must_fix 違反0**。採点不能や baseline 未確立を成功に読み替えない（CI は strict で fail-closed）。
 
 採点は ADK ネイティブの rubric メトリクス `rubric_based_final_response_quality_v1` に委ねる
@@ -87,9 +87,17 @@ def load_gate_policy(path: Path = _GATE_POLICY_FILE) -> dict[str, Any]:
         or not 0 <= case_minimum <= 1
     ):
         raise ValueError("gate_policy.case_minimum は0–1で指定してください")
+    non_inferiority_margin = data.get("non_inferiority_margin")
+    if (
+        isinstance(non_inferiority_margin, bool)
+        or not isinstance(non_inferiority_margin, (int, float))
+        or not 0 <= non_inferiority_margin <= 1
+    ):
+        raise ValueError("gate_policy.non_inferiority_margin は0–1で指定してください")
     return {
         "axis_minimums": {key: float(value) for key, value in axis_minimums.items()},
         "case_minimum": float(case_minimum),
+        "non_inferiority_margin": float(non_inferiority_margin),
     }
 
 
@@ -272,12 +280,12 @@ def decide_gate(
     baseline_mean: float | None,
     must_fix_violations: int,
     *,
-    tolerance: float = 1e-9,
+    non_inferiority_margin: float = 0.0,
 ) -> bool | None:
-    """§12 の判定式：main 比 非劣化 かつ must_fix 0 を緑とする（純関数・決定的）。
+    """§12 の判定式：main 比の許容幅内かつ must_fix 0 を緑とする（純関数・決定的）。
 
     Returns:
-        True＝緑（非劣化＆違反0）／ False＝赤（劣化 or 違反あり）／ None＝判定不能（採点できていない）。
+        True＝緑（許容幅内＆違反0）／ False＝赤（有意な劣化 or 違反あり）／ None＝判定不能。
     baseline が無い状態は非劣化を証明できないため None（判定不能）とする。
     """
     if mean is None:
@@ -286,7 +294,7 @@ def decide_gate(
         return False  # must_fix 違反は1件でも赤
     if baseline_mean is None:
         return None  # 基準未確立＝判定不能（CI strict では赤）
-    return mean >= baseline_mean - tolerance
+    return mean >= baseline_mean - non_inferiority_margin
 
 
 def extract_rubric_scores(eval_case_result: object) -> dict[str, float]:
@@ -537,7 +545,7 @@ def run_gate(
         }
 
     挙動（§12 の判定式）：rubric メトリクス（test_config.json）で各ケースを採点し、axis_* 平均を
-    ケーススコア、mustfix_* の no を違反として集計 → `decide_gate`（main 比 非劣化 かつ must_fix 0）で
+    ケーススコア、mustfix_* の no を違反として集計 → `decide_gate`（main 比の許容幅内 かつ must_fix 0）で
     passed を確定する。比較基準は committed `eval/baseline.json`（`load_baseline`）を既定で読む（PR は main の
     平均と比べる）。採点不能・baseline 未確立・一部ケース/rubric 欠落は passed=None。CLI の `--strict`
     はこれを非0終了へ変換し、CI で fail-closed にする。
@@ -605,7 +613,13 @@ def run_gate(
     if agg["must_fix_violations"]:
         quality_failures.append(f"must_fix 違反={agg['must_fix_violations']}")
 
-    comparison = decide_gate(agg["mean"], baseline_mean, agg["must_fix_violations"])
+    margin = gate_policy["non_inferiority_margin"]
+    comparison = decide_gate(
+        agg["mean"],
+        baseline_mean,
+        agg["must_fix_violations"],
+        non_inferiority_margin=margin,
+    )
     bootstrapped = False
     # 初回導入PRに限る例外。base側に「mean: null」が明記され、候補baselineが今回の実採点結果と
     # 完全一致する場合だけ比較成立とする。baseが採点済みになった後は候補側baselineを無視する。
@@ -626,8 +640,10 @@ def run_gate(
         if bootstrapped:
             comparison = True
     if comparison is False and agg["must_fix_violations"] == 0:
+        threshold = baseline_mean - margin
         quality_failures.append(
-            f"mean={agg['mean']:.3f} < baseline={baseline_mean:.3f}（main比で劣化）"
+            f"mean={agg['mean']:.3f} < baseline-margin={threshold:.3f} "
+            f"（baseline={baseline_mean:.3f}, margin={margin:.3f}）"
         )
     passed = None if comparison is None else not quality_failures
     verdict = "判定不能" if passed is None else ("緑" if passed else "赤")
@@ -638,7 +654,9 @@ def run_gate(
     elif quality_failures:
         detail_suffix = "／".join(quality_failures)
     else:
-        detail_suffix = "coverage 100%・floor達成・main比非劣化・must_fix 0。"
+        detail_suffix = (
+            f"coverage 100%・floor達成・main比の非劣化マージン{margin:.3f}以内・must_fix 0。"
+        )
     return {
         "status": "scored",
         "passed": passed,

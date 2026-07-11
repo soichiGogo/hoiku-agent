@@ -2,7 +2,7 @@
 #
 # fail-closed 契約:
 #   - 設定/IAM/モデル/ケース/rubric/baseline のどれかが欠けたら非0終了（skipを緑にしない）。
-#   - 全ケース×全6 rubrics、軸/ケースfloor、main baseline非劣化、must_fix 0を満たして初めて緑。
+#   - 全ケース×全6 rubrics、軸/ケースfloor、main baseline比の許容幅内、must_fix 0で初めて緑。
 #   - baseline は nightly で自動更新しない。人が --update-baseline で採点し通常PRでレビューする。
 #
 # 前提（Terraform + GitHub Variables）:
