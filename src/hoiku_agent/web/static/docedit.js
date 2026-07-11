@@ -21,11 +21,31 @@ const CLASS_GRID_ROWS = [
 ];
 
 /* ---- 部品 ---- */
+function fitTextareaToContent(t) {
+  // height:auto を挟むことで、追記時だけでなく削除時にも内容の高さまで縮む。
+  t.style.height = "auto";
+  // scrollHeight は枠線を含まないため、border-box の高さには枠線ぶんも足す。
+  const borderHeight = t.offsetHeight - t.clientHeight;
+  t.style.height = `${t.scrollHeight + borderHeight}px`;
+}
+
 function ta(value, rows = 2, placeholder = "") {
   const t = el("textarea", "de-input");
   t.rows = rows;
   t.value = value == null ? "" : String(value);
   if (placeholder) t.placeholder = placeholder;
+  t.addEventListener("input", () => fitTextareaToContent(t));
+  // panel が DOM に載った後に幅と折り返しが確定するため、次の描画で初期値へ合わせる。
+  requestAnimationFrame(() => fitTextareaToContent(t));
+  // レスポンシブ表示で横幅と折り返し行数が変わった場合も高さを合わせ直す。
+  if ("ResizeObserver" in window) {
+    let observedWidth = 0;
+    new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width === observedWidth) return;
+      observedWidth = entry.contentRect.width;
+      fitTextareaToContent(t);
+    }).observe(t);
+  }
   return t;
 }
 function inp(value, placeholder = "") {

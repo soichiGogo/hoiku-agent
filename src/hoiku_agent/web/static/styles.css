@@ -476,7 +476,8 @@ a{color:var(--primary-d)}
 .de-field{display:flex;flex-direction:column;gap:4px}
 .de-lab{font-size:11.5px;font-weight:700;color:var(--ink-soft);letter-spacing:.02em}
 .de-input{width:100%;border:1.5px solid var(--line-strong);border-radius:var(--r-sm);padding:8px 11px;
-  font-family:inherit;font-size:var(--fs-sm);line-height:1.7;color:var(--ink);background:var(--surface);resize:vertical}
+  font-family:inherit;font-size:var(--fs-sm);line-height:1.7;color:var(--ink);background:var(--surface)}
+textarea.de-input{overflow-y:hidden;resize:none}
 .de-input::placeholder{color:color-mix(in srgb,var(--muted) 70%,transparent)}
 .de-input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
 select.de-input{appearance:auto;min-height:38px}
@@ -530,7 +531,7 @@ select.de-input{appearance:auto;min-height:38px}
 .cm-grid th.cm-cat{width:52px;writing-mode:vertical-rl;text-orientation:upright;letter-spacing:.15em}
 .cm-grid th.cm-dom{width:78px}
 .cm-grid td .de-input{border:none;border-radius:0;background:transparent;box-shadow:none;min-height:44px;
-  padding:6px 8px;resize:vertical}
+  padding:6px 8px}
 .cm-grid td .de-input:focus{outline:2px solid var(--primary);outline-offset:-2px;box-shadow:none}
 /* 用紙をはみ出さないよう、グリッドは自分のスクロール枠に収める（本文は横スクロールさせない）。 */
 .de-sec .cm-grid{display:table}
