@@ -12,9 +12,10 @@ from hoiku_agent.config import settings
 
 
 @pytest.fixture(autouse=True)
-def _isolate_database_url(monkeypatch):
-    """ストレージ DB（書類アーカイブ＋指針カードブック）をテストから隔離する（既定＝降格/ローカル経路）。"""
+def _isolate_external_stores(monkeypatch):
+    """開発者のDB/Memory Bank設定をテストから隔離する（明示fixtureだけが有効化）。"""
     monkeypatch.setattr(settings, "database_url", "")
+    monkeypatch.setattr(settings, "agent_engine_id", "")
 
 
 @pytest.fixture()

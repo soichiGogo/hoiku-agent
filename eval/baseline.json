@@ -1,7 +1,20 @@
 {
-  "mean": null,
-  "axis_means": null,
+  "mean": 1.0,
+  "axis_means": {
+    "axis_guideline_alignment": 1.0,
+    "axis_ten_no_sugata": 1.0,
+    "axis_expression": 1.0
+  },
   "must_fix_violations": 0,
-  "commit": null,
-  "note": "保育日誌の AI 生成退役でケース母集団が変わった（日誌16件を撤去→保育経過記録6＋要録3＝9件）ため要再採点。nightly eval-gate が --update-baseline で埋め直すまで mean=null＝非劣化比較なし（must_fix 0＋採点可能を緑）。手で編集しない。"
+  "commit": "22a11558ec89a35cc28e91a57e2510ea5079a0fb",
+  "case_count": 9,
+  "gate_policy": {
+    "axis_minimums": {
+      "axis_guideline_alignment": 0.8,
+      "axis_ten_no_sugata": 0.8,
+      "axis_expression": 0.8
+    },
+    "case_minimum": 0.6666666666666666
+  },
+  "note": "main の eval 平均（3軸ケース平均）。意図的な --update-baseline 採点を通常PRでレビューし、PR の非劣化比較（decide_gate）に使う＝§12。nightly は自動更新しない。"
 }

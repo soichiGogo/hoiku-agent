@@ -12,18 +12,25 @@
 - `judges/` … LLM-as-judge プロンプト。**3軸**：①指針整合（保育所保育指針）②10の姿マッピング
   ③保護者向け表現の適切さ。各軸 0–1 で採点し3軸平均をケーススコアにする。
 - `test_config.json` … 3軸（`axis_*`）＋must_fix（`mustfix_*`）を ADK の
-  `rubric_based_final_response_quality_v1` に rubric として配線。
+  `rubric_based_final_response_quality_v1` に rubric として配線。judge は3回採点の多数決。
+- `gate_policy.json` … 軸別・ケース別の絶対品質 floor（3軸各0.8、各ケース2/3）。決定的な判定設定。
 - `run_gate.py` … 採点→集計→ゲート判定の実体（`aggregate_rubric_scores`/`decide_gate`・判定式の SSOT）。
-- `baseline.json` … main の eval 平均（committed）。`run_gate` が既定で読み PR の非劣化比較に使う。nightly が
-  `--update-baseline` で更新・コミットバックする（不在/未採点は比較なしへ降格）。手で編集しない。
-- 実行は `uv run --extra eval python eval/run_gate.py`（採点して判定）／`… --update-baseline`（baseline 更新）。
+- `baseline.json` … main の eval 平均（committed）。`run_gate` が既定で読み PR の非劣化比較に使う。
+  PR CIはPR内の値でなくbase SHAから抽出したbaselineを使い、候補側の基準改変を防ぐ。nightlyは自動更新しない。
+  初回導入時にbaseの`mean`が明示的に`null`なら、候補baselineとそのCIの実採点値（平均・軸別平均・must_fix・
+  ケース数・gate policy）が完全一致した場合だけ一度限りbootstrapする。baseが採点済みになれば候補値は無視する。
+  変更時は `--update-baseline` で完全採点し、通常PRでレビューする。
+- 実行は `uv run --extra eval python eval/run_gate.py`（ローカル採点）／`… --strict --output <path>`
+  （CI＝採点不能も非0終了＋ケース別証跡）／`… --update-baseline`（意図的なbaseline更新）。
   いずれも要 `google-adk[eval]` ＋ LLM 資格情報。詳細規約は `CLAUDE.md`。
+- `results/` … ローカル/Actionsの実行証跡（gitignore・Actions artifact。コミットしない）。
+- `tests/test_eval.py` を直接使う場合も、暗黙の課金を防ぐため `RUN_LIVE_EVAL=1` を明示する。
 
 ## 評価ゲート
 
-緑（auto-merge 可）の条件＝**PR の eval 平均が main 比で低下なし、かつ `must_fix` 違反0**。
-main 比の基準は committed `baseline.json`（nightly が更新）。v0 は「main 平均を下回らない」のみをゲートにし、
-軸別閾値は 15ケース貯まってから調整する。**保育士OK ≠ マージOK**（採否はゲートが決める）。
+緑（auto-merge 可）の条件＝**全ケース×全rubricのcoverage 100%、軸/ケースfloor達成、PR平均がmain比で
+低下なし、かつ `must_fix` 違反0**。採点不能・rubric欠落・baseline未確立はCIで赤。baselineは自動追随
+させずレビュー対象にする。**保育士OK ≠ マージOK**（採否はゲートが決める）。
 
 ## 「閉じる1事例」（提出前の必達点）
 

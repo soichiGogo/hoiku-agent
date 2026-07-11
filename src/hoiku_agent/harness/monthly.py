@@ -9,7 +9,7 @@
       → authoring_loop（[monthly_author → reviewer → ApprovalGate] を巡回・日誌と共用。NEEDS_REVISION で
         monthly_author が指摘点を再作成）→ state["draft"]/["review"]
       → finalize(kind="monthly")（MonthlyPlan を復元→validate_monthly_fields/write_monthly_draft）
-      → [after_agent_callback] persist_visit_to_memory（保育士の明示承認＋型成立のとき子の像へ書き戻し・§9）
+      → 承認後のMemory Bank書き戻しは web `/api/records/approve`（§9）
 
 L2 還流の入力（前月日誌）は session state["prev_month_entries"]（DiaryEntry の dict 列）から取る。
 v0 では呼び出し側（scripts/run_monthly.py・月案デモの seeding）が前月日誌を seed する。将来は
@@ -32,7 +32,6 @@ from .record_store import covered_until, covered_until_by_child
 from .pipeline import (
     FinalizeAgent,
     build_authoring_loop,
-    persist_visit_to_memory,
 )
 
 if TYPE_CHECKING:
@@ -122,7 +121,7 @@ def build_monthly_pipeline(
     置き、巡回は build_authoring_loop（[monthly_author → reviewer → ApprovalGate]・日誌と共用。
     NEEDS_REVISION で monthly_author が再作成）、finalize は kind="monthly"。文書作成指針と前月集積は
     monthly_author/reviewer の InstructionProvider（`agents/instructions.py`）が prompt 冒頭へ注入する（§5）。
-    after_agent_callback は日誌と共用（明示承認＋型成立で書き戻し・§9）。author_model/reviewer_model は
+    承認後の書き戻しはWeb承認APIへ一本化する。author_model/reviewer_model は
     通常 None（実 Gemini）。決定論E2E では FakeLlm を注入する。
     """
     return SequentialAgent(
@@ -132,5 +131,4 @@ def build_monthly_pipeline(
             build_authoring_loop(build_monthly_author_agent(author_model), reviewer_model),
             FinalizeAgent(name="finalize", kind="monthly"),
         ],
-        after_agent_callback=persist_visit_to_memory,
     )

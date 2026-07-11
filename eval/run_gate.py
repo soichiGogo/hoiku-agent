@@ -1,8 +1,8 @@
 """層B 評価ゲートの実体（決定的な合否判定）。
 
 設計コンテキスト §12：評価ゲート＝AI版回帰テスト。緑（auto-merge 可）の条件は
-**PR の eval 平均が main 比で低下なし、かつ must_fix 違反0**。v0 は「main 平均を下回らない」のみを
-ゲートにする（軸別閾値は 15 ケース貯まってから調整）。
+**全ケース・全 rubric の採点完了、品質 floor 達成、PR の eval 平均が main 比で低下なし、かつ
+must_fix 違反0**。採点不能や baseline 未確立を成功に読み替えない（CI は strict で fail-closed）。
 
 採点は ADK ネイティブの rubric メトリクス `rubric_based_final_response_quality_v1` に委ねる
 （eval/test_config.json で3軸 axis_*（指針整合/10の姿/保護者向け表現）と mustfix_* を rubric として
@@ -13,11 +13,12 @@ axis_* の平均をケーススコア、mustfix_* の no を違反として集�
 - **ゲートの決定ロジック（aggregate_rubric_scores / decide_gate / extract_rubric_scores）は純関数**で
   ここに1つ置き、improver.run_eval / tests/test_eval.py の双方から呼ぶ（二重化しない）。LLM 非依存に
   テストできるよう ADK の採点（要 creds）から切り離す。
-- **採点の実行（ADK 駆動）は要 LLM 資格情報**。creds・評価ケースが無い環境では採点できないため、
-  `passed=None`（判定不能＝スキップ相当）で安全に降格し、**偽の緑を出さない**。
+- **採点の実行（ADK 駆動）は要 LLM 資格情報**。ローカル API としては採点不能を `passed=None` で
+  表現するが、CI は `--strict` で非0終了にする。rubric の一部欠落も判定不能であり、present のみを
+  平均して成功扱いしない。
 - **main 比の baseline は committed `eval/baseline.json`**（`load_baseline`/`build_baseline_record`/
-  `write_baseline`）。nightly の main eval-gate が `--update-baseline` で更新し、PR は `run_gate` が既定で
-  これを読んで非劣化比較する。ファイル不在/壊れは `baseline_mean=None`＝比較なし（must_fix 0 で緑）へ降格。
+  `write_baseline`）。更新は人が意図して `--update-baseline` を実行し、通常の PR レビューで取り込む。
+  nightly に基準を自動追随させない。ファイル不在/壊れ/mean=null は判定不能（strict では赤）。
 
 CLI: `python eval/run_gate.py`（採点して判定）／`python eval/run_gate.py --update-baseline`（main を採点して
 baseline.json を更新）。いずれも要 creds。
@@ -25,13 +26,17 @@ baseline.json を更新）。いずれも要 creds。
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
+import re
+from typing import Any
 
 _EVAL_DIR = Path(__file__).resolve().parent
 _CASES_DIR = _EVAL_DIR / "cases"
 _TEST_CONFIG = _EVAL_DIR / "test_config.json"
 _BASELINE_FILE = _EVAL_DIR / "baseline.json"
+_GATE_POLICY_FILE = _EVAL_DIR / "gate_policy.json"
 
 # rubric メトリクス名（test_config.json のキーと一致）と rubric_id 体系（§12 の3軸＋must_fix）。
 RUBRIC_METRIC = "rubric_based_final_response_quality_v1"
@@ -41,11 +46,118 @@ MUST_FIX_RUBRIC_IDS = (
     "mustfix_age_framework",
     "mustfix_no_definitive_eval",
 )
+REQUIRED_RUBRIC_IDS = AXIS_RUBRIC_IDS + MUST_FIX_RUBRIC_IDS
+
+_AUTORATER_BLOCK_PATTERN = re.compile(
+    r"^Property:\s*(?P<property>.*?)\n"
+    r"^Evidence:\s*.*?\n"
+    r"^Rationale:\s*(?P<rationale>.*?)\n"
+    r"^Verdict:\s*(?P<verdict>yes|no)\s*(?=^Property:|\Z)",
+    flags=re.MULTILINE | re.DOTALL | re.IGNORECASE,
+)
 
 
 def find_cases(cases_dir: Path = _CASES_DIR) -> list[Path]:
     """評価ケース（ADK evalset JSON）の一覧を返す。"""
     return sorted(cases_dir.glob("*.evalset.json"))
+
+
+def load_expected_case_ids(cases: list[Path]) -> list[str]:
+    """evalset JSON から期待する全 eval_id を読み出す（coverage の正）。"""
+    ids: list[str] = []
+    for path in cases:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        ids.extend(str(case["eval_id"]) for case in data.get("eval_cases", []))
+    return ids
+
+
+def load_gate_policy(path: Path = _GATE_POLICY_FILE) -> dict[str, Any]:
+    """決定的な品質 floor を読む。壊れた設定はゲート構成エラーとして例外にする。"""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    axis_minimums = data.get("axis_minimums")
+    if not isinstance(axis_minimums, dict) or set(axis_minimums) != set(AXIS_RUBRIC_IDS):
+        raise ValueError("gate_policy.axis_minimums は3軸すべてを定義する必要があります")
+    for rubric_id, value in axis_minimums.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1:
+            raise ValueError(f"gate_policy.axis_minimums.{rubric_id} は0–1で指定してください")
+    case_minimum = data.get("case_minimum")
+    if (
+        isinstance(case_minimum, bool)
+        or not isinstance(case_minimum, (int, float))
+        or not 0 <= case_minimum <= 1
+    ):
+        raise ValueError("gate_policy.case_minimum は0–1で指定してください")
+    return {
+        "axis_minimums": {key: float(value) for key, value in axis_minimums.items()},
+        "case_minimum": float(case_minimum),
+    }
+
+
+def parse_autorater_blocks(text: str) -> list[dict[str, Any]]:
+    """ADK judge の Property/Evidence/Rationale/Verdict ブロックを複数行対応で読む。
+
+    ADK 2.3 の既定 parser は Rationale が同じ行にある場合しか拾えず、judge が自然に改行すると
+    全 rubric が欠落する。外部 package をpatchせず、同じ公開出力契約を堅牢に解釈するadapterの純関数。
+    """
+    parsed: list[dict[str, Any]] = []
+    for match in _AUTORATER_BLOCK_PATTERN.finditer(text):
+        parsed.append(
+            {
+                "property": match.group("property").strip(),
+                "rationale": match.group("rationale").strip(),
+                "score": 1.0 if match.group("verdict").lower() == "yes" else 0.0,
+            }
+        )
+    return parsed
+
+
+def _build_metric_registry():
+    """ADK 2.3 rubric evaluatorへ堅牢parserを差し込んだ、このゲート専用registryを作る。"""
+    from google.adk.evaluation.metric_evaluator_registry import MetricEvaluatorRegistry
+    from google.adk.evaluation.metric_info_providers import (
+        RubricBasedFinalResponseQualityV1EvaluatorMetricInfoProvider,
+    )
+    from google.adk.evaluation.rubric_based_evaluator import AutoRaterResponseParser
+    from google.adk.evaluation.rubric_based_evaluator import RubricResponse
+    from google.adk.evaluation.rubric_based_final_response_quality_v1 import (
+        RubricBasedFinalResponseQualityV1Evaluator,
+    )
+
+    class MarkerAwareMultilineParser(AutoRaterResponseParser):
+        def __init__(self, canonical_properties: dict[str, str]):
+            self._canonical_properties = canonical_properties
+
+        def parse(self, auto_rater_response: str) -> list[RubricResponse]:
+            responses: list[RubricResponse] = []
+            for block in parse_autorater_blocks(auto_rater_response):
+                property_text = block["property"]
+                for rubric_id, canonical in self._canonical_properties.items():
+                    if f"[{rubric_id}]" in property_text:
+                        property_text = canonical
+                        break
+                responses.append(
+                    RubricResponse(
+                        property_text=property_text,
+                        rationale=block["rationale"],
+                        score=block["score"],
+                    )
+                )
+            return responses
+
+    class RobustRubricEvaluator(RubricBasedFinalResponseQualityV1Evaluator):
+        def __init__(self, eval_metric):
+            super().__init__(eval_metric)
+            canonical = {
+                rubric.rubric_id: rubric.rubric_content.text_property for rubric in self._rubrics
+            }
+            self._auto_rater_response_parser = MarkerAwareMultilineParser(canonical)
+
+    registry = MetricEvaluatorRegistry()
+    registry.register_evaluator(
+        metric_info=RubricBasedFinalResponseQualityV1EvaluatorMetricInfoProvider().get_metric_info(),
+        evaluator=RobustRubricEvaluator,
+    )
+    return registry
 
 
 # ──────────────────── ゲートの決定ロジック（純関数・§12・LLM 非依存） ────────────────────
@@ -94,7 +206,65 @@ def aggregate_rubric_scores(
         "axis_means": axis_means,
         "must_fix_violations": must_fix_violations,
         "n_scored": len(case_means),
+        "case_means": case_means,
     }
+
+
+def validate_score_coverage(
+    case_results: list[dict[str, Any]],
+    expected_case_ids: list[str],
+    required_rubric_ids: tuple[str, ...] = REQUIRED_RUBRIC_IDS,
+) -> dict[str, Any]:
+    """全ケース×全 rubric が一度ずつ採点されたことを検査する（純関数・fail-closed）。"""
+    actual_ids = [str(result.get("eval_id") or "") for result in case_results]
+    expected_set = set(expected_case_ids)
+    actual_set = set(actual_ids)
+    duplicates = sorted({eval_id for eval_id in actual_ids if actual_ids.count(eval_id) > 1})
+    missing_rubrics: dict[str, list[str]] = {}
+    for result in case_results:
+        eval_id = str(result.get("eval_id") or "<unknown>")
+        scores = result.get("scores") if isinstance(result.get("scores"), dict) else {}
+        missing = [rubric_id for rubric_id in required_rubric_ids if scores.get(rubric_id) is None]
+        if missing:
+            missing_rubrics[eval_id] = missing
+    missing_cases = sorted(expected_set - actual_set)
+    unexpected_cases = sorted(actual_set - expected_set)
+    complete = bool(expected_case_ids) and not (
+        duplicates or missing_cases or unexpected_cases or missing_rubrics or "" in actual_set
+    )
+    return {
+        "complete": complete,
+        "expected_cases": len(expected_case_ids),
+        "scored_cases": len(case_results),
+        "missing_cases": missing_cases,
+        "unexpected_cases": unexpected_cases,
+        "duplicate_cases": duplicates,
+        "missing_rubrics": missing_rubrics,
+    }
+
+
+def evaluate_quality_floors(
+    case_results: list[dict[str, Any]],
+    aggregate: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    """軸別・ケース別の絶対 floor 違反を返す（純関数・baseline比較とは独立）。"""
+    failures: list[str] = []
+    case_means: dict[str, float] = {}
+    for rubric_id, minimum in policy["axis_minimums"].items():
+        actual = aggregate["axis_means"].get(rubric_id)
+        if actual is None or actual < minimum:
+            failures.append(f"{rubric_id}={actual} < floor={minimum}")
+    case_minimum = policy["case_minimum"]
+    for result in case_results:
+        scores = result["scores"]
+        case_mean = sum(scores[rubric_id] for rubric_id in AXIS_RUBRIC_IDS) / len(AXIS_RUBRIC_IDS)
+        case_means[str(result["eval_id"])] = case_mean
+        if case_mean < case_minimum:
+            failures.append(
+                f"{result['eval_id']}: case_mean={case_mean:.3f} < floor={case_minimum:.3f}"
+            )
+    return {"failures": failures, "case_means": case_means}
 
 
 def decide_gate(
@@ -108,14 +278,14 @@ def decide_gate(
 
     Returns:
         True＝緑（非劣化＆違反0）／ False＝赤（劣化 or 違反あり）／ None＝判定不能（採点できていない）。
-    v0 は「main 平均を下回らない」のみをゲートにする（baseline_mean=None なら比較対象なしで非劣化扱い）。
+    baseline が無い状態は非劣化を証明できないため None（判定不能）とする。
     """
     if mean is None:
         return None  # 採点できていない＝判定不能（偽の緑/赤を出さない）
     if must_fix_violations > 0:
         return False  # must_fix 違反は1件でも赤
     if baseline_mean is None:
-        return True  # main 比較なし（初回等）＝非劣化として緑（must_fix 0 を確認済み）
+        return None  # 基準未確立＝判定不能（CI strict では赤）
     return mean >= baseline_mean - tolerance
 
 
@@ -138,14 +308,43 @@ def extract_rubric_scores(eval_case_result: object) -> dict[str, float]:
     return scores
 
 
+def extract_rubric_rationales(eval_case_result: object) -> dict[str, str]:
+    """ADK の EvalCaseResult から rubric_id→judge理由を取り出す（artifact用）。"""
+    rationales: dict[str, str] = {}
+    for invocation_result in (
+        getattr(eval_case_result, "eval_metric_result_per_invocation", None) or []
+    ):
+        for metric_result in getattr(invocation_result, "eval_metric_results", None) or []:
+            if getattr(metric_result, "metric_name", None) != RUBRIC_METRIC:
+                continue
+            details = getattr(metric_result, "details", None)
+            for rubric_score in getattr(details, "rubric_scores", None) or []:
+                rubric_id = getattr(rubric_score, "rubric_id", None)
+                rationale = getattr(rubric_score, "rationale", None)
+                if rubric_id is not None and rationale:
+                    rationales[str(rubric_id)] = str(rationale)
+    if rationales:
+        return rationales
+    for metric_result in getattr(eval_case_result, "overall_eval_metric_results", None) or []:
+        if getattr(metric_result, "metric_name", None) != RUBRIC_METRIC:
+            continue
+        details = getattr(metric_result, "details", None)
+        for rubric_score in getattr(details, "rubric_scores", None) or []:
+            rubric_id = getattr(rubric_score, "rubric_id", None)
+            rationale = getattr(rubric_score, "rationale", None)
+            if rubric_id is not None and rationale:
+                rationales[str(rubric_id)] = str(rationale)
+    return rationales
+
+
 # ──────────────────── main 比 baseline（committed eval/baseline.json・§12） ────────────────────
 
 
 def load_baseline(path: Path = _BASELINE_FILE) -> float | None:
     """committed baseline（main の eval 平均）を読む（決定的・LLM 非依存）。
 
-    ファイル不在・壊れ・mean 未記録は **None**（比較対象なし＝非劣化扱いへ降格）にする。読めないことを
-    「劣化」と誤認させない（偽の赤を出さない）。`run_gate` が既定でこれを読み PR の非劣化比較に使う。
+    ファイル不在・壊れ・mean 未記録は **None**（判定不能）にする。`run_gate` が既定でこれを読み、
+    CI の strict モードでは基準未確立を失敗にする。
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -158,6 +357,39 @@ def load_baseline(path: Path = _BASELINE_FILE) -> float | None:
     return float(mean)
 
 
+def load_baseline_record(path: Path) -> dict[str, Any] | None:
+    """baseline JSON をレコードとして読む。欠損・壊れ・非objectは None。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def baseline_record_matches_result(
+    record: dict[str, Any],
+    *,
+    aggregate: dict[str, Any],
+    coverage: dict[str, Any],
+    gate_policy: dict[str, Any],
+) -> bool:
+    """初回 bootstrap 用 baseline が今回の完全採点結果と一致するか決定的に検証する。
+
+    commit/note は採点値ではないため比較対象外。数値・軸別平均・違反数・ケース数・ゲート方針が
+    すべて一致した場合だけ true とし、未採点 main から任意の基準値を持ち込めないようにする。
+    """
+    mean = record.get("mean")
+    if isinstance(mean, bool) or not isinstance(mean, (int, float)):
+        return False
+    return (
+        float(mean) == aggregate.get("mean")
+        and record.get("axis_means") == aggregate.get("axis_means")
+        and record.get("must_fix_violations") == aggregate.get("must_fix_violations") == 0
+        and record.get("case_count") == coverage.get("scored_cases")
+        and record.get("gate_policy") == gate_policy
+    )
+
+
 def build_baseline_record(result: dict, *, commit: str | None = None) -> dict:
     """採点結果（run_gate の dict）から baseline レコードを作る（serializable・決定的）。"""
     return {
@@ -165,9 +397,11 @@ def build_baseline_record(result: dict, *, commit: str | None = None) -> dict:
         "axis_means": result.get("axis_means"),
         "must_fix_violations": result.get("must_fix_violations", 0),
         "commit": commit,
+        "case_count": (result.get("coverage") or {}).get("scored_cases"),
+        "gate_policy": result.get("gate_policy"),
         "note": (
-            "main の eval 平均（3軸ケース平均）。nightly eval-gate が --update-baseline で更新し、"
-            "PR の非劣化比較（decide_gate）に使う＝§12。手で編集しない。"
+            "main の eval 平均（3軸ケース平均）。意図的な --update-baseline 採点を通常PRでレビューし、"
+            "PR の非劣化比較（decide_gate）に使う＝§12。nightly は自動更新しない。"
         ),
     }
 
@@ -191,8 +425,8 @@ def _load_eval_metrics() -> list:
     return get_eval_metrics_from_config(eval_config)
 
 
-async def _score_cases_with_adk(cases: list[Path], agent_module: str) -> list[dict[str, float]]:
-    """各 evalset を ADK でローカル採点し、ケース別 {rubric_id: score} を返す（要 LLM 資格情報）。
+async def _score_cases_with_adk(cases: list[Path], agent_module: str) -> list[dict[str, Any]]:
+    """各 evalset を ADK でローカル採点し、ケース別の採点証跡を返す（要 LLM 資格情報）。
 
     LocalEvalService に root_agent と evalset を渡し、推論→rubric 採点を回す。inference/採点は judge
     モデル（Gemini）を呼ぶため資格情報が要る。呼び出し側（run_gate）が例外を握って降格する。
@@ -211,8 +445,9 @@ async def _score_cases_with_adk(cases: list[Path], agent_module: str) -> list[di
 
     root_agent = importlib.import_module(agent_module).root_agent
     eval_metrics = _load_eval_metrics()
+    metric_registry = _build_metric_registry()
     app_name = "hoiku_eval"
-    per_case: list[dict[str, float]] = []
+    per_case: list[dict[str, Any]] = []
 
     for case_path in cases:
         eval_set = EvalSet.model_validate(json.loads(case_path.read_text(encoding="utf-8")))
@@ -221,7 +456,11 @@ async def _score_cases_with_adk(cases: list[Path], agent_module: str) -> list[di
         for case in eval_set.eval_cases:
             manager.add_eval_case(app_name, eval_set.eval_set_id, case)
 
-        service = LocalEvalService(root_agent=root_agent, eval_sets_manager=manager)
+        service = LocalEvalService(
+            root_agent=root_agent,
+            eval_sets_manager=manager,
+            metric_evaluator_registry=metric_registry,
+        )
         inference_results = [
             r
             async for r in service.perform_inference(
@@ -238,12 +477,25 @@ async def _score_cases_with_adk(cases: list[Path], agent_module: str) -> list[di
                 evaluate_config=EvaluateConfig(eval_metrics=eval_metrics),
             )
         ):
-            per_case.append(extract_rubric_scores(case_result))
+            per_case.append(
+                {
+                    "eval_id": str(getattr(case_result, "eval_id", "")),
+                    "scores": extract_rubric_scores(case_result),
+                    "rationales": extract_rubric_rationales(case_result),
+                }
+            )
 
     return per_case
 
 
-def _degraded(status: str, detail: str, baseline_mean: float | None) -> dict:
+def _degraded(
+    status: str,
+    detail: str,
+    baseline_mean: float | None,
+    *,
+    coverage: dict[str, Any] | None = None,
+    case_results: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     return {
         "status": status,
         "passed": None,
@@ -251,6 +503,9 @@ def _degraded(status: str, detail: str, baseline_mean: float | None) -> dict:
         "axis_means": None,
         "must_fix_violations": 0,
         "baseline_mean": baseline_mean,
+        "coverage": coverage,
+        "quality_failures": [],
+        "case_results": case_results or [],
         "detail": detail,
     }
 
@@ -260,16 +515,19 @@ def run_gate(
     agent_module: str = "hoiku_agent",
     baseline_mean: float | None = None,
     baseline_path: Path | None = _BASELINE_FILE,
-) -> dict:
+    bootstrap_baseline_path: Path | None = None,
+) -> dict[str, Any]:
     """評価ゲートを実行し、合否判定 dict を返す（§12）。
 
     Args:
         baseline_mean: main 比較の基準値を直に渡す（テスト・improver 用）。None なら baseline_path から読む。
         baseline_path: committed baseline（既定 `eval/baseline.json`）。None で「比較なし」を明示できる。
+        bootstrap_baseline_path: base baseline の mean が明示的に null の初回だけ、今回の実採点値との
+            完全一致を検証する候補 baseline。通常の比較では使わない。
 
     Returns:
         {
-          "status": "no_cases" | "skipped" | "scored",
+          "status": "no_cases" | "skipped" | "incomplete" | "scored",
           "passed": bool | None,        # None＝判定不能（採点不可・未配線で降格）
           "mean": float | None,         # 3軸ケース平均（採点できた場合）
           "axis_means": dict | None,    # 軸別平均（採点できた場合）
@@ -281,10 +539,11 @@ def run_gate(
     挙動（§12 の判定式）：rubric メトリクス（test_config.json）で各ケースを採点し、axis_* 平均を
     ケーススコア、mustfix_* の no を違反として集計 → `decide_gate`（main 比 非劣化 かつ must_fix 0）で
     passed を確定する。比較基準は committed `eval/baseline.json`（`load_baseline`）を既定で読む（PR は main の
-    平均と比べる）。**採点できない場合（ケース未整備／LLM 資格情報なし／ADK 例外）は passed=None で
-    降格し、偽の緑を出さない**。
+    平均と比べる）。採点不能・baseline 未確立・一部ケース/rubric 欠落は passed=None。CLI の `--strict`
+    はこれを非0終了へ変換し、CI で fail-closed にする。
     """
     # main 比の基準（baseline）を確定する：明示値が無ければ committed baseline.json から読む（無ければ None）。
+    baseline_record = load_baseline_record(baseline_path) if baseline_path is not None else None
     if baseline_mean is None and baseline_path is not None:
         baseline_mean = load_baseline(baseline_path)
 
@@ -297,6 +556,19 @@ def run_gate(
         )
 
     try:
+        expected_case_ids = load_expected_case_ids(cases)
+        gate_policy = load_gate_policy()
+    except (OSError, KeyError, TypeError, ValueError) as e:
+        return _degraded("config_error", f"eval 構成を読めませんでした: {e}", baseline_mean)
+
+    if not expected_case_ids or len(expected_case_ids) != len(set(expected_case_ids)):
+        return _degraded(
+            "config_error",
+            "eval_id が空、または evalset 間で重複しています。",
+            baseline_mean,
+        )
+
+    try:
         import asyncio
 
         import google.adk.evaluation  # noqa: F401  ADK evaluation の有無を先に確認
@@ -305,22 +577,68 @@ def run_gate(
 
     try:
         per_case = asyncio.run(_score_cases_with_adk(cases, agent_module))
-    except Exception as e:  # noqa: BLE001  資格情報なし等は判定不能として降格（ゲートを落とさない）
+    except Exception as e:  # noqa: BLE001  API は判定不能、CI strict は非0終了
         return _degraded(
             "skipped",
             f"採点を実行できませんでした（資格情報/モデル未設定の可能性）: {type(e).__name__}: {e}",
             baseline_mean,
         )
 
-    agg = aggregate_rubric_scores(per_case)
-    passed = decide_gate(agg["mean"], baseline_mean, agg["must_fix_violations"])
-    if passed is None:
-        # ケースは回ったが rubric スコアを取り出せなかった（judge 応答異常等）＝判定不能で降格。
+    coverage = validate_score_coverage(per_case, expected_case_ids)
+    if not coverage["complete"]:
         return _degraded(
-            "skipped",
-            f"{len(cases)} ケースを採点したが rubric スコアを取得できず判定不能。",
+            "incomplete",
+            "全ケース×全rubricの採点が完了していません。欠落を無視せず判定不能とします。",
             baseline_mean,
+            coverage=coverage,
+            case_results=per_case,
         )
+
+    score_maps = [result["scores"] for result in per_case]
+    agg = aggregate_rubric_scores(score_maps)
+    floor_result = evaluate_quality_floors(per_case, agg, gate_policy)
+    quality_failures = floor_result["failures"]
+    per_case = [
+        {**result, "case_mean": floor_result["case_means"][result["eval_id"]]}
+        for result in per_case
+    ]
+    if agg["must_fix_violations"]:
+        quality_failures.append(f"must_fix 違反={agg['must_fix_violations']}")
+
+    comparison = decide_gate(agg["mean"], baseline_mean, agg["must_fix_violations"])
+    bootstrapped = False
+    # 初回導入PRに限る例外。base側に「mean: null」が明記され、候補baselineが今回の実採点結果と
+    # 完全一致する場合だけ比較成立とする。baseが採点済みになった後は候補側baselineを無視する。
+    if (
+        comparison is None
+        and baseline_record is not None
+        and "mean" in baseline_record
+        and baseline_record.get("mean") is None
+        and bootstrap_baseline_path is not None
+    ):
+        bootstrap_record = load_baseline_record(bootstrap_baseline_path)
+        bootstrapped = bootstrap_record is not None and baseline_record_matches_result(
+            bootstrap_record,
+            aggregate=agg,
+            coverage=coverage,
+            gate_policy=gate_policy,
+        )
+        if bootstrapped:
+            comparison = True
+    if comparison is False and agg["must_fix_violations"] == 0:
+        quality_failures.append(
+            f"mean={agg['mean']:.3f} < baseline={baseline_mean:.3f}（main比で劣化）"
+        )
+    passed = None if comparison is None else not quality_failures
+    verdict = "判定不能" if passed is None else ("緑" if passed else "赤")
+    if bootstrapped:
+        detail_suffix = "初回baselineが実採点結果と完全一致・coverage 100%・floor達成・must_fix 0。"
+    elif baseline_mean is None:
+        detail_suffix = "baseline 未確立のため判定不能（--update-baseline で意図的に確立する）。"
+    elif quality_failures:
+        detail_suffix = "／".join(quality_failures)
+    else:
+        detail_suffix = "coverage 100%・floor達成・main比非劣化・must_fix 0。"
     return {
         "status": "scored",
         "passed": passed,
@@ -328,10 +646,15 @@ def run_gate(
         "axis_means": agg["axis_means"],
         "must_fix_violations": agg["must_fix_violations"],
         "baseline_mean": baseline_mean,
+        "baseline_bootstrapped": bootstrapped,
+        "coverage": coverage,
+        "quality_failures": quality_failures,
+        "gate_policy": gate_policy,
+        "case_results": per_case,
         "detail": (
             f"{agg['n_scored']} ケースを3軸採点（mean={agg['mean']:.3f}）／"
             f"must_fix 違反={agg['must_fix_violations']}／"
-            f"判定={'緑' if passed else '赤'}（main 比 非劣化 かつ must_fix 0）。"
+            f"判定={verdict}。{detail_suffix}"
         ),
     }
 
@@ -341,33 +664,59 @@ def update_baseline(
     agent_module: str = "hoiku_agent",
     baseline_path: Path = _BASELINE_FILE,
     commit: str | None = None,
-) -> dict:
-    """main を採点して baseline.json を更新する（要 creds・nightly/手動で実行＝§12）。
+) -> dict[str, Any]:
+    """main を採点して baseline.json を意図的に更新する（要 creds・手動実行＝§12）。
 
-    比較はせず素の採点だけ行い（baseline_path=None）、採点できた場合のみ baseline を上書きする。採点不能
-    （creds/ケース/依存なし）なら **書かずに** status を返す（古い baseline を壊さない＝偽の更新をしない）。
+    比較はせず素の採点だけ行う。coverage 100%・品質 floor・must_fix 0 の場合だけ上書きする。
+    nightly からは呼ばず、変更をレビュー可能な通常コミットとして取り込む。
     """
     result = run_gate(cases_dir, agent_module, baseline_path=None)
-    if result["mean"] is None:
+    if (
+        result["status"] != "scored"
+        or result["mean"] is None
+        or result["must_fix_violations"] > 0
+        or result["quality_failures"]
+        or not (result.get("coverage") or {}).get("complete")
+    ):
         return {
             "status": "not_updated",
             "reason": result["status"],
-            "detail": f"採点できず baseline 据え置き: {result['detail']}",
+            "result": result,
+            "detail": f"完全で合格品質の採点ではないため baseline 据え置き: {result['detail']}",
         }
     write_baseline(build_baseline_record(result, commit=commit), baseline_path)
     return {
         "status": "updated",
         "mean": result["mean"],
         "path": str(baseline_path),
+        "result": result,
         "detail": (
             f"baseline 更新（mean={result['mean']:.3f}・must_fix={result['must_fix_violations']}）。"
         ),
     }
 
 
-if __name__ == "__main__":
-    import argparse
+def exit_code_for_result(result: dict[str, Any], *, strict: bool) -> int:
+    """CLI 終了コードを返す。赤は常に失敗、判定不能は strict 時だけ失敗。"""
+    if result.get("status") == "updated":
+        return 0
+    passed = result.get("passed")
+    if passed is True:
+        return 0
+    if passed is False:
+        return 1
+    return 1 if strict else 0
 
+
+def _write_result(result: dict[str, Any], output: Path | None) -> None:
+    rendered = json.dumps(result, ensure_ascii=False, indent=2) + "\n"
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
+
+
+if __name__ == "__main__":
     # .env を os.environ に展開する。judge（rubric LLM）の genai client は env で Vertex/AI Studio を
     # 判定するため、未 export だと "No API key" で全ケース採点不能→ baseline が silently 据え置きになる
     # （実機で踏んだ）。pydantic settings（env_file）は os.environ を埋めないので別途必要。CI は実 env を
@@ -383,9 +732,37 @@ if __name__ == "__main__":
     ap.add_argument(
         "--update-baseline",
         action="store_true",
-        help="main を採点して eval/baseline.json を更新する（nightly/手動・要 creds）",
+        help="main を採点して eval/baseline.json を意図的に更新する（手動・要 creds）",
     )
     ap.add_argument("--commit", default=None, help="baseline に記録する commit SHA（任意）")
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="採点不能・baseline未確立も非0終了にする（CIでは必須）",
+    )
+    ap.add_argument(
+        "--output", type=Path, default=None, help="結果JSONの保存先（Actions artifact用）"
+    )
+    ap.add_argument(
+        "--baseline-path",
+        type=Path,
+        default=_BASELINE_FILE,
+        help="比較するbaseline JSON（PR CIはbase SHAから抽出したファイルを渡す）",
+    )
+    ap.add_argument(
+        "--bootstrap-baseline-path",
+        type=Path,
+        default=None,
+        help="base baselineがmean=nullの初回だけ実採点との完全一致を検証する候補baseline",
+    )
     args = ap.parse_args()
-    result = update_baseline(commit=args.commit) if args.update_baseline else run_gate()
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    result = (
+        update_baseline(commit=args.commit)
+        if args.update_baseline
+        else run_gate(
+            baseline_path=args.baseline_path,
+            bootstrap_baseline_path=args.bootstrap_baseline_path,
+        )
+    )
+    _write_result(result, args.output)
+    raise SystemExit(exit_code_for_result(result, strict=args.strict or args.update_baseline))

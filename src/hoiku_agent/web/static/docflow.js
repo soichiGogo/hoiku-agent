@@ -569,7 +569,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       const editSave = await adk.saveRecord(docKind, entry, res.formatted, "caregiver", actorName());
       if (editSave.document_id) editor.panel._recordDocId = editSave.document_id; // フィードバック紐付け先
       setArchiveNote(editor.panel._archNote, editSave, "編集内容のアーカイブ保存");
-      return res;
+      return { ...res, archive: editSave };
     }
 
     const saveBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("check")}保存して再チェック`);
@@ -594,10 +594,14 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       approveBtn.disabled = true;
       saveBtn.disabled = true;
       try {
-        await save(); // 直前の編集を必ず保存・再検査してから承認する
-        await adk.patchState(sessionId, { caregiver_approved: true });
-        // 承認証跡をアーカイブに記録（誰が承認したか＝担当者名。ADK state の承認と並走）。
-        const apRes = await adk.approveRecord(docKind, editor.collect(), actorName());
+        const saved = await save(); // 直前の編集を必ず保存・再検査してから承認する
+        const apRes = await adk.approveRecord(
+          docKind,
+          editor.collect(),
+          actorName(),
+          saved.archive && saved.archive.version_seq,
+        );
+        if (apRes.status !== "approved") throw new Error(apRes.detail || "承認できませんでした");
         if (apRes.document_id) editor.panel._recordDocId = apRes.document_id; // フィードバック紐付け先
         setArchiveNote(editor.panel._archNote, apRes, "承認記録");
         lockEditor(editor.panel);
@@ -607,9 +611,13 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
           el(
             "span",
             "persist-note",
-            mem
-              ? "承認を記録（caregiver_approved）。来園の Memory Bank 書き戻しは確定パイプラインの承認ゲートで発火します。"
-              : "承認を記録（caregiver_approved）。Memory Bank 未接続のため書き戻しは降格。",
+            apRes.memory_status === "synced" || apRes.memory_status === "already_synced"
+              ? "承認した内容を子どもの Memory Bank へ反映しました。"
+              : apRes.memory_status === "not_applicable"
+                ? "承認しました（子ども別の事実欄がないため Memory Bank への反映対象外）。"
+                : mem
+                  ? "承認しました。"
+                  : "承認しました（Memory Bank 未接続のため反映は降格）。",
           ),
         );
         phase("確定・承認しました", "done");

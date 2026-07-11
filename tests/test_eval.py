@@ -1,4 +1,4 @@
-"""層B 評価ゲートの CI 統合（ADK evaluation を pytest から回す）。
+"""層B 評価ゲートの対話的な実採点確認（ADK evaluation を pytest から回す）。
 
 設計コンテキスト §12/§16：LLM 出力の品質回帰は eval ゲートで担保し、CI のテストゲート（決定的）と
 役割を分ける。ゲートの決定ロジックの実体は eval/run_gate.py に1つ置き、ここと improver.run_eval の
@@ -7,13 +7,14 @@
 判定:
 - passed is True  → 緑（回帰なし）。
 - passed is False → 赤（回帰）→ テスト失敗。
-- passed is None  → 採点不能（ケース未整備 / LLM 資格情報なし）→ skip。
-  CI で実採点する場合は資格情報（Vertex/Gemini）を入れた上でこのテストを有効化する。
+- passed is None  → 対話的なローカル実行では理由を表示してskip。
+  GitHubの本ゲートはこのskip経路を使わず、`run_gate.py --strict` が判定不能も非0終了にする。
 """
 
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,8 @@ def _load_run_gate():
 
 
 def test_eval_cases_regression():
+    if os.getenv("RUN_LIVE_EVAL") != "1":
+        pytest.skip("実LLM採点は RUN_LIVE_EVAL=1 を明示したときだけ実行（課金・creds要）")
     pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync 後に有効化）")
 
     gate = _load_run_gate()

@@ -1,24 +1,39 @@
-# 層B 評価ゲート CI（設計コンテキスト §12「AI版回帰テスト」）。実 Gemini judge を呼ぶため creds が要り、
-# 課金もするので決定論 CI（ci.yml・毎PR・無料）とは分け、nightly + 手動 + 任意で eval ラベル付き PR で回す。
+# 層B eval-gate（設計コンテキスト §12「AI版回帰テスト」）。
 #
-# 前提（各自の GCP で1度だけ設定＝この workflow の外。deploy.yml と同じ WIF を再利用できる）:
-#   - WIF（鍵レス）：GitHub OIDC を信頼する Provider と、Vertex AI（Gemini judge）権限を持つ SA。
-#   - リポジトリ変数: WIF_PROVIDER / GCP_PROJECT_ID / GCP_REGION（任意: GEMINI_MODEL）。
-#   未設定なら job は skip する。判定: run_gate が passed=True→緑 / False→赤（回帰）/ None→採点不能で skip。
-#   main 比の baseline は committed eval/baseline.json。nightly/手動の main 実行が --update-baseline で
-#   採点し直して更新・コミットバックし（contents: write）、PR は run_gate が既定でこれを読んで非劣化比較する（§12）。
+# fail-closed 契約:
+#   - 設定/IAM/モデル/ケース/rubric/baseline のどれかが欠けたら非0終了（skipを緑にしない）。
+#   - 全ケース×全6 rubrics、軸/ケースfloor、main baseline非劣化、must_fix 0を満たして初めて緑。
+#   - baseline は nightly で自動更新しない。人が --update-baseline で採点し通常PRでレビューする。
+#
+# 前提（Terraform + GitHub Variables）:
+#   - infra/iam.tf の eval-runner SA（roles/aiplatform.userのみ）を apply 済み。
+#   - EVAL_SA=eval-runner@<PROJECT>.iam.gserviceaccount.com
+#   - WIF_PROVIDER / GCP_PROJECT_ID / GCP_REGION / GEMINI_MODEL / MODEL_LOCATION
 
-name: Eval Gate (層B・要 creds)
+name: Eval Gate (層B・strict)
 
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 18 * * *" # 毎日 03:00 JST（18:00 UTC）
+    - cron: "0 18 * * 0" # 毎週月曜 03:00 JST（18:00 UTC）。基準は更新せず監視のみ。
   pull_request:
-    types: [labeled]
+    paths:
+      - ".github/workflows/eval-gate.yml"
+      - "eval/**"
+      - "knowledge/文書作成指針.json"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/hoiku_agent/agents/**"
+      - "src/hoiku_agent/harness/**"
+      - "src/hoiku_agent/models.py"
+      - "src/hoiku_agent/config.py"
+      - "src/hoiku_agent/schemas/**"
+      - "tests/test_eval.py"
+      - "tests/test_eval_gate.py"
+      - "tests/test_eval_cases.py"
 
 permissions:
-  contents: write # nightly の baseline.json コミットバックに必要（PR/手動の採点だけなら read で足りる）
+  contents: read
   id-token: write
 
 concurrency:
@@ -27,54 +42,81 @@ concurrency:
 
 jobs:
   eval-gate:
-    name: rubric eval gate (3軸・must_fix)
+    name: rubric eval gate (strict・3票多数決)
     runs-on: ubuntu-latest
-    # 手動/nightly、または PR に "eval" ラベルが付いたときだけ。WIF 未設定なら skip。
-    if: >-
-      ${{ vars.WIF_PROVIDER != '' && vars.GCP_PROJECT_ID != '' &&
-      (github.event_name != 'pull_request' || github.event.label.name == 'eval') }}
     env:
       UV_PYTHON: "3.12"
       GOOGLE_CLOUD_PROJECT: ${{ vars.GCP_PROJECT_ID }}
       GOOGLE_CLOUD_LOCATION: ${{ vars.GCP_REGION }}
       GOOGLE_GENAI_USE_VERTEXAI: "true"
       GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      MODEL_LOCATION: ${{ vars.MODEL_LOCATION }}
+      WIF_PROVIDER: ${{ vars.WIF_PROVIDER }}
+      EVAL_SA: ${{ vars.EVAL_SA }}
+      EVENT_NAME: ${{ github.event_name }}
+      REPOSITORY: ${{ github.repository }}
+      PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Authenticate to Google Cloud (WIF / keyless)
-        uses: google-github-actions/auth@v2
+      - name: Validate eval configuration (fail-closed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(GOOGLE_CLOUD_PROJECT GOOGLE_CLOUD_LOCATION GEMINI_MODEL MODEL_LOCATION WIF_PROVIDER EVAL_SA)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::必須のGitHub Variable ${name} が未設定です"
+              exit 1
+            fi
+          done
+          if [[ "${EVENT_NAME}" == "pull_request" && "${PR_HEAD_REPOSITORY}" != "${REPOSITORY}" ]]; then
+            echo "::error::外部forkのコードへGCP OIDCを渡さないため、保守者が同一repo branchへ取り込んで再実行してください"
+            exit 1
+          fi
+
+      - name: Authenticate to Google Cloud (WIF / eval-runner)
+        uses: google-github-actions/auth@v3
         with:
           project_id: ${{ vars.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.DEPLOY_SA }}
+          service_account: ${{ vars.EVAL_SA }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
 
-      - name: Install dependencies (eval extra ＝ google-adk[eval])
-        run: uv sync --extra dev --extra eval
+      - name: Install dependencies (google-adk[eval])
+        run: uv sync --extra dev --extra eval --locked
 
-      - name: Run eval gate (pytest tests/test_eval.py)
-        # run_gate: passed True→緑 / False→赤（テスト失敗）/ None→採点不能で skip（§12）。
-        run: uv run --extra dev --extra eval pytest -q tests/test_eval.py
-
-      - name: Update baseline.json (nightly/手動・main のみ)
-        # main を採点し直して baseline 平均を更新し、変化があればコミットバック（PR の非劣化比較の基準＝§12）。
-        # [skip ci] でこの push が決定論 CI を再トリガしないようにする。
-        if: >-
-          ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-          && github.ref == 'refs/heads/main' }}
+      - name: Pin comparison baseline to PR base
+        shell: bash
         run: |
-          uv run --extra dev --extra eval python eval/run_gate.py --update-baseline --commit "${GITHUB_SHA}"
-          if git diff --quiet -- eval/baseline.json; then
-            echo "baseline 変化なし（コミットなし）"
+          mkdir -p eval/results
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            git show "${PR_BASE_SHA}:eval/baseline.json" > eval/results/comparison-baseline.json
           else
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add eval/baseline.json
-            git commit -m "chore(eval): baseline.json を更新（nightly 採点） [skip ci]"
-            git push
+            cp eval/baseline.json eval/results/comparison-baseline.json
           fi
+
+      - name: Run eval gate (strict)
+        run: >-
+          uv run --extra dev --extra eval python eval/run_gate.py
+          --strict --baseline-path eval/results/comparison-baseline.json
+          --bootstrap-baseline-path eval/baseline.json
+          --output eval/results/gate-result.json
+
+      - name: Upload per-case eval evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-gate-${{ github.run_id }}
+          path: |
+            eval/results/gate-result.json
+            eval/results/comparison-baseline.json
+          if-no-files-found: warn
+          retention-days: 30
