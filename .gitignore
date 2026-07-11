@@ -42,6 +42,7 @@ samples/private/
 
 # OS / editor
 .DS_Store
+*.drawio.dtmp
 .vscode/
 .idea/
 .obsidian/
