@@ -48,13 +48,14 @@ def seed_workspace(
     actor: str = DEFAULT_ACTOR,
     now: datetime,
     approve: bool = True,
+    skip_existing: bool = True,
 ) -> dict:
     """workspace へデフォルト seed（名簿30人・クラス2・確定書類チェーン）を冪等に投入する。
 
     書類は `data.UNAPPROVED` 以外を承認済みにする（Memory Bank 同期は web の承認 API 専用＝
-    ここからは発火しない・memory_status は既定の "skipped"）。approve=False で全件確定止まり
-    （scripts の --no-approve 互換）。未接続は skipped、途中の DB 障害は error を返す
-    （呼び出し側＝ログイン本流を壊さない）。
+    ここからは発火しない・memory_status は既定の "skipped"）。approve=False で全件確定止まり、
+    skip_existing=False で既存書類にも版を積んで上書き投入（いずれも scripts の CLI 互換）。
+    未接続は skipped、途中の DB 障害は error を返す（呼び出し側＝ログイン本流を壊さない）。
     """
     if record_store.store_status() != "ok":
         return {"status": "skipped", "reason": "書類アーカイブ未接続（seed 降格）"}
@@ -92,9 +93,10 @@ def seed_workspace(
 
     # ── 確定書類チェーン（既存の 種別×児×期間 はスキップ＝冪等・skip-existing と同じ判定） ──
     existing: set[tuple[str, str, str]] = set()
-    for kind, _ in data.JOBS:
-        for d in record_store.list_documents(kind, limit=5000, workspace_id=workspace_id):
-            existing.add((d["doc_type"], d.get("child", ""), d.get("target", "")))
+    if skip_existing:
+        for kind, _ in data.JOBS:
+            for d in record_store.list_documents(kind, limit=5000, workspace_id=workspace_id):
+                existing.add((d["doc_type"], d.get("child", ""), d.get("target", "")))
     for kind, entries in data.JOBS:
         for entry in entries:
             key = (kind, data.child_of(kind, entry), data.target_of(kind, entry))
