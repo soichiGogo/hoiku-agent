@@ -13,7 +13,10 @@ import pytest
 import server
 from fastapi.testclient import TestClient
 from hoiku_agent.config import settings
-from hoiku_agent.harness import record_store
+from hoiku_agent.harness import demo_seed, record_store
+
+# autouse スタブから実物へ戻すための参照（初回ログイン auto-seed の実挙動テスト用）。
+_REAL_SEED_WORKSPACE = demo_seed.seed_workspace
 
 
 def _client() -> TestClient:
@@ -42,6 +45,29 @@ def _sign_in_with_google(c: TestClient, monkeypatch, *, email: str = "sensei@exa
         headers={"Origin": "http://testserver", "X-Login-CSRF": csrf},
     )
     assert r.status_code == 200 and r.json()["redirect"] == "/app/"
+
+
+@pytest.fixture(autouse=True)
+def _stub_auto_seed(monkeypatch):
+    """初回ログインのデフォルト seed を既定で止める（呼び出しは記録）。
+
+    サインイン＋DB を併用する既存テストの件数前提（児童・書類が空から始まる）を守る。
+    auto-seed / 初期化の実挙動を検証するテストだけ `real_seed` fixture で実物へ戻す。
+    """
+    calls: list[tuple] = []
+
+    def _stub(workspace_id, **kwargs):
+        calls.append((workspace_id, kwargs))
+        return {"status": "skipped", "reason": "test stub"}
+
+    monkeypatch.setattr(demo_seed, "seed_workspace", _stub)
+    yield calls
+
+
+@pytest.fixture()
+def real_seed(monkeypatch):
+    """auto-seed スタブを実物へ戻す（sqlite へ実際に seed する検証用）。"""
+    monkeypatch.setattr(demo_seed, "seed_workspace", _REAL_SEED_WORKSPACE)
 
 
 def test_config_shape() -> None:
@@ -659,6 +685,68 @@ def test_records_degrade_when_db_unset(monkeypatch) -> None:
     assert r.json()["status"] == "skipped"
     assert c.get("/api/children").json() == {"children": [], "store": "disabled"}
     assert c.get("/api/records").json()["documents"] == []
+
+
+# ──────────── 初回ログインの auto-seed ＋「データを初期化」（/api/account/reset） ────────────
+
+
+def test_account_reset_requires_signin() -> None:
+    """未サインインは 403（fail-closed）＝deletion-request と同じゲート。"""
+    assert _client().post("/api/account/reset").status_code == 403
+
+
+def test_first_signin_triggers_seed_once(records_db, monkeypatch, _stub_auto_seed) -> None:
+    """初回サインイン（新規 workspace）で seed が1回だけ発火し、以降のリクエストでは再発火しない。"""
+    c = _client()
+    _sign_in_with_google(c, monkeypatch)  # /auth/google の provision_user が発火点
+    assert len(_stub_auto_seed) == 1
+    workspace_id, kwargs = _stub_auto_seed[0]
+    user = record_store.touch_user(
+        "sensei@example.com", google_subject="google-subject-123", now=datetime.now()
+    )
+    assert workspace_id == user["workspace_id"]
+    # 2回目以降（既存 workspace）は発火しない
+    c.get("/api/config")
+    c.get("/api/children")
+    assert len(_stub_auto_seed) == 1
+
+
+def test_first_signin_seeds_default_data(records_db, monkeypatch, real_seed) -> None:
+    """初回サインインで名簿30人・クラス2・確定書類チェーンが実際に入る（全タブが初見で埋まる）。"""
+    from hoiku_agent.harness import demo_seed_data as seed_data
+
+    c = _client()
+    _sign_in_with_google(c, monkeypatch)
+    children = c.get("/api/children").json()["children"]
+    assert len(children) == len(seed_data.ROSTER)
+    classes = c.get("/api/classes").json()["classes"]
+    assert {cls["name"] for cls in classes} == {"ひよこ組", "あおぞら組"}
+    docs = c.get("/api/records").json()["documents"]
+    assert len(docs) == sum(len(entries) for _, entries in seed_data.JOBS)
+    # 承認フロー体感用に一部は未承認（finalized）で残る
+    statuses = {d["status"] for d in docs}
+    assert statuses == {"approved", "finalized"}
+
+
+def test_account_reset_restores_seed(records_db, monkeypatch, real_seed) -> None:
+    """初期化＝保育士の追加データが消えデフォルト seed に戻る。ログイン（session）は継続。"""
+    from hoiku_agent.harness import demo_seed_data as seed_data
+
+    c = _client()
+    _sign_in_with_google(c, monkeypatch)
+    r = c.post(
+        "/api/children",
+        json={"given_name": "たろう", "family_name": "テスト", "gender": "male"},
+    )
+    assert r.json().get("status") in ("created", "exists")
+    assert len(c.get("/api/children").json()["children"]) == len(seed_data.ROSTER) + 1
+
+    reset = c.post("/api/account/reset").json()
+    assert reset["status"] == "ok" and reset.get("purged") is True
+    children = c.get("/api/children").json()["children"]
+    assert len(children) == len(seed_data.ROSTER)  # 追加した児は消え、seed に戻る
+    # session は生きている（初期化はログアウトしない）＝サインイン必須 API がそのまま通る
+    assert c.post("/api/account/reset").json()["status"] == "ok"
 
 
 def test_records_save_edit_approve_flow(records_db) -> None:

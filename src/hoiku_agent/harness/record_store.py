@@ -978,9 +978,7 @@ def _purge_workspace_rows(session: Session, workspace: uuid.UUID) -> None:
     document_ids = sa.select(DocumentRecord.id).where(DocumentRecord.workspace_id == workspace)
     session.execute(sa.delete(Feedback).where(Feedback.workspace_id == workspace))
     session.execute(sa.delete(AuditEvent).where(AuditEvent.document_id.in_(document_ids)))
-    session.execute(
-        sa.delete(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids))
-    )
+    session.execute(sa.delete(DocumentVersion).where(DocumentVersion.document_id.in_(document_ids)))
     session.execute(sa.delete(DocumentRecord).where(DocumentRecord.workspace_id == workspace))
     session.execute(sa.delete(Child).where(Child.workspace_id == workspace))
     session.execute(sa.delete(Class).where(Class.workspace_id == workspace))

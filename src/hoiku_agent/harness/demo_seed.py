@@ -105,7 +105,9 @@ def seed_workspace(
             fd = finalize_entry(entry, kind=kind)
             if not fd.ok:
                 # データ部のバグ＝validate_all（テスト常設）で先に落ちる想定。ここでは正直に報告だけ。
-                errors.append(f"finalize {data.entry_label(kind, entry)}: {fd.parse_error or fd.problems}")
+                errors.append(
+                    f"finalize {data.entry_label(kind, entry)}: {fd.parse_error or fd.problems}"
+                )
                 continue
             normalized = fd.entry.model_dump(mode="json")
             res = record_store.save_document(
