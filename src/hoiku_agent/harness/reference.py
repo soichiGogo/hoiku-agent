@@ -45,8 +45,23 @@ def _parse(rows: list, model) -> list:
     return parsed
 
 
-def fetch_reference_from_state(state: dict, source: ReferenceSource) -> dict:
-    """source に対応する seed 候補をその場で digest 化し、manifest を state に記録する。"""
+def fetch_reference_from_state(state: dict, source: ReferenceSource | str) -> dict:
+    """source に対応する seed 候補をその場で digest 化し、manifest を state に記録する。
+
+    ADK の FunctionTool はツール引数を素の str で渡すため、入口で ReferenceSource へ
+    決定的に coerce する（str Enum ゆえ dict 引き・比較は素通りし `.value` だけが落ちる罠）。
+    未知の値は例外にせず正直に降格（有効な語彙を返して agent が選び直せるようにする）。
+    """
+    try:
+        source = ReferenceSource(source)
+    except ValueError:
+        valid = "、".join(member.value for member in ReferenceSource)
+        return {
+            "source": str(source),
+            "count": 0,
+            "empty": True,
+            "content": f"未知の参照種別です。有効な参照種別: {valid}",
+        }
     rows = _rows(state, source)
     if source in {ReferenceSource.prev_month_diaries, ReferenceSource.period_diary}:
         entries = _parse(rows, DiaryEntry)

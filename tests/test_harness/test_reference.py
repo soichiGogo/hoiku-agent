@@ -39,3 +39,21 @@ def test_fetch_records_digest_and_appends_manifest():
     assert result["count"] == 1
     assert result["empty"] is False
     assert state["reference_manifest"][0]["source"] == "prev_child_records"
+
+
+def test_plain_string_source_is_coerced_like_adk_tool_args():
+    """ADK の FunctionTool は引数を素の str で渡す＝eval/本番の実呼び出し経路（CI 赤の回帰防止）。"""
+    state = {}
+    result = fetch_reference_from_state(state, "period_diary")
+    assert result["source"] == "period_diary"
+    assert result["empty"] is True
+    assert state["reference_manifest"] == [{"source": "period_diary", "count": 0, "empty": True}]
+
+
+def test_unknown_source_degrades_honestly_without_raising():
+    state = {}
+    result = fetch_reference_from_state(state, "unknown_source")
+    assert result["empty"] is True
+    assert "有効な参照種別" in result["content"]
+    assert "period_diary" in result["content"]
+    assert "reference_manifest" not in state
