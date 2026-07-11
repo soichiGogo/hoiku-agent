@@ -120,6 +120,24 @@ def test_propose_unknown_conflict_id_is_surfaced_not_dropped(store):
     assert "見つかりません" in r["guidance"]
 
 
+def test_propose_inactive_conflict_card_is_not_loaded_as_current_policy(store):
+    """置換済みカードを申告されても、現行指針として提案へ取り込まない。"""
+    committed = commit_policy_card(
+        "共通", "個人名は仮名・属性で表す", op="supersede", supersede_id="card-0001"
+    )
+    assert committed["status"] == "committed"
+
+    r = propose_policy_card("共通", "個人名は書かない", conflicts_with="card-0001")
+
+    assert r["status"] == "ok"
+    assert r["proposal"]["op"] == "add"
+    assert r["proposal"]["supersede_id"] == ""
+    assert r["declared_conflicts"] == []
+    assert r["inactive_conflict_ids"] == ["card-0001"]
+    assert r["has_conflict"] is True
+    assert "現行指針ではありません" in r["guidance"]
+
+
 def test_propose_invalid_scope_lists_all_scopes(store):
     """不正 scope のエラー文言は PolicyScope 全値（保育要録 含む）を enum から導出する（文言ドリフト防止）。"""
     r = propose_policy_card("不明", "x")
