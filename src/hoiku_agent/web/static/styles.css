@@ -647,6 +647,24 @@ select.de-input{appearance:auto;min-height:38px}
 .ppropose-head .ic{width:17px;height:17px;color:var(--accent-d)}
 .ppropose-note{display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);color:var(--accent-d);margin-top:var(--sp-2)}
 .ppropose-note .ic{width:15px;height:15px;flex:0 0 auto}
+.reference-diff{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:var(--sp-3);align-items:center}
+.reference-diff-col{min-width:0;border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.reference-diff-head{padding:6px var(--sp-3);background:var(--surface-2);border-bottom:1px solid var(--line);
+  color:var(--ink-soft);font-size:var(--fs-caption);font-weight:800}
+.reference-diff-list{display:flex;flex-direction:column}
+.reference-diff-row{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);
+  min-height:44px;padding:7px var(--sp-3);border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
+.reference-diff-row:last-child{border-bottom:none}
+.reference-diff-row.is-off{opacity:.58}
+.reference-diff-label{font-weight:700;color:var(--ink)}
+.reference-diff-state{flex:0 0 auto;padding:2px 8px;border-radius:var(--r-pill);font-size:var(--fs-caption);
+  font-weight:800;color:var(--muted);background:var(--surface-2)}
+.reference-diff-row.is-on .reference-diff-state{color:var(--state-done-ink);background:var(--state-done-soft)}
+.reference-diff-arrow{color:var(--muted);font-weight:800}
+@media (max-width:680px){
+  .reference-diff{grid-template-columns:1fr}
+  .reference-diff-arrow{text-align:center;transform:rotate(90deg)}
+}
 
 /* 競合の比較相談（.ask 内で既存↔新を並べる） */
 .compare{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin:var(--sp-2) 0}

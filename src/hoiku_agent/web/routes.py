@@ -49,6 +49,7 @@ from . import auth
 from .proofread import proofread_entry
 from . import upload_extract
 from .upload_parse import parse_uploaded_file
+from .workspace import resolve_workspace_id
 
 # このパッケージは src/hoiku_agent/web。repo root は3つ上（web→hoiku_agent→src→root）。
 _WEB_DIR = Path(__file__).resolve().parent
@@ -825,11 +826,7 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
         Web の全アーカイブ read/write はこの値を record_store へ渡す。認証を無効にしたローカル開発
         だけは None（record_store のローカル固定領域）へ降格し、本番で共有領域を作らない。
         """
-        signed_in = auth.current_google_user(request)
-        if not signed_in:
-            return None
-        user = record_store.touch_user(signed_in.email, google_subject=signed_in.subject, now=now)
-        return str(user.get("workspace_id") or "") or None
+        return resolve_workspace_id(request, now)
 
     @app.post("/api/user")
     def web_set_user_profile(req: UserProfileRequest, request: Request):

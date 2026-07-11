@@ -154,6 +154,25 @@ def test_llm_budget_requires_google_login_when_enabled(monkeypatch) -> None:
     assert c.get("/api/config").status_code == 401
 
 
+def test_improver_resume_rejects_different_workspace(monkeypatch) -> None:
+    """保留中の改善セッションは開始時と異なる workspace から再開できない。"""
+    from hoiku_agent.web import improver_stream
+
+    sid = "workspace-bound-session"
+    improver_stream._SESSIONS[sid] = (object(), "adk-session", "owner-workspace")
+    monkeypatch.setattr(improver_stream, "resolve_workspace_id", lambda request, now: None)
+    try:
+        response = _client().post(
+            "/api/improve/resume",
+            json={"session_id": sid, "function_call_id": "ask-1", "answer": "反映する"},
+        )
+    finally:
+        improver_stream._SESSIONS.pop(sid, None)
+
+    assert response.status_code == 200
+    assert "この改善セッションを再開する権限がありません" in response.text
+
+
 def test_llm_budget_limit_returns_clear_message(monkeypatch) -> None:
     from hoiku_agent.harness import llm_budget
     from hoiku_agent.harness.llm_budget import BudgetDecision

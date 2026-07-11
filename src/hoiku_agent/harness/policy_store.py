@@ -251,6 +251,7 @@ def update_reference_policy(
     references: list[ReferenceRule],
     when,
     decided_by: str = "保育士",
+    source: str = "設定画面",
 ) -> PolicyBook:
     """scope の reference_policy を直接更新する（UI 設定編集用・純関数）。"""
     target = reference_policy_card(book, scope)
@@ -269,7 +270,7 @@ def update_reference_policy(
         action=PolicyChangeAction.supersede,
         card_id=target.id,
         summary=f"{scope.value}の既定参照を更新",
-        source="設定画面",
+        source=source,
         decided_by=decided_by,
     )
     return book.model_copy(update={"cards": cards, "history": [*book.history, change]})

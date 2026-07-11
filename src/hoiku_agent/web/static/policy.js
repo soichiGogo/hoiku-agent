@@ -249,6 +249,40 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     proposedPanel = panel;
   }
 
+  function referenceDiffList(rules) {
+    const list = el("div", "reference-diff-list");
+    (rules || []).forEach((rule) => {
+      const row = el("div", `reference-diff-row ${rule.enabled ? "is-on" : "is-off"}`);
+      row.innerHTML = `<span class="reference-diff-label">${esc(rule.label)}</span>` +
+        `<span class="reference-diff-state">${rule.enabled ? "参照する" : "参照しない"}</span>`;
+      list.appendChild(row);
+    });
+    return list;
+  }
+
+  function renderReferenceProposed(result) {
+    lastProposal = result;
+    cur = null;
+    const proposal = result.proposal || {};
+    const panel = el("div", "ppropose reference-proposal");
+    panel.innerHTML = `<div class="ppropose-head">${iconHTML("edit")}参照する資料の変更案` +
+      `<span class="label-draft">${iconHTML("ask")}確認前</span></div>`;
+    const compare = el("div", "reference-diff");
+    const before = el("div", "reference-diff-col");
+    before.appendChild(el("div", "reference-diff-head", "変更前"));
+    before.appendChild(referenceDiffList(proposal.before));
+    const arrow = el("div", "reference-diff-arrow", "→");
+    arrow.setAttribute("aria-hidden", "true");
+    const after = el("div", "reference-diff-col");
+    after.appendChild(el("div", "reference-diff-head", "変更後"));
+    after.appendChild(referenceDiffList(proposal.after));
+    compare.append(before, arrow, after);
+    panel.appendChild(compare);
+    if (proposal.reason) panel.appendChild(el("p", "ppropose-note", proposal.reason));
+    flow.appendChild(panel);
+    proposedPanel = panel;
+  }
+
   /* ---------- 競合の比較相談（HITL・既存↔新を並べる） ---------- */
   function renderConflictCompare(item) {
     cur = null;
@@ -337,6 +371,21 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     toStep(3, "done");
   }
 
+  function onReferenceCommitted(result) {
+    if (result.status !== "committed") {
+      banner(flow, "info", "反映されませんでした：" + (result.detail || result.status || "不明"));
+      return;
+    }
+    if (proposedPanel) {
+      const label = proposedPanel.querySelector(".label-draft");
+      if (label) {
+        label.className = "label-final";
+        label.innerHTML = `${iconHTML("check")}反映済み`;
+      }
+    }
+    toStep(3, "done");
+  }
+
   function onError(detail) {
     procStop();
     banner(flow, "err", "エラー: " + detail);
@@ -360,7 +409,10 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
         if (item.name === "propose_policy_card") {
           toStep(1, "working");
           phase("既存の指針と重ならないか精査しています", "working");
-        } else if (item.name === "commit_policy_card") {
+        } else if (item.name === "propose_reference_update") {
+          toStep(1, "working");
+          phase("参照する資料の変更案を整えています", "working");
+        } else if (item.name === "commit_policy_card" || item.name === "commit_reference_update") {
           toStep(3, "working");
           phase("指針に反映しています", "working");
         } else {
@@ -372,7 +424,9 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
         if (item.id && toolBadges[item.id]) markToolDone(toolBadges[item.id]);
         const r = item.result || {};
         if (item.name === "propose_policy_card" && r.proposal) renderProposed(r);
+        else if (item.name === "propose_reference_update" && r.proposal) renderReferenceProposed(r);
         else if (item.name === "commit_policy_card") onCommitted(r);
+        else if (item.name === "commit_reference_update") onReferenceCommitted(r);
         break;
       }
       case "needs_input":

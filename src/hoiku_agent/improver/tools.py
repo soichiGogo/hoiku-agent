@@ -8,7 +8,9 @@
   決定的な完全重複は安全網（policy_store.find_exact_duplicate）が併せて検出する。
 - ask_caregiver … 競合があれば該当カードと新案を**比較相談**、無くても反映可否を確認（人に訊く口は一階と共用）。
 - commit_policy_card … 保育士の決定で**即反映**（add／supersede→save_book。「回した証拠」＝カード内蔵の
-  変更履歴。GCS 運用時はオブジェクトバージョニングも併用）。
+  変更履歴）。
+- read_reference_policy／propose_reference_update／commit_reference_update … 参照資料の現在値を読み、
+  日本語ラベル付きの変更案を返し、保育士の確認後に policy_store.update_reference_policy で即反映する。
 
 決定的ロジックの実体は harness（policy_store）に1つ（§5）。ここは harness を呼ぶ薄いラッパ＋
 runtime 境界（`datetime.now()` の注入）だけ。意味的競合の判定は LLM（このエージェント）の責務で、
@@ -21,7 +23,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..harness import policy_store
-from ..schemas.policy import PolicyCard, PolicyScope
+from ..schemas.policy import (
+    REFERENCE_SOURCE_META,
+    PolicyCard,
+    PolicyScope,
+    ReferenceRule,
+    ReferenceSource,
+)
 from ..tools import ask_caregiver as ask_caregiver  # noqa: PLC0414  人に訊く口は一階と共用
 
 _SCOPES = {
@@ -35,7 +43,176 @@ def _parse_scope(scope: str) -> PolicyScope | None:
     return _SCOPES.get((scope or "").strip())
 
 
-def read_policy_cards(scope: str = "") -> dict:
+def _reference_view(rule: ReferenceRule) -> dict:
+    """参照規則を改善AI・UI向けの日本語メタデータ付き表示へ変換する。"""
+    label, description = REFERENCE_SOURCE_META[rule.source]
+    return {
+        **rule.model_dump(mode="json"),
+        "label": label,
+        "description": description,
+    }
+
+
+def _parse_reference_sources(
+    enable: str, disable: str
+) -> tuple[set[ReferenceSource], set[ReferenceSource]] | dict:
+    """FunctionTool から渡る素の文字列を閉じた ReferenceSource 語彙へ変換する。"""
+    known = {source.value: source for source in ReferenceSource}
+
+    def parse(raw: str) -> tuple[set[ReferenceSource], list[str]]:
+        values = {value.strip() for value in (raw or "").split(",") if value.strip()}
+        return {known[value] for value in values if value in known}, sorted(values - known.keys())
+
+    enabled, unknown_enabled = parse(enable)
+    disabled, unknown_disabled = parse(disable)
+    unknown = sorted({*unknown_enabled, *unknown_disabled})
+    if unknown:
+        return {
+            "status": "rejected",
+            "detail": f"未知の reference source です: {', '.join(unknown)}",
+            "valid_sources": [
+                {
+                    "source": source.value,
+                    "label": REFERENCE_SOURCE_META[source][0],
+                }
+                for source in ReferenceSource
+            ],
+        }
+    overlap = enabled & disabled
+    if overlap:
+        return {
+            "status": "rejected",
+            "detail": "同じ資料を有効化と無効化の両方には指定できません: "
+            + ", ".join(source.value for source in ReferenceSource if source in overlap),
+        }
+    return enabled, disabled
+
+
+def _reference_update_plan(
+    scope: str, enable: str, disable: str, *, book=None, book_id: str | None = None
+) -> tuple[PolicyScope, list[ReferenceRule], list[ReferenceRule]] | dict:
+    """現在値と文字列引数から参照規則の変更前・変更後を決定的に組み立てる。"""
+    sc = _parse_scope(scope)
+    if sc is None:
+        return {
+            "status": "rejected",
+            "detail": f"scope は {_SCOPE_LABEL} のいずれか: {scope!r}",
+        }
+    parsed = _parse_reference_sources(enable, disable)
+    if isinstance(parsed, dict):
+        return parsed
+    enabled, disabled = parsed
+    if book is None:
+        book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
+    card = policy_store.reference_policy_card(book, sc)
+    if card is None:
+        return {
+            "status": "rejected",
+            "detail": f"{sc.value}には参照する資料の既定設定がありません",
+        }
+
+    before = list(card.references)
+    current = {rule.source: rule for rule in before}
+    after = []
+    for rule in before:
+        enabled_value = rule.source in enabled or rule.enabled
+        if rule.source in disabled:
+            enabled_value = False
+        after.append(rule.model_copy(update={"enabled": enabled_value}))
+    for source in ReferenceSource:
+        if source in current or source not in enabled:
+            continue
+        enabled_value = True
+        if source in disabled:
+            enabled_value = False
+        after.append(ReferenceRule(source=source, enabled=enabled_value))
+    return sc, before, after
+
+
+def read_reference_policy(scope: str, *, book_id: str | None = None) -> dict:
+    """当該 scope の reference_policy を日本語ラベル付きで返す。"""
+    sc = _parse_scope(scope)
+    if sc is None:
+        return {"references": [], "detail": f"scope は {_SCOPE_LABEL} のいずれか: {scope!r}"}
+    book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
+    card = policy_store.reference_policy_card(book, sc)
+    if card is None:
+        return {
+            "scope": sc.value,
+            "references": [],
+            "detail": f"{sc.value}には参照する資料の既定設定がありません",
+        }
+    return {
+        "scope": sc.value,
+        "references": [_reference_view(rule) for rule in card.references],
+    }
+
+
+def propose_reference_update(
+    scope: str,
+    enable: str,
+    disable: str,
+    reason: str = "",
+    *,
+    book_id: str | None = None,
+) -> dict:
+    """自然言語から抽出した参照資料の変更を、保存せず確認案として返す。"""
+    plan = _reference_update_plan(scope, enable, disable, book_id=book_id)
+    if isinstance(plan, dict):
+        return plan
+    sc, before, after = plan
+    return {
+        "status": "ok",
+        "proposal": {
+            "scope": sc.value,
+            "before": [_reference_view(rule) for rule in before],
+            "after": [_reference_view(rule) for rule in after],
+            "reason": reason.strip(),
+            "enable": enable,
+            "disable": disable,
+        },
+        "guidance": "ask_caregiver で変更前と変更後を示し、保育士の同意後だけ反映してください。",
+    }
+
+
+def commit_reference_update(
+    scope: str,
+    enable: str,
+    disable: str,
+    decided_by: str = "保育士",
+    *,
+    book_id: str | None = None,
+) -> dict:
+    """保育士の決定後、参照資料の既定設定を楽観ロック付きで即反映する。"""
+    try:
+        storage = {"book_id": book_id} if book_id is not None else {}
+        book, version = policy_store.load_book_meta(**storage)
+        plan = _reference_update_plan(scope, enable, disable, book=book)
+        if isinstance(plan, dict):
+            return plan
+        sc, _, after = plan
+        updated = policy_store.update_reference_policy(
+            book,
+            scope=sc,
+            references=after,
+            when=datetime.now(),
+            decided_by=decided_by,
+            source="改善エージェント",
+        )
+        policy_store.save_book(updated, if_version=version, **storage)
+    except ValueError as error:
+        return {"status": "rejected", "detail": str(error)}
+
+    card = policy_store.reference_policy_card(updated, sc)
+    return {
+        "status": "committed",
+        "card": policy_store.card_view(card),
+        "history_entry": policy_store.history_view(updated.history[-1]),
+        "store": policy_store.store_status(),
+    }
+
+
+def read_policy_cards(scope: str = "", *, book_id: str | None = None) -> dict:
     """既存の active 指針カードを返す（意味的競合を精査する材料）。
 
     Args:
@@ -44,7 +221,7 @@ def read_policy_cards(scope: str = "") -> dict:
     Returns:
         {"cards": [{id, scope, body, rationale, source}], "count": n}
     """
-    book = policy_store.load_book()
+    book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
     cards = policy_store.active_cards(book, _parse_scope(scope))
     return {
         "cards": [
@@ -68,6 +245,8 @@ def propose_policy_card(
     source: str = "",
     conflicts_with: str = "",
     note: str = "",
+    *,
+    book_id: str | None = None,
 ) -> dict:
     """修正差分から導いた指針カード案を申告し、競合（意味的＋完全重複）を返す（§8）。
 
@@ -89,7 +268,7 @@ def propose_policy_card(
     if not body.strip():
         return {"status": "error", "detail": "body（カード本文）が空です"}
 
-    book = policy_store.load_book()
+    book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
     dup = policy_store.find_exact_duplicate(book, sc, body)
     declared = []
     unknown_ids = []  # 申告されたが存在しない競合カード id（黙って捨てず素通りさせない）
@@ -159,6 +338,8 @@ def commit_policy_card(
     op: str = "add",
     supersede_id: str = "",
     decided_by: str = "保育士",
+    *,
+    book_id: str | None = None,
 ) -> dict:
     """保育士の決定で指針カードを**即反映**する（add／supersede→save_book・§8）。
 
@@ -180,7 +361,8 @@ def commit_policy_card(
 
     now = datetime.now()  # runtime 境界でのみ now を注入（harness/schemas は純関数を保つ＝§5）
     # generation＝GCS 外部ストアの楽観ロック前提条件（ローカルは None＝従来動作）。
-    book, version = policy_store.load_book_meta()
+    storage = {"book_id": book_id} if book_id is not None else {}
+    book, version = policy_store.load_book_meta(**storage)
     card = PolicyCard(
         id=policy_store.next_card_id(book),
         scope=sc,
@@ -209,7 +391,9 @@ def commit_policy_card(
         return {"status": "rejected", "detail": str(e)}
 
     try:
-        policy_store.save_book(new_book, if_version=version)  # 即反映（DB は version 楽観ロック）
+        policy_store.save_book(
+            new_book, if_version=version, **storage
+        )  # 即反映（DB は version 楽観ロック）
     except ValueError as e:
         # 読み込み後に他所で更新された（generation 競合）。黙って上書きせず再試行を促す。
         return {"status": "rejected", "detail": str(e)}
@@ -221,3 +405,101 @@ def commit_policy_card(
         "history_entry": policy_store.history_view(change),
         "store": policy_store.store_status(),
     }
+
+
+_READ_POLICY_CARDS_IMPL = read_policy_cards
+_PROPOSE_POLICY_CARD_IMPL = propose_policy_card
+_COMMIT_POLICY_CARD_IMPL = commit_policy_card
+_READ_REFERENCE_POLICY_IMPL = read_reference_policy
+_PROPOSE_REFERENCE_UPDATE_IMPL = propose_reference_update
+_COMMIT_REFERENCE_UPDATE_IMPL = commit_reference_update
+
+
+def build_policy_tools(book_id: str | None = None) -> list:
+    """認可済みの PolicyBook ID を閉じ込めた FunctionTool 用関数を構築する。
+
+    book_id は LLM の引数へ公開しない。Web は workspace book を束縛し、CLI は None のまま
+    従来の default book を使う。functools.partial は ADK のツール名導出を壊すため使わない。
+    """
+
+    def read_policy_cards(scope: str = "") -> dict:
+        """認可済み領域にある既存の指針カードを読む。"""
+        return _READ_POLICY_CARDS_IMPL(scope, book_id=book_id)
+
+    read_policy_cards.__doc__ = _READ_POLICY_CARDS_IMPL.__doc__
+
+    def propose_policy_card(
+        scope: str,
+        body: str,
+        rationale: str = "",
+        source: str = "",
+        conflicts_with: str = "",
+        note: str = "",
+    ) -> dict:
+        """認可済み領域の既存カードに対する指針カード案を作る。"""
+        return _PROPOSE_POLICY_CARD_IMPL(
+            scope,
+            body,
+            rationale,
+            source,
+            conflicts_with,
+            note,
+            book_id=book_id,
+        )
+
+    propose_policy_card.__doc__ = _PROPOSE_POLICY_CARD_IMPL.__doc__
+
+    def read_reference_policy(scope: str) -> dict:
+        """認可済み領域にある参照資料の現在設定を読む。"""
+        return _READ_REFERENCE_POLICY_IMPL(scope, book_id=book_id)
+
+    read_reference_policy.__doc__ = _READ_REFERENCE_POLICY_IMPL.__doc__
+
+    def propose_reference_update(scope: str, enable: str, disable: str, reason: str = "") -> dict:
+        """認可済み領域の参照資料について変更案を作る。"""
+        return _PROPOSE_REFERENCE_UPDATE_IMPL(scope, enable, disable, reason, book_id=book_id)
+
+    propose_reference_update.__doc__ = _PROPOSE_REFERENCE_UPDATE_IMPL.__doc__
+
+    def commit_policy_card(
+        scope: str,
+        body: str,
+        rationale: str = "",
+        source: str = "",
+        op: str = "add",
+        supersede_id: str = "",
+        decided_by: str = "保育士",
+    ) -> dict:
+        """保育士の決定後、認可済み領域へ指針カードを反映する。"""
+        return _COMMIT_POLICY_CARD_IMPL(
+            scope,
+            body,
+            rationale,
+            source,
+            op,
+            supersede_id,
+            decided_by,
+            book_id=book_id,
+        )
+
+    commit_policy_card.__doc__ = _COMMIT_POLICY_CARD_IMPL.__doc__
+
+    def commit_reference_update(
+        scope: str,
+        enable: str,
+        disable: str,
+        decided_by: str = "保育士",
+    ) -> dict:
+        """保育士の決定後、認可済み領域へ参照資料の変更を反映する。"""
+        return _COMMIT_REFERENCE_UPDATE_IMPL(scope, enable, disable, decided_by, book_id=book_id)
+
+    commit_reference_update.__doc__ = _COMMIT_REFERENCE_UPDATE_IMPL.__doc__
+
+    return [
+        read_policy_cards,
+        propose_policy_card,
+        read_reference_policy,
+        propose_reference_update,
+        commit_policy_card,
+        commit_reference_update,
+    ]
