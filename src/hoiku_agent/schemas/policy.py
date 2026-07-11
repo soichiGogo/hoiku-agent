@@ -104,6 +104,10 @@ REFERENCE_SOURCE_META: dict[ReferenceSource, tuple[str, str]] = {
         "前月の保育日誌",
         "前の月に書かれた日誌です。",
     ),
+    ReferenceSource.class_roster: (
+        "クラスの在籍児名簿",
+        "クラス・園児マスタに登録された現在の在籍児です。",
+    ),
 }
 
 

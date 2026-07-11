@@ -856,7 +856,7 @@ function setupActor(cfg) {
   const field = inp.closest(".actor-field");
   const email = cfg && cfg.user_email;
   const logout = $("logout");
-  const deleteAccount = $("delete-account");
+  const resetData = $("reset-data");
   if (email) {
     // サインイン済み＝表示名の登録/編集。値は DB（user_display_name）が正。未登録は email をプレースホルダに出して促す。
     inp.value = cfg.user_display_name || "";
@@ -886,22 +886,29 @@ function setupActor(cfg) {
         window.location.assign("/");
       };
     }
-    if (deleteAccount) {
-      deleteAccount.classList.remove("hidden");
-      deleteAccount.onclick = async () => {
+    // データの初期化＝workspace の書類・園児・クラス・フィードバック・指針/表記のカスタムを即時に消して
+    // デフォルトの初期サンプルへ戻す（ログインは継続・reload で全タブが初期状態）。DB 未接続時は
+    // サーバが skipped を返すので正直に案内する（アカウント削除の受付 API とは別物）。
+    if (resetData && cfg.records_connected) {
+      resetData.classList.remove("hidden");
+      resetData.onclick = async () => {
         const ok = window.confirm(
-          "このアカウントの書類・園児・クラス情報の削除を依頼します。受付から30日後に削除されます。続けますか？"
+          "この画面の書類・園児・クラス・フィードバック・指針/表記のカスタムをすべて消して、初期サンプルデータに戻します。よろしいですか？"
         );
         if (!ok) return;
-        const r = await fetch("/api/account/deletion-request", { method: "POST" });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok || j.status !== "pending") {
-          window.alert(j.detail || "削除依頼を受け付けられませんでした。");
-          return;
+        resetData.disabled = true;
+        try {
+          const r = await fetch("/api/account/reset", { method: "POST" });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok || j.status !== "ok") {
+            window.alert(j.reason || j.detail || "データを初期化できませんでした。");
+            return;
+          }
+          window.alert("初期サンプルデータに戻しました。");
+          window.location.reload();
+        } finally {
+          resetData.disabled = false;
         }
-        window.alert(`削除依頼を受け付けました。削除予定: ${new Date(j.due_at).toLocaleDateString("ja-JP")}`);
-        await fetch("/auth/logout", { method: "POST", credentials: "same-origin" });
-        window.location.assign("/");
       };
     }
   } else {
