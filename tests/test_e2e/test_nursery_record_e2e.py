@@ -4,8 +4,7 @@
 test_child_record_e2e と対称に、要録パスを実 ADK ランタイムで end-to-end に回す（creds 不要・無料・
 決定的）。担保する結合経路:
   1. ルータ分岐   doc_type=="保育要録" → nursery_record_pipeline
-  2. L4 還流      最終年度の保育経過記録（state["record_entries"]）→ record_prep が child_id 別集計
-                  → state["record_digest"]（要約は author・集計は harness）
+  2. L4 還流      author が保育経過記録候補を fetch_reference で選択取得
   3. 確定         nursery_record finalize が NurseryRecord を復元→検査→整形（final_document /
                   final_doc_kind="nursery_record"）
   4. 降格         最終年度の保育経過記録が無くても空 digest で素通りし要録は作れる（落ちない）
@@ -136,10 +135,7 @@ def test_nursery_record_path_aggregates_final_year_and_finalizes():
     final_state, events = _run(author, reviewer, state)
 
     # ② L4 還流：最終年度の保育経過記録が child_id 別に決定的集計され state に乗る
-    digest = final_state.get("record_digest") or {}
-    assert "架空児A" in digest
-    assert digest["架空児A"]["record_count"] == 3
-    assert len(digest["架空児A"]["periods"]) == 3
+    assert "record_digest" not in final_state
     # 月案・保育経過記録の digest キーは汚さない（集計対象の分離）
     assert final_state.get("prev_month_digest") is None
     assert final_state.get("period_digest") is None
@@ -151,16 +147,16 @@ def test_nursery_record_path_aggregates_final_year_and_finalizes():
     assert final_state.get("awaiting_caregiver_approval") is True
     # ① 要録 author が呼ばれた
     assert author.call_count == 1
-    # custom BaseAgent（record_prep 等）が invocation_id を伝播している（ADK eval 整合の回帰防止）
+    # pipeline の全 Event が invocation_id を伝播している（ADK eval 整合の回帰防止）
     assert all(ev.invocation_id for ev in events)
 
 
-def test_record_prep_degrades_without_entries():
+def test_nursery_record_degrades_without_reference_entries():
     """最終年度の保育経過記録が無くても空 digest で素通りし要録は作れる（降格・落ちない）。"""
     author = FakeLlm(responses=[_author_text(_nursery_record())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
 
     final_state, _ = _run(author, reviewer, {"doc_type": "保育要録"})
 
-    assert final_state.get("record_digest") == {}
+    assert "record_digest" not in final_state
     assert final_state.get("final_document")  # 初回でも要録は確定下書きまで作る

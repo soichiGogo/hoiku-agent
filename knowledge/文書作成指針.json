@@ -60,6 +60,25 @@
       "superseded_by": null,
       "created_at": "2026-07-05T00:00:00",
       "updated_at": "2026-07-05T00:00:00"
+    },
+    {
+      "id": "card-0006", "scope": "月案", "kind": "reference_policy", "body": "月案作成時の既定参照", "references": [
+        {"source": "prev_month_diaries", "enabled": true, "note": "個別月案の前月日誌"},
+        {"source": "class_child_records", "enabled": true, "note": "クラス児童の保育経過記録すべて"},
+        {"source": "past_class_plans", "enabled": true, "note": "それまでのクラス月案すべて"},
+        {"source": "uncovered_class_diaries", "enabled": true, "note": "保育経過記録に未反映の期間の日誌"}
+      ], "rationale": "依存モデル 2026-07", "source": "seed:初版", "status": "active", "supersedes": null, "superseded_by": null, "created_at": "2026-07-11T00:00:00", "updated_at": "2026-07-11T00:00:00"
+    },
+    {
+      "id": "card-0007", "scope": "保育経過記録", "kind": "reference_policy", "body": "保育経過記録作成時の既定参照", "references": [
+        {"source": "period_diary", "enabled": true, "note": "該当期間の日誌"},
+        {"source": "prev_child_records", "enabled": true, "note": "前回までの保育経過記録すべて"}
+      ], "rationale": "依存モデル 2026-07", "source": "seed:初版", "status": "active", "supersedes": null, "superseded_by": null, "created_at": "2026-07-11T00:00:00", "updated_at": "2026-07-11T00:00:00"
+    },
+    {
+      "id": "card-0008", "scope": "保育要録", "kind": "reference_policy", "body": "保育要録作成時の既定参照", "references": [
+        {"source": "prev_child_records", "enabled": true, "note": "それまでの保育経過記録すべて"}
+      ], "rationale": "依存モデル 2026-07", "source": "seed:初版", "status": "active", "supersedes": null, "superseded_by": null, "created_at": "2026-07-11T00:00:00", "updated_at": "2026-07-11T00:00:00"
     }
   ],
   "history": [
@@ -107,6 +126,9 @@
       "summary": "初版（雛形）：保育要録「小学校の先生に伝わるよう5領域/10の姿＋具体的エピソードで書く」を登録",
       "source": "seed:初版",
       "decided_by": "初版"
-    }
+    },
+    {"timestamp": "2026-07-11T00:00:00", "action": "add", "card_id": "card-0006", "superseded_id": null, "summary": "月案の既定参照を登録", "source": "seed:初版", "decided_by": "初版"},
+    {"timestamp": "2026-07-11T00:00:00", "action": "add", "card_id": "card-0007", "superseded_id": null, "summary": "保育経過記録の既定参照を登録", "source": "seed:初版", "decided_by": "初版"},
+    {"timestamp": "2026-07-11T00:00:00", "action": "add", "card_id": "card-0008", "superseded_id": null, "summary": "保育要録の既定参照を登録", "source": "seed:初版", "decided_by": "初版"}
   ]
 }

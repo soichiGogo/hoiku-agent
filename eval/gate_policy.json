@@ -1,9 +1,10 @@
 {
-  "_comment": "層B eval-gate の決定的な絶対品質 floor。9ケースのv0では3軸平均だけで局所劣化を隠さないため、各軸80%以上・各ケース3軸中2軸以上を要求する。変更はbaselineと同様にレビュー対象。",
+  "_comment": "層B eval-gate の決定的な品質方針。9ケース×3軸の27セルでは1セル差が約0.037、2セル差が約0.074のため、judgeの1セル揺れだけを許容する非劣化マージン0.05を使う。局所劣化を隠さないよう各軸80%以上・各ケース3軸中2軸以上も要求する。変更はbaselineと同様にレビュー対象。",
   "axis_minimums": {
     "axis_guideline_alignment": 0.8,
     "axis_ten_no_sugata": 0.8,
     "axis_expression": 0.8
   },
-  "case_minimum": 0.6666666666666666
+  "case_minimum": 0.6666666666666666,
+  "non_inferiority_margin": 0.05
 }

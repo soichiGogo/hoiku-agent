@@ -13,7 +13,8 @@
   ③保護者向け表現の適切さ。各軸 0–1 で採点し3軸平均をケーススコアにする。
 - `test_config.json` … 3軸（`axis_*`）＋must_fix（`mustfix_*`）を ADK の
   `rubric_based_final_response_quality_v1` に rubric として配線。judge は3回採点の多数決。
-- `gate_policy.json` … 軸別・ケース別の絶対品質 floor（3軸各0.8、各ケース2/3）。決定的な判定設定。
+- `gate_policy.json` … 軸別・ケース別の絶対品質 floor（3軸各0.8、各ケース2/3）と
+  main比の非劣化マージン0.05。決定的な判定設定。
 - `run_gate.py` … 採点→集計→ゲート判定の実体（`aggregate_rubric_scores`/`decide_gate`・判定式の SSOT）。
 - `baseline.json` … main の eval 平均（committed）。`run_gate` が既定で読み PR の非劣化比較に使う。
   PR CIはPR内の値でなくbase SHAから抽出したbaselineを使い、候補側の基準改変を防ぐ。nightlyは自動更新しない。
@@ -28,8 +29,9 @@
 
 ## 評価ゲート
 
-緑（auto-merge 可）の条件＝**全ケース×全rubricのcoverage 100%、軸/ケースfloor達成、PR平均がmain比で
-低下なし、かつ `must_fix` 違反0**。採点不能・rubric欠落・baseline未確立はCIで赤。baselineは自動追随
+緑（auto-merge 可）の条件＝**全ケース×全rubricのcoverage 100%、軸/ケースfloor達成、PR平均がmain比の
+非劣化マージン0.05以内、かつ `must_fix` 違反0**。9ケース×3軸では1セル差≈0.037だけをjudge揺れとして
+許容し、2セル差≈0.074は赤にする。採点不能・rubric欠落・baseline未確立はCIで赤。baselineは自動追随
 させずレビュー対象にする。**保育士OK ≠ マージOK**（採否はゲートが決める）。
 
 ## 「閉じる1事例」（提出前の必達点）

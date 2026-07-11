@@ -29,10 +29,13 @@ from .template import DocTemplate, Section, SectionKind, ShowRule, TemplateBook
 from .policy import (
     PolicyBook,
     PolicyCard,
+    PolicyCardKind,
     PolicyChange,
     PolicyChangeAction,
     PolicyScope,
     PolicyStatus,
+    ReferenceRule,
+    ReferenceSource,
 )
 
 __all__ = [
@@ -69,6 +72,9 @@ __all__ = [
     "PolicyStatus",
     "PolicyChangeAction",
     "PolicyCard",
+    "PolicyCardKind",
+    "ReferenceRule",
+    "ReferenceSource",
     "PolicyChange",
     "PolicyBook",
     # notation（ひらがな表記DX＝決定的な表記の統一・§5）

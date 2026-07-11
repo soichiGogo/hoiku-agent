@@ -1451,7 +1451,7 @@ def list_diary_entries(
 ) -> list[dict]:
     """期間内の日誌の最新版 entry（JSON）を日付順に返す＝月案 L2／保育経過記録 L3 の seed 取得元。
 
-    集計そのもの（child_id 別の decomposition）は従来どおり harness/aggregate（DigestPrepAgent）が
+    集計そのもの（child_id 別の decomposition）は fetch_reference が呼ぶ harness/reference・aggregate が
     担う＝ここは「期間の日誌本文を引く」だけ（責務を重ねない）。
     """
     eng = _engine()

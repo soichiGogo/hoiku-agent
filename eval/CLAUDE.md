@@ -18,9 +18,11 @@
   出所・全文。judge は3回採点の多数決（ADK既定5回に対するコスト折衷）。**rubric_id 体系
   （axis_* / mustfix_*）と判定式の実体は `run_gate.py`** に1つ（二重実装しない）。
   ADK 2.3の複数行Rationale parser欠落は、`run_gate` の専用metric registryへID marker対応parserを注入して吸収する。
-- **PR ゲート＝AI版回帰テスト**：緑（auto-merge 可）の条件は **PR の eval 平均が main 比で低下なし、かつ
+- **PR ゲート＝AI版回帰テスト**：緑（auto-merge 可）の条件は **PR の eval 平均が main 比の非劣化マージン
+  0.05以内、かつ
   `must_fix` 違反0**に加え、`gate_policy.json` の軸/ケースfloorと全ケース×全rubric coverage 100%を要求する。
   採点不能・rubric欠落・baseline未確立は `passed=None`、CIの `--strict` では非0終了（fail-closed）。
+  9ケース×3軸の27セルでは1セル差≈0.037だけをjudge揺れとして許容し、2セル差≈0.074は赤にする。
 - **main 比の基準は committed `eval/baseline.json`**：`run_gate` が既定で読む。nightly は監視だけで自動更新しない。
   `--update-baseline` はcoverage 100%・floor達成・must_fix 0のときだけ書き、通常PRでレビューする。
 - **実行**：`uv run --extra eval python eval/run_gate.py`（ローカル）／`… --strict --output <path>`（CI）／

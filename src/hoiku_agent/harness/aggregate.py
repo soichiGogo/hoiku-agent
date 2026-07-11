@@ -5,8 +5,8 @@
 （件数・タグ頻度・特記の連結）。要約（前月の子どもの姿／評価・反省）の "生成" は
 月案 author の gather 段階（LlmAgent）に委ね、ここでは "集計" のみ行う。
 
-集積単位＝child_id（0–2 個別前提）。生データは git 管理せず、セッション state
-（state["prev_month_digest"]）／必要なら Memory Bank に置く（§10）。LLM は呼ばない。
+集積単位＝child_id（0–2 個別前提）。生データは git 管理せず、session state の候補を
+fetch_reference 経由でその場で集計する（§10）。LLM は呼ばない。
 """
 
 from __future__ import annotations
@@ -58,8 +58,8 @@ def prev_month_digest(
     """aggregate_by_child の結果を state へ載せられる serializable 形に正規化する（L2 還流）。
 
     Counter は JSON 化できる素の dict にし、タグ頻度は多い順に並べる（要約 author が読みやすい順）。
-    これを月案パイプラインの先頭（DigestPrepAgent＝monthly_prep）が `state["prev_month_digest"]` に格納し、
-    月案 author の gather 段階が「前月の子どもの姿／評価・反省」の要約生成に使う（§10）。
+    fetch_reference が候補取得時にこれを呼び、月案 author が「前月の子どもの姿／評価・反省」の
+    要約生成に使う（§10）。
 
     Args:
         entries: 前月の日誌（DiaryEntry）のリスト。

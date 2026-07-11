@@ -1,5 +1,7 @@
 # web/ ＝ 保育士向け配布 UI（層A・配信の presentation）
 
+`指針を育てる` の reference_policy カードは source の on/off とメモを直接編集できる。保存は `PATCH /api/policy/reference` を使い、PolicyBook の version 楽観ロックと workspace 書込境界に従う。improver は guideline のみを提案・commit する。
+
 ここで Claude がすること：審査員・保育士が**1枚で触れる UI**を提供し、3責務（harness/agents/improver）を
 そのまま見せる。生成ロジックは持たない。設計コンテキスト §11（Cloud Run 直ホスト）／北極星。
 
@@ -101,8 +103,6 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   「最終下書き＝**標準様式の編集フォーム（`docedit.js`）**＋validation」だけ（確定下書きは読み取り専用でなく**保育士が欄ごとに編集できる**・
   整形テキストはコピー/印刷用に畳んで添える）。指針を育てるの前面は「確認（askCard・比較相談）」と「指針カード」だけ。
   進行はステッパー＋ステータスラインで示す（経過は開けば全部見られる＝透明性は保つ）。
-- whoOf の分岐順は `prep` を `author/monthly` より先に判定（`monthly_prep` の誤分類防止。docflow の
-  ステッパー routing と一致させる）。
 
 ## 物理マッピング
 

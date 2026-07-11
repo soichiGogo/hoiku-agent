@@ -3,8 +3,7 @@
 設計コンテキスト §3/§4（L2 月次PDCA）/ §10（月⇄日集積）/ §16。共用機構の test_pipeline_e2e と対称に、
 月案パスを実 ADK ランタイムで end-to-end に回す（creds 不要・無料・決定的）。担保する結合経路:
   1. ルータ分岐   doc_type=="月案" → monthly_plan_pipeline / 未設定 → 既定クラス月案（保育日誌は AI 退役）
-  2. L2 還流      前月日誌（state["prev_month_entries"]）→ monthly_prep が child_id 別集計
-                  → state["prev_month_digest"]（要約は author・集計は harness）
+  2. L2 還流      author が前月日誌候補を fetch_reference で選択取得
   3. 確定         monthly finalize が MonthlyPlan を復元→検査→整形（final_document）
 """
 
@@ -135,9 +134,7 @@ def test_monthly_path_aggregates_prev_month_and_finalizes():
     final_state, _ = _run(author, reviewer, state)
 
     # ② L2 還流：前月日誌が child_id 別に決定的集計され state に乗る
-    digest = final_state.get("prev_month_digest") or {}
-    assert "架空児A" in digest
-    assert digest["架空児A"]["note_count"] == 2
+    assert "prev_month_digest" not in final_state
     # ③ 確定：MonthlyPlan が復元・検査通過・月案様式で整形される
     assert final_state.get("finalize_parse_error") is None
     assert final_state.get("validation") == []
@@ -147,14 +144,14 @@ def test_monthly_path_aggregates_prev_month_and_finalizes():
     assert author.call_count == 1
 
 
-def test_monthly_prep_degrades_without_prev_entries():
+def test_monthly_degrades_without_prev_entries():
     """前月日誌が無くても（初月）空 digest で素通りし月案は作れる（降格・落ちない）。"""
     author = FakeLlm(responses=[_monthly_author_text(_monthly_plan())])
     reviewer = FakeLlm(responses=["APPROVED\n指摘なし。"])
 
     final_state, _ = _run(author, reviewer, {"doc_type": "月案"})
 
-    assert final_state.get("prev_month_digest") == {}
+    assert "prev_month_digest" not in final_state
     assert final_state.get("final_document")  # 初月でも月案は確定下書きまで作る
 
 

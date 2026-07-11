@@ -110,7 +110,7 @@ def _author_text(entry: dict) -> str:
 def _base_state(extra: dict | None = None) -> dict:
     """共用機構を回すための最小 state（保育経過記録パイプラインの入力）。
 
-    period_entries は空でよい（period_prep は空 digest で素通り＝state-only・落ちない）。
+    period_entries は空でよい（fetch_reference 未呼出しでも pipeline は落ちない）。
     """
     state = {"doc_type": "保育経過記録", "period_entries": []}
     if extra:
@@ -305,7 +305,7 @@ def test_all_events_share_one_invocation_id_for_eval_compat():
     """eval 互換：1ユーザターンの全イベントが同一の非空 invocation_id を持つこと。
 
     ADK の eval は「invocation 数＝conversation 数」を要求する（local_eval_service・採点段）。
-    custom BaseAgent（DigestPrepAgent/ApprovalGate/FinalizeAgent）が Event に invocation_id を
+    custom BaseAgent（ApprovalGate/FinalizeAgent）が Event に invocation_id を
     伝播しないと、それらが空 id の別 invocation 扱いになり、1ターンが複数 invocation に割れて
     本採点が ValueError で落ちる。harness 側で ctx.invocation_id を載せる回帰防止。
     """
