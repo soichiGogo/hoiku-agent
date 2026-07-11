@@ -1228,7 +1228,7 @@ def test_google_verified_user_becomes_actor_and_provisions_user(records_db, monk
 
 
 def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
-    """popup callback は案内画面が発行した session CSRF token が無ければ session を作らない。"""
+    """popup callback は案内画面が発行した CSRF cookie と header が違えば拒否する。"""
     monkeypatch.setattr(
         settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
     )
@@ -1239,6 +1239,91 @@ def test_google_callback_rejects_bad_csrf(monkeypatch) -> None:
         "/auth/google", json={"credential": "token"}, headers={"X-Google-Login-CSRF": "wrong"}
     )
     assert r.status_code == 400 and r.json()["code"] == "csrf_failed"
+
+
+def test_google_callback_uses_double_submit_cookie_not_session(monkeypatch) -> None:
+    """本番同様に session cookie が復元できなくても専用CSRF cookieで検証できる。"""
+    from hoiku_agent.web import auth
+
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        auth,
+        "validate_google_credential",
+        lambda credential: auth.GoogleUser(
+            subject="google-subject-123", email="sensei@example.com"
+        ),
+    )
+    c = _client()
+    welcome = c.get("/")
+    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    assert c.cookies.get(auth.LOGIN_CSRF_COOKIE) == auth.login_csrf_cookie_value(csrf)
+    c.cookies.delete("session")
+
+    response = c.post(
+        "/auth/google",
+        json={"credential": "signed-token"},
+        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["redirect"] == "/app/"
+    assert auth.LOGIN_CSRF_COOKIE not in c.cookies
+
+
+def test_google_login_survives_browser_auto_requests(monkeypatch) -> None:
+    """favicon の自動取得や案内画面の再描画が挟まっても、表示中のページからログインできる。
+
+    実ブラウザは案内画面の直後に /favicon.ico を自動要求する。これを認証ガードが /?next=… へ
+    流すと案内が裏で再描画され、CSRF token の回転で正しいログインが csrf_failed になっていた
+    （本番で全ログインが「ログインをもう一度お試しください」で止まる回帰の再現）。
+    """
+    from hoiku_agent.web import auth
+
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    monkeypatch.setattr(
+        auth,
+        "validate_google_credential",
+        lambda credential: auth.GoogleUser(subject="google-subject-123", email="s@example.com"),
+    )
+    c = _client()
+    welcome = c.get("/")
+    csrf = re.search(r'"X-Google-Login-CSRF": "([^"]+)"', welcome.text).group(1)
+    # ブラウザの自動 favicon 要求＝公開アセットとして返し、ログイン導線（/?next=…）へ流さない。
+    favicon = c.get("/favicon.ico", headers={"Sec-Fetch-Mode": "no-cors"})
+    assert favicon.status_code == 200
+    assert favicon.headers["content-type"] == "image/png"
+    # 別タブ等で案内が再描画されても、有効な cookie の token を使い回す（回転させない）。
+    rerender = c.get("/")
+    assert re.search(r'"X-Google-Login-CSRF": "([^"]+)"', rerender.text).group(1) == csrf
+    r = c.post(
+        "/auth/google",
+        json={"credential": "signed-token"},
+        headers={"Origin": "http://testserver", "X-Google-Login-CSRF": csrf},
+    )
+    assert r.status_code == 200 and r.json()["redirect"] == "/app/"
+
+
+def test_unauthenticated_subresource_gets_401_not_redirect(monkeypatch) -> None:
+    """ブラウザ自動発行のサブリソース要求（Sec-Fetch-Mode≠navigate）は案内へ流さず 401 を返す。
+
+    案内画面へのリダイレクトは post_login_path を汚染するため、画面遷移（navigate・ヘッダ無しの
+    旧環境含む）だけを案内へ戻す。
+    """
+    monkeypatch.setattr(
+        settings, "google_oauth_client_id", "test-client.apps.googleusercontent.com"
+    )
+    monkeypatch.setattr(settings, "session_secret", "test-session-secret")
+    c = _client()
+    sub = c.get("/app/app.js", headers={"Sec-Fetch-Mode": "cors"})
+    assert sub.status_code == 401 and sub.json()["code"] == "auth_required"
+    nav = c.get("/app/", headers={"Sec-Fetch-Mode": "navigate"})
+    assert nav.status_code == 307 and nav.headers["location"] == "/?next=/app/"
 
 
 def test_google_callback_rejects_cross_origin_post(monkeypatch) -> None:

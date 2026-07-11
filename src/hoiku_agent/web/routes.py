@@ -271,14 +271,14 @@ def _safe_next(raw: str | None) -> str:
     return path if path.startswith("/") and not path.startswith("//") else "/app/"
 
 
-def _login_control(request: Request) -> str:
+def _login_control(csrf_token: str) -> str:
     """Google ブランド準拠の公式ボタン、または安全に設定不足を示す表示を返す。"""
     if not settings.google_signin_enabled:
         return (
             '<p class="login-unavailable">ログインの準備中です。管理者に設定をご確認ください。</p>'
         )
     client_id = html.escape(settings.google_oauth_client_id, quote=True)
-    csrf_token = json.dumps(auth.issue_login_csrf(request))
+    encoded_csrf_token = json.dumps(csrf_token)
     # redirect UX は Google Origin の POST を ADK のグローバル Origin guard が拒否し得る。公式ボタンは
     # 保ったまま popup callback にし、ID token を案内画面と同一Originの fetch で送る。
     return f'''<div id="g_id_onload" data-client_id="{client_id}" data-callback="handleGoogleCredential"
@@ -296,7 +296,7 @@ def _login_control(request: Request) -> str:
             credentials: "same-origin",
             headers: {{
               "Content-Type": "application/json",
-              "X-Google-Login-CSRF": {csrf_token}
+              "X-Google-Login-CSRF": {encoded_csrf_token}
             }},
             body: JSON.stringify({{credential: response.credential}})
           }});
@@ -315,17 +315,41 @@ def _login_control(request: Request) -> str:
 def _welcome_page(request: Request) -> HTMLResponse:
     """案内画面テンプレートへ Google client ID を最小限だけ差し込んで返す。"""
     template = _WELCOME_TEMPLATE_PATH.read_text(encoding="utf-8")
-    return HTMLResponse(template.replace("{{LOGIN_CONTROL}}", _login_control(request)))
+    # 有効な cookie の token は使い回す＝別タブや自動リクエスト由来の再描画で回転させない
+    # （回転すると表示中ページに埋めた token と cookie が食い違い、正しいログインが csrf_failed になる）。
+    # 同値の set_cookie は有効期限（10分）の更新として機能する。
+    csrf_token = auth.current_login_csrf(request) or auth.issue_login_csrf()
+    response = HTMLResponse(template.replace("{{LOGIN_CONTROL}}", _login_control(csrf_token)))
+    if settings.google_signin_enabled:
+        response.set_cookie(
+            auth.LOGIN_CSRF_COOKIE,
+            auth.login_csrf_cookie_value(csrf_token),
+            httponly=True,
+            secure=bool(os.environ.get("K_SERVICE")),
+            samesite="lax",
+            max_age=10 * 60,
+        )
+    return response
 
 
 def _is_public_auth_path(path: str) -> bool:
     """未ログインでも到達できるのは案内・Google callback・その表示資産だけ。"""
-    return path in {"/", "/auth/google", "/privacy", "/terms"} or path.startswith("/public/")
+    return path in {"/", "/auth/google", "/favicon.ico", "/privacy", "/terms"} or path.startswith(
+        "/public/"
+    )
 
 
 def _auth_denied(request: Request, *, unavailable: bool = False):
-    """画面は案内へ戻し、API/実行口は HTML でなく機械可読な失敗を返す。"""
-    if request.url.path.startswith(("/api/", "/run", "/dev/", "/builder/", "/apps/", "/list-apps")):
+    """画面遷移は案内へ戻し、API/実行口・サブリソース要求は HTML でなく機械可読な失敗を返す。"""
+    api_like = request.url.path.startswith(
+        ("/api/", "/run", "/dev/", "/builder/", "/apps/", "/list-apps")
+    )
+    # favicon・manifest 等、ブラウザが自動発行するサブリソース要求（Sec-Fetch-Mode≠navigate）を
+    # 案内画面へリダイレクトすると、案内の再描画が post_login_path を汚染する（過去には login CSRF
+    # token も回転させログイン不能を起こした）。案内へ戻すのは画面遷移（navigate。ヘッダを送らない
+    # 旧環境は従来どおり案内へ）だけにする。
+    is_navigation = request.headers.get("sec-fetch-mode", "navigate").lower() == "navigate"
+    if api_like or not is_navigation:
         code = "auth_unavailable" if unavailable else "auth_required"
         message = "ログイン設定が不足しています" if unavailable else "ログインが必要です"
         return JSONResponse(
@@ -1112,7 +1136,6 @@ def register_web_ui(app: FastAPI) -> FastAPI:
                 status_code=401,
             )
         auth.sign_in(request, user)
-        auth.consume_login_csrf(request)
         # 初回は users へ作り、既存 IAP の email 行には Google subject を補完する。DB 未接続の降格は
         # ログイン自体を妨げない（identity の検証済み session が証跡の正）。
         await run_in_threadpool(
@@ -1122,7 +1145,14 @@ def register_web_ui(app: FastAPI) -> FastAPI:
             now=datetime.now(),
         )
         target = _safe_next(str(request.session.pop("post_login_path", "/app/")))
-        return {"redirect": target}
+        response = JSONResponse({"redirect": target})
+        response.delete_cookie(
+            auth.LOGIN_CSRF_COOKIE,
+            httponly=True,
+            secure=bool(os.environ.get("K_SERVICE")),
+            samesite="lax",
+        )
+        return response
 
     @app.post("/auth/logout")
     async def google_logout(request: Request):
@@ -1157,6 +1187,12 @@ def register_web_ui(app: FastAPI) -> FastAPI:
     @app.get("/public/welcome.css")
     async def _welcome_stylesheet():
         return FileResponse(_STATIC_DIR / "welcome.css", media_type="text/css")
+
+    @app.get("/favicon.ico")
+    async def _favicon():
+        # ブラウザが案内画面の直後に自動要求する favicon をログイン導線（/?next=…）へ流さない。
+        # 認証前でも配れる公開アセットとして同梱ロゴを返す（PNG は現行ブラウザが favicon として解釈する）。
+        return FileResponse(_STATIC_DIR / "brand-logo-120.png", media_type="image/png")
 
     @app.get("/privacy")
     async def _privacy_policy():
