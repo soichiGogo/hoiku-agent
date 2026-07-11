@@ -12,6 +12,11 @@ improver の PolicyBook は呼び出し側で束縛する。Web は署名付き 
 リポジトリ内の設計参照は `docs/設計コンテキスト.md`（開発ハンドオフ）。本ファイルはそれをコード構造に
 対応づけた索引。構造を変えたら本ファイルと `CLAUDE.md` を同じ変更内で更新する。
 
+README 掲載図の内容定義は `docs/diagram-specs.md`、編集可能な正本は `docs/system-architecture.drawio` と
+`docs/agent-workflow.drawio`。同名の PNG は掲載用の派生成果物で、責務境界・データフロー変更時に同期する。
+図の画像パーツは `docs/diagram-assets/` に分離し、製品アイコンは Google Cloud 公式素材、生成 AI は文字・ロゴ・
+矢印を含まないプロジェクト固有イラストだけに用いる。正確なラベル・包含関係・配線は draw.io を正とする。
+
 ## 3責務 ↔ コード（設計コンテキスト §5 責務境界）
 
 | 責務 | コード | 役割 | 性質 |
