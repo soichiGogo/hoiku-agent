@@ -92,6 +92,20 @@ def test_static_ui_served() -> None:
         assert c.get(f"/app/{asset}").status_code == 200, asset
 
 
+def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:
+    """編集欄は初期表示・入力の両方で内容高に追従し、欄内スクロールを作らない。"""
+    c = _client()
+    script = c.get("/app/docedit.js").text
+    styles = c.get("/app/styles.css").text
+
+    assert 't.style.height = "auto"' in script
+    assert "t.scrollHeight + borderHeight" in script
+    assert 't.addEventListener("input"' in script
+    assert "requestAnimationFrame" in script
+    assert "new ResizeObserver" in script
+    assert "textarea.de-input{overflow-y:hidden;resize:none}" in styles
+
+
 def test_root_shows_welcome() -> None:
     # 配布リンクの素の URLは、強制遷移せず案内画面を表示する。
     r = _client().get("/")
