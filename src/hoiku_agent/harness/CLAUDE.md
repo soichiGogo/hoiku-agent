@@ -63,34 +63,16 @@
   `build_document_pipeline`）は退役**（日誌は手入力＝web の docedit→`finalize_entry`・ヒアリング 2026-07）。
   `build_authoring_loop` が author を巡回に包み NEEDS_REVISION で
   再作成、APPROVED 早期終了の**判定**（ApprovalGate）はここ（制御＝決定的）、レビュー内容の**生成**は reviewer。
-  `FinalizeAgent(kind=...)` で日誌/月案/保育経過記録/保育要録の確定を切替（実体は finalize.py）。**pipeline に prep 段は置かない**
-  ＝文書作成指針は author/reviewer の InstructionProvider（`../agents/instructions.py`）が `policy_store.render_for_doc`
-  を prompt 冒頭へ前置注入する（探索を LLM の read_policy 呼び出しに委ねず決定的に用意＝§5）。**prep を先頭に置いて
-  content イベントを出すと ADK eval の rubric judge が非LLM先頭段を採点不能にする**ため、集積の `DigestPrepAgent`
-  （monthly.py）・`RecordDigestPrepAgent`（youroku.py・L4）も content 無しの state-only イベントにしてある（§12）。
-- `monthly.py` … 月案：`DigestPrepAgent`（旧 MonthlyPrepAgent を入出力キーで一般化。前月日誌を child_id 別集計＝
-  L2 還流の決定的部分・保育経過記録の L3 とも共用。**content 無しの state-only イベント**で `state["*_digest"]` に載せるだけ
-  ＝集積の prompt 前置は author/reviewer の InstructionProvider が担う。content を持たせないのは eval judge が
-  非LLM先頭段を採点不能にするのを避けるため＝§12）→ 月案 author の authoring_loop（日誌と共用）→ 確定。
-  `build_monthly_pipeline`。集計＝harness／要約＝author（§10）。
-- `class_monthly.py` … クラス月案（園の実様式＝月間指導計画・§18・**依存モデル 2026-07**）：3つの state-only prep＝
-  ①クラス児童の保育経過記録すべて（`RecordDigestPrepAgent` 共用・class_record_entries→class_records_digest）
-  ②それまでのクラス月案すべて（`ClassPlanPrepAgent`・past_class_plans→class_plan_digest）③経過記録に未反映の
-  期間の日誌（`DigestPrepAgent` 共用・class_diary_entries→class_diary_digest・uncovered_by_key で①の境界より後に
-  限定＋評価・反省＝class_diary_reflections〔決定B〕）→ クラス月案 author の authoring_loop（共用）→
-  finalize(kind="class_monthly")。`build_class_monthly_pipeline`。seed 合成＝`record_store.class_monthly_seed_inputs`。
+  `FinalizeAgent(kind=...)` で月案/クラス月案/保育経過記録/保育要録の確定を切替（実体は finalize.py）。
+  pipeline は `[authoring_loop → finalize]` のみ。候補は state に seed し、author/reviewer が fetch_reference を
+  呼ぶと `reference.py` が既存 aggregate を使って決定的に集計し、reference_manifest を残す（§5/§12）。
+- `monthly.py` … 月案 authoring_loop→finalize。前月日誌は fetch_reference(prev_month_diaries) で取得（§10）。
+- `class_monthly.py` … クラス月案 authoring_loop→finalize。3系統の候補と児童別未反映境界は reference.py が担当。
   個別月案（1児）と別 doc_type＝**文書の年齢帯単位**で、区分×領域グリッド（養護2本柱＋教育5領域）は
   0–2/3–5 共通＝3つの視点分岐を課さない（様式忠実）。grid の正準7行そろえは
   `schemas/class_monthly.ClassMonthlyPlan` の model_validator（レイアウトのデータは GRID_ROWS に1つ）。
-- `child_record.py` … 保育経過記録（§19・**依存モデル 2026-07**）：`DigestPrepAgent`（period_prep・
-  period_entries→period_digest＝L3 還流）＋`RecordDigestPrepAgent`（prev_record_prep・prev_record_entries→
-  prev_records_digest＝**前回までの保育経過記録すべて**・作成対象の期は除外・前期からの連続性の素）→
-  保育経過記録 author の authoring_loop（共用）→ finalize(kind="child_record")。`build_child_record_pipeline`。
-- `youroku.py` … 保育要録（§19・L4・**依存モデル 2026-07＝それまでの保育経過記録すべて・全期・日誌は足さない**）：
-  `RecordDigestPrepAgent`（record_prep・record_entries を `aggregate.child_record_digest` で集計→record_digest＝
-  日誌でなく保育経過記録を集める・content 無し state-only。**入出力キー差し替えで保育経過記録の「前回まで」・
-  クラス月案の「クラス児童のこれまで」とも共用**）→ 要録 author の authoring_loop（共用）→
-  finalize(kind="nursery_record")。`build_nursery_record_pipeline`。年長=5領域固定。
+- `child_record.py` … 保育経過記録 authoring_loop→finalize。期間日誌と前回記録は fetch_reference で取得（§19）。
+- `youroku.py` … 保育要録 authoring_loop→finalize。それまでの保育経過記録を fetch_reference で取得し、日誌は足さない（§19・L4）。
 - `router.py` … `DocTypeRouter` / `build_root_agent`：state["doc_type"] で月案／クラス月案／保育経過記録／保育要録を
   振り分ける決定的分岐（root_agent の実体・**既定＝クラス月案**＝§18）。**保育日誌は AI 生成を退役**したためルータに載らない
   （日誌は手入力＝web）。

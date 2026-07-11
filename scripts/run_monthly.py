@@ -8,8 +8,8 @@
 1. 前月日誌を読む。優先順位＝ `--prev-entries-file`（JSON 配列）＞ 書類アーカイブ
    （`DATABASE_URL` 設定時・record_store から前月分を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
 2. session state に doc_type="月案" と prev_month_entries を seed して root_agent（DocTypeRouter）を回す。
-3. DigestPrepAgent（monthly_prep）が child_id 別に集計（state["prev_month_digest"]）→ 月案 author が要約・ねらい化
-   → reviewer → 月案 finalize（MonthlyPlan を検査・整形）。
+3. 月案 author が reference_policy に従い fetch_reference(prev_month_diaries) で候補を取得・要約し、
+   reviewer → 月案 finalize（MonthlyPlan を検査・整形）へ進む。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:
     uv run python scripts/run_monthly.py --child-id はるとくん --month 2026-07
@@ -156,9 +156,7 @@ async def _run(month: str, child_id: str, prev_entries: list[dict]) -> None:
         app_name=_APP_NAME, user_id=_USER_ID, session_id=session.id
     )
     print("\n--- 最終 state ---")
-    print(
-        "prev_month_digest:", json.dumps(final.state.get("prev_month_digest"), ensure_ascii=False)
-    )
+    print("reference_manifest:", final.state.get("reference_manifest"))
     print("validation:", final.state.get("validation"))
     print("final_document:\n", final.state.get("final_document"))
 

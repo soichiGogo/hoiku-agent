@@ -32,6 +32,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
   let allCards = [];
   let allHistory = [];
   let curStore = null;
+  let bookVersion = 0;
   let filterDocTypes = null;
 
   /* ---------- 閲覧デッキ（上） ---------- */
@@ -43,7 +44,23 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
       `<span class="pcard-tag">${esc(label)}</span>` +
       (card.source ? `<span class="pcard-src">${iconHTML("caregiver")}${esc(card.source)}</span>` : "") +
       (card.date ? `<span class="pcard-date">${esc(card.date)}</span>` : "");
-    node.innerHTML = `<div class="pcard-body">${esc(card.body)}</div><div class="pcard-meta">${meta}</div>`;
+    if (card.kind === "reference_policy") {
+      const rules = (card.references || []).map((r) =>
+        `<label class="reference-rule"><input type="checkbox" data-source="${esc(r.source)}" ${r.enabled ? "checked" : ""}> ${esc(r.source)} <input class="reference-note" data-note="${esc(r.source)}" value="${esc(r.note || "")}" placeholder="メモ"></label>`
+      ).join("");
+      node.innerHTML = `<div class="pcard-body">参照する資料の既定</div><div class="reference-rules">${rules}</div><button type="button" class="btn-subtle reference-save">保存</button><div class="pcard-meta">${meta}</div>`;
+      node.querySelector(".reference-save").addEventListener("click", async () => {
+        const references = (card.references || []).map((r) => ({
+          source: r.source,
+          enabled: node.querySelector(`[data-source="${r.source}"]`).checked,
+          note: node.querySelector(`[data-note="${r.source}"]`).value || null,
+        }));
+        const updated = await adk.updateReferencePolicy({ scope: card.scope, references, version: bookVersion });
+        renderDeck(updated);
+      });
+    } else {
+      node.innerHTML = `<div class="pcard-body">${esc(card.body)}</div><div class="pcard-meta">${meta}</div>`;
+    }
     return node;
   }
   function historyEl(h) {
@@ -53,10 +70,11 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
       `<span class="phist-what"><span class="phist-by">${esc(h.by || "保育士")}</span> ${esc(h.summary || "")}</span>`;
     return item;
   }
-  function renderDeck({ cards, history: hist, store }) {
+  function renderDeck({ cards, history: hist, store, version }) {
     allCards = cards || [];
     allHistory = hist || [];
     curStore = store;
+    bookVersion = version ?? bookVersion;
     paintDeck();
   }
   // 現在のフィルタ（対象書類）でデッキを描く。フィルタは card_view の doc_type（共通＝common）で絞る＝

@@ -58,6 +58,32 @@ class PolicyStatus(str, Enum):
     retired = "retired"  # ソフト削除（参照されない）
 
 
+class PolicyCardKind(str, Enum):
+    """カード種別。既存カードは guideline として後方互換で読む。"""
+
+    guideline = "guideline"
+    reference_policy = "reference_policy"
+
+
+class ReferenceSource(str, Enum):
+    """author が取得できる参照候補。自由文検索や識別子指定を許さない閉じた語彙。"""
+
+    period_diary = "period_diary"
+    prev_child_records = "prev_child_records"
+    class_child_records = "class_child_records"
+    past_class_plans = "past_class_plans"
+    uncovered_class_diaries = "uncovered_class_diaries"
+    prev_month_diaries = "prev_month_diaries"
+
+
+class ReferenceRule(BaseModel):
+    """reference_policy カード内の参照規則1件。"""
+
+    source: ReferenceSource
+    enabled: bool = True
+    note: str | None = None
+
+
 class PolicyChangeAction(str, Enum):
     """変更履歴のアクション種別。"""
 
@@ -75,7 +101,9 @@ class PolicyCard(BaseModel):
 
     id: str  # 決定的採番（policy_store.next_card_id ＝ "card-0001" 形式）
     scope: PolicyScope
+    kind: PolicyCardKind = PolicyCardKind.guideline
     body: str  # カード本文（旧・箇条書き本文）。空は add 時に弾く
+    references: list[ReferenceRule] = Field(default_factory=list)
     rationale: str = ""  # なぜこの勘所か（指針整合・園ルール 等）
     source: str = ""  # 由来＝だれの気づきか（保育士の修正メモ / session / "seed:初版" 等）
     status: PolicyStatus = PolicyStatus.active

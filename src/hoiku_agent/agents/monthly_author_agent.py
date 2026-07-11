@@ -5,8 +5,8 @@
 巡回＝再作成は harness の `build_authoring_loop` が日誌と共用で担う）。違いは instruction（月案スキーマ）と、
 前月集積（L2 還流）を読む点だけ。
 
-前段（harness の DigestPrepAgent（monthly_prep））が前月日誌を child_id 別に決定的集計し、その人間可読テキストを
-直前イベントとして提示する。月案 author はそれと recall_child_history を突き合わせ「前月の子どもの姿／
+月案 author は reference_policy の既定を踏まえて fetch_reference で前月日誌を選択取得し、
+その応答と recall_child_history を突き合わせ「前月の子どもの姿／
 評価・反省」を要約する（集計＝harness／要約＝author の責務分離・§10）。
 
 "型"（必須欄・年齢分岐タグ・整形）は harness（schema_check.validate_monthly_fields / draft.write_monthly_draft）
@@ -21,8 +21,8 @@ from google.adk.agents import LlmAgent
 
 from ..models import build_model
 from ..schemas.policy import PolicyScope
-from ..tools import ask_caregiver, recall_child_history, search_guideline
-from .instructions import MONTHLY_DIGESTS, build_author_instruction
+from ..tools import ask_caregiver, fetch_reference, recall_child_history, search_guideline
+from .instructions import build_author_instruction
 from .prompts import MONTHLY_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -45,13 +45,10 @@ def build_monthly_author_agent(model: str | BaseLlm | None = None) -> LlmAgent:
     return LlmAgent(
         name="monthly_author",
         model=model if model is not None else build_model(),
-        # 文書作成指針（共通＋月案）＋前月集積（state["prev_month_digest"]）を prompt 冒頭へ前置注入（§5）。
-        instruction=build_author_instruction(
-            MONTHLY_AUTHOR_INSTRUCTION,
-            PolicyScope.月案,
-            digests=MONTHLY_DIGESTS,
-        ),
+        # 文書作成指針と参照 source の既定を提示し、本文は fetch_reference で選択取得する（§5）。
+        instruction=build_author_instruction(MONTHLY_AUTHOR_INSTRUCTION, PolicyScope.月案),
         tools=[
+            fetch_reference,
             recall_child_history,  # その子の前回までの像（前月連続性＝§9）
             search_guideline,
             ask_caregiver,

@@ -5,8 +5,8 @@
 巡回＝再作成は harness の `build_authoring_loop` が日誌・月案と共用で担う）。違いは instruction
 （保育経過記録スキーマ・**開示前提の肯定的・非断定的表現**）と、期間集積（L3 還流）を読む点だけ。
 
-前段（harness の DigestPrepAgent＝period_prep）が期間中の日誌を child_id 別に決定的集計し、その
-人間可読テキストを直前イベントとして提示する。保育経過記録 author はそれと recall_child_history を
+保育経過記録 author は reference_policy に従って期間日誌と前回までの保育経過記録を fetch_reference で
+選択取得し、その応答と recall_child_history を
 突き合わせ「発達の経過／総合所見」を領域別に叙述する（集計＝harness／要約＝author・§10/§19）。
 
 "型"（必須欄・年齢分岐タグ・整形）は harness（validate_child_record_fields / write_child_record_draft）
@@ -21,8 +21,8 @@ from google.adk.agents import LlmAgent
 
 from ..models import build_model
 from ..schemas.policy import PolicyScope
-from ..tools import ask_caregiver, recall_child_history, search_guideline
-from .instructions import CHILD_RECORD_DIGESTS, build_author_instruction
+from ..tools import ask_caregiver, fetch_reference, recall_child_history, search_guideline
+from .instructions import build_author_instruction
 from .prompts import CHILD_RECORD_AUTHOR_INSTRUCTION
 
 if TYPE_CHECKING:
@@ -44,14 +44,13 @@ def build_child_record_author_agent(model: str | BaseLlm | None = None) -> LlmAg
     return LlmAgent(
         name="child_record_author",
         model=model if model is not None else build_model(),
-        # 文書作成指針（共通＋保育経過記録）＋期間集積（period_digest）＋前回までの保育経過記録
-        # （prev_records_digest＝前期からの連続性・依存モデル 2026-07）を prompt 冒頭へ前置注入（§5）。
+        # 文書作成指針と参照 source の既定を提示し、本文は fetch_reference で選択取得する（§5）。
         instruction=build_author_instruction(
             CHILD_RECORD_AUTHOR_INSTRUCTION,
             PolicyScope.保育経過記録,
-            digests=CHILD_RECORD_DIGESTS,
         ),
         tools=[
+            fetch_reference,
             recall_child_history,  # その子の前回までの像（期の連続性＝§9）
             search_guideline,
             ask_caregiver,
