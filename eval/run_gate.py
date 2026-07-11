@@ -357,6 +357,39 @@ def load_baseline(path: Path = _BASELINE_FILE) -> float | None:
     return float(mean)
 
 
+def load_baseline_record(path: Path) -> dict[str, Any] | None:
+    """baseline JSON をレコードとして読む。欠損・壊れ・非objectは None。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def baseline_record_matches_result(
+    record: dict[str, Any],
+    *,
+    aggregate: dict[str, Any],
+    coverage: dict[str, Any],
+    gate_policy: dict[str, Any],
+) -> bool:
+    """初回 bootstrap 用 baseline が今回の完全採点結果と一致するか決定的に検証する。
+
+    commit/note は採点値ではないため比較対象外。数値・軸別平均・違反数・ケース数・ゲート方針が
+    すべて一致した場合だけ true とし、未採点 main から任意の基準値を持ち込めないようにする。
+    """
+    mean = record.get("mean")
+    if isinstance(mean, bool) or not isinstance(mean, (int, float)):
+        return False
+    return (
+        float(mean) == aggregate.get("mean")
+        and record.get("axis_means") == aggregate.get("axis_means")
+        and record.get("must_fix_violations") == aggregate.get("must_fix_violations") == 0
+        and record.get("case_count") == coverage.get("scored_cases")
+        and record.get("gate_policy") == gate_policy
+    )
+
+
 def build_baseline_record(result: dict, *, commit: str | None = None) -> dict:
     """採点結果（run_gate の dict）から baseline レコードを作る（serializable・決定的）。"""
     return {
@@ -482,12 +515,15 @@ def run_gate(
     agent_module: str = "hoiku_agent",
     baseline_mean: float | None = None,
     baseline_path: Path | None = _BASELINE_FILE,
+    bootstrap_baseline_path: Path | None = None,
 ) -> dict[str, Any]:
     """評価ゲートを実行し、合否判定 dict を返す（§12）。
 
     Args:
         baseline_mean: main 比較の基準値を直に渡す（テスト・improver 用）。None なら baseline_path から読む。
         baseline_path: committed baseline（既定 `eval/baseline.json`）。None で「比較なし」を明示できる。
+        bootstrap_baseline_path: base baseline の mean が明示的に null の初回だけ、今回の実採点値との
+            完全一致を検証する候補 baseline。通常の比較では使わない。
 
     Returns:
         {
@@ -507,6 +543,7 @@ def run_gate(
     はこれを非0終了へ変換し、CI で fail-closed にする。
     """
     # main 比の基準（baseline）を確定する：明示値が無ければ committed baseline.json から読む（無ければ None）。
+    baseline_record = load_baseline_record(baseline_path) if baseline_path is not None else None
     if baseline_mean is None and baseline_path is not None:
         baseline_mean = load_baseline(baseline_path)
 
@@ -569,13 +606,34 @@ def run_gate(
         quality_failures.append(f"must_fix 違反={agg['must_fix_violations']}")
 
     comparison = decide_gate(agg["mean"], baseline_mean, agg["must_fix_violations"])
+    bootstrapped = False
+    # 初回導入PRに限る例外。base側に「mean: null」が明記され、候補baselineが今回の実採点結果と
+    # 完全一致する場合だけ比較成立とする。baseが採点済みになった後は候補側baselineを無視する。
+    if (
+        comparison is None
+        and baseline_record is not None
+        and "mean" in baseline_record
+        and baseline_record.get("mean") is None
+        and bootstrap_baseline_path is not None
+    ):
+        bootstrap_record = load_baseline_record(bootstrap_baseline_path)
+        bootstrapped = bootstrap_record is not None and baseline_record_matches_result(
+            bootstrap_record,
+            aggregate=agg,
+            coverage=coverage,
+            gate_policy=gate_policy,
+        )
+        if bootstrapped:
+            comparison = True
     if comparison is False and agg["must_fix_violations"] == 0:
         quality_failures.append(
             f"mean={agg['mean']:.3f} < baseline={baseline_mean:.3f}（main比で劣化）"
         )
     passed = None if comparison is None else not quality_failures
     verdict = "判定不能" if passed is None else ("緑" if passed else "赤")
-    if baseline_mean is None:
+    if bootstrapped:
+        detail_suffix = "初回baselineが実採点結果と完全一致・coverage 100%・floor達成・must_fix 0。"
+    elif baseline_mean is None:
         detail_suffix = "baseline 未確立のため判定不能（--update-baseline で意図的に確立する）。"
     elif quality_failures:
         detail_suffix = "／".join(quality_failures)
@@ -588,6 +646,7 @@ def run_gate(
         "axis_means": agg["axis_means"],
         "must_fix_violations": agg["must_fix_violations"],
         "baseline_mean": baseline_mean,
+        "baseline_bootstrapped": bootstrapped,
         "coverage": coverage,
         "quality_failures": quality_failures,
         "gate_policy": gate_policy,
@@ -690,11 +749,20 @@ if __name__ == "__main__":
         default=_BASELINE_FILE,
         help="比較するbaseline JSON（PR CIはbase SHAから抽出したファイルを渡す）",
     )
+    ap.add_argument(
+        "--bootstrap-baseline-path",
+        type=Path,
+        default=None,
+        help="base baselineがmean=nullの初回だけ実採点との完全一致を検証する候補baseline",
+    )
     args = ap.parse_args()
     result = (
         update_baseline(commit=args.commit)
         if args.update_baseline
-        else run_gate(baseline_path=args.baseline_path)
+        else run_gate(
+            baseline_path=args.baseline_path,
+            bootstrap_baseline_path=args.bootstrap_baseline_path,
+        )
     )
     _write_result(result, args.output)
     raise SystemExit(exit_code_for_result(result, strict=args.strict or args.update_baseline))

@@ -107,6 +107,7 @@ jobs:
         run: >-
           uv run --extra dev --extra eval python eval/run_gate.py
           --strict --baseline-path eval/results/comparison-baseline.json
+          --bootstrap-baseline-path eval/baseline.json
           --output eval/results/gate-result.json
 
       - name: Upload per-case eval evidence

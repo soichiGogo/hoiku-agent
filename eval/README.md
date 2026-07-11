@@ -17,6 +17,8 @@
 - `run_gate.py` … 採点→集計→ゲート判定の実体（`aggregate_rubric_scores`/`decide_gate`・判定式の SSOT）。
 - `baseline.json` … main の eval 平均（committed）。`run_gate` が既定で読み PR の非劣化比較に使う。
   PR CIはPR内の値でなくbase SHAから抽出したbaselineを使い、候補側の基準改変を防ぐ。nightlyは自動更新しない。
+  初回導入時にbaseの`mean`が明示的に`null`なら、候補baselineとそのCIの実採点値（平均・軸別平均・must_fix・
+  ケース数・gate policy）が完全一致した場合だけ一度限りbootstrapする。baseが採点済みになれば候補値は無視する。
   変更時は `--update-baseline` で完全採点し、通常PRでレビューする。
 - 実行は `uv run --extra eval python eval/run_gate.py`（ローカル採点）／`… --strict --output <path>`
   （CI＝採点不能も非0終了＋ケース別証跡）／`… --update-baseline`（意図的なbaseline更新）。

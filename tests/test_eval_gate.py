@@ -300,6 +300,19 @@ def test_run_gate_explicit_baseline_overrides_file(tmp_path):
     assert result["baseline_mean"] == 0.9  # 明示値が file より優先
 
 
+def _write_baseline_record(path: Path, *, mean, axis_means, case_count, gate_policy) -> None:
+    gate.write_baseline(
+        {
+            "mean": mean,
+            "axis_means": axis_means,
+            "must_fix_violations": 0,
+            "case_count": case_count,
+            "gate_policy": gate_policy,
+        },
+        path,
+    )
+
+
 def _write_minimal_evalset(cases_dir: Path, eval_ids: list[str]) -> None:
     data = {
         "eval_set_id": "unit",
@@ -320,6 +333,85 @@ def test_run_gate_scores_only_with_complete_coverage(monkeypatch, tmp_path):
     assert result["passed"] is True
     assert result["coverage"]["complete"] is True
     assert result["mean"] == 1.0
+
+
+def test_run_gate_bootstraps_only_when_candidate_matches_live_result(monkeypatch, tmp_path):
+    _write_minimal_evalset(tmp_path, ["a", "b"])
+    base = tmp_path / "base.json"
+    candidate = tmp_path / "candidate.json"
+    gate.write_baseline({"mean": None}, base)
+    policy = gate.load_gate_policy()
+    _write_baseline_record(
+        candidate,
+        mean=1.0,
+        axis_means={rubric_id: 1.0 for rubric_id in gate.AXIS_RUBRIC_IDS},
+        case_count=2,
+        gate_policy=policy,
+    )
+
+    async def fake_score(_cases, _agent_module):
+        return [_case_score("a"), _case_score("b")]
+
+    monkeypatch.setattr(gate, "_score_cases_with_adk", fake_score)
+    result = gate.run_gate(
+        cases_dir=tmp_path,
+        baseline_path=base,
+        bootstrap_baseline_path=candidate,
+    )
+    assert result["passed"] is True
+    assert result["baseline_bootstrapped"] is True
+
+
+def test_run_gate_rejects_bootstrap_candidate_that_differs_from_live_result(monkeypatch, tmp_path):
+    _write_minimal_evalset(tmp_path, ["a"])
+    base = tmp_path / "base.json"
+    candidate = tmp_path / "candidate.json"
+    gate.write_baseline({"mean": None}, base)
+    _write_baseline_record(
+        candidate,
+        mean=0.99,
+        axis_means={rubric_id: 1.0 for rubric_id in gate.AXIS_RUBRIC_IDS},
+        case_count=1,
+        gate_policy=gate.load_gate_policy(),
+    )
+
+    async def fake_score(_cases, _agent_module):
+        return [_case_score("a")]
+
+    monkeypatch.setattr(gate, "_score_cases_with_adk", fake_score)
+    result = gate.run_gate(
+        cases_dir=tmp_path,
+        baseline_path=base,
+        bootstrap_baseline_path=candidate,
+    )
+    assert result["passed"] is None
+    assert result["baseline_bootstrapped"] is False
+
+
+def test_run_gate_ignores_bootstrap_candidate_after_base_is_scored(monkeypatch, tmp_path):
+    _write_minimal_evalset(tmp_path, ["a"])
+    base = tmp_path / "base.json"
+    candidate = tmp_path / "candidate.json"
+    gate.write_baseline({"mean": 1.1}, base)
+    _write_baseline_record(
+        candidate,
+        mean=1.0,
+        axis_means={rubric_id: 1.0 for rubric_id in gate.AXIS_RUBRIC_IDS},
+        case_count=1,
+        gate_policy=gate.load_gate_policy(),
+    )
+
+    async def fake_score(_cases, _agent_module):
+        return [_case_score("a")]
+
+    monkeypatch.setattr(gate, "_score_cases_with_adk", fake_score)
+    result = gate.run_gate(
+        cases_dir=tmp_path,
+        baseline_path=base,
+        bootstrap_baseline_path=candidate,
+    )
+    assert result["passed"] is False
+    assert result["baseline_bootstrapped"] is False
 
 
 def test_run_gate_is_unscored_when_any_rubric_is_missing(monkeypatch, tmp_path):
@@ -355,6 +447,7 @@ def test_eval_workflow_is_fail_closed_and_uses_dedicated_sa():
     assert "pytest -q tests/test_eval.py" not in workflow
     assert "github.event.pull_request.base.sha" in workflow
     assert "--baseline-path eval/results/comparison-baseline.json" in workflow
+    assert "--bootstrap-baseline-path eval/baseline.json" in workflow
     executable_lines = [line for line in workflow.splitlines() if not line.lstrip().startswith("#")]
     assert not any("--update-baseline" in line for line in executable_lines)
     assert "contents: write" not in workflow
