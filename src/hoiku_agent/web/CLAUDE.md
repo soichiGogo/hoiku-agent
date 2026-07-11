@@ -41,7 +41,7 @@
   `/api/records/approve` を呼び、実体は `harness/record_store`（web は now 注入だけ＝runtime 境界）。
   actor はヘッダの担当者名入力（自己申告・localStorage・`ui.actorName()`）＝ローカル開発時だけのつなぎ。
   **Google Sign-In（Phase 3）では `auth.py` が検証した session の Google アカウントが actor に優先**され
-  （ID token の署名/audience/期限/email_verified と double-submit CSRF を検証・users へ auto-provision＝
+  （ID token の署名/audience/期限/email_verified と署名付き専用 cookie のログイン CSRF token を検証・users へ auto-provision＝
   `record_store.touch_user`・表示名設定済みなら「表示名（email）」）。`/app/`・API・ADK 口は session 無しで fail-closed。
   **サインイン時はヘッダの担当者欄が「自分の表示名」編集欄**になり、`POST /api/user`（`adk.setUserProfile`）で
   `record_store.set_user_display_name` を叩いて display_name を DB に登録/編集する（email/sub は body でなく Google 検証済み値で
@@ -144,10 +144,14 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   括弧ラベル直下＋列4へ追記・ラベルは残す）。`_FILLERS` に kind 追加で拡張。
   **末尾に確認印欄（担任/主任/園長）**を置き公式記録の体裁にする。生活記録の4列表は本文全幅で罫線をそろえる
   （ReportLab の Table 既定 hAlign=CENTER のズレを LEFT＋全幅で是正）。ヘッダの気温・組は `DiaryEntry` の任意欄（記入時のみ）。
-- `auth.py` … Google Identity Services の redirect POST を受け、ID token を Google の公開鍵で検証し（audience/期限/
-  email_verified）、double-submit CSRF を確認して最小 identity（sub/email/name）だけを署名付き session に保存する。`/` は
-  案内画面、`/app/`・API・ADK 口は routes の middleware が session 無しで拒否する。Google の公式ボタンを描くため案内画面だけ
-  `accounts.google.com/gsi/client` を読む（通常の UI 資産は従来どおりローカル配信）。
+- `auth.py` … Google Identity Services の popup callback（案内画面と同一Originの `POST /auth/google`）を受け、ID token を
+  Google の公開鍵で検証し（audience/期限/email_verified）、案内画面が発行する**署名付き専用 cookie のログイン CSRF token**
+  （header との double-submit）を確認して最小 identity（sub/email/name）だけを署名付き session に保存する。**有効な cookie の
+  token は再描画で使い回す＝回転させない**（favicon 等の自動リクエストや別タブの再描画で回転させると、表示中ページの token と
+  cookie が食い違い正しいログインまで拒否する＝2026-07 の本番障害）。
+  `/` は案内画面、`/favicon.ico` は公開アセット、`/app/`・API・ADK 口は routes の middleware が session 無しで拒否する
+  （Sec-Fetch-Mode≠navigate のサブリソース要求は案内へ redirect せず 401＝post_login_path の汚染防止）。Google の公式ボタンを
+  描くため案内画面だけ `accounts.google.com/gsi/client` を読む（通常の UI 資産は従来どおりローカル配信）。
 - `improver_stream.py` … `/api/improve`・`/api/improve/resume`（改善エージェントを SSE 駆動・resume 用に
   プロセス内 session 保持。スケールアウト時は共有ストアが要る＝既知の制限）。中継のみ（ツール payload がカード化されるだけ）。
 - `upload_extract.py` … アップロードされたファイル（bytes）→ LLM 入力コンテンツへの**決定的**変換
