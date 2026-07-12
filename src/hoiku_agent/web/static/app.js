@@ -1297,7 +1297,8 @@ async function main() {
       showMissingRecords($("record-flow"), "現在、保存した日誌を確認できないため作成できません。時間をおいてからもう一度お試しください。");
       return;
     }
-    const [start, end] = period.split("〜");
+    // 期間文字列（YYYY-MM〜YYYY-MM）を開始・終了の年月へ分解する。園ごとの入力差に備え、類似の区切り文字も受け付ける。
+    const [start, end] = period.split(/[〜~～−―–]/);
     const entries = await savedDiaryEntries(start, end);
     if (!entries.length) {
       showMissingRecords($("record-flow"), "この期間の日誌がありません。先に対象期間の日誌を保存してください。");
@@ -1484,6 +1485,9 @@ async function main() {
     tree: $("records-tree"),
     store: $("records-store"),
     detail: $("records-detail"),
+    childFilterInput: $("records-child-filter"),
+    childFilterList: $("records-child-filter-list"),
+    childFilterClear: $("records-child-filter-clear"),
     childRecordPeriods: cfg.child_record_periods,
     currentChildRecordPeriod: cfg.current_child_record_period,
   });

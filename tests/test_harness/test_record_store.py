@@ -79,6 +79,44 @@ def test_save_creates_document_version_and_children(db):
     assert len(docs) == 1
     assert docs[0]["doc_type"] == "diary"
     assert docs[0]["status"] == "finalized"
+    # 登場する子ども（表示名）の索引＝対象児フィルタ用（クラス全体の日誌でも個々の子が引ける）。
+    assert sorted(docs[0]["children"]) == sorted(["はるとくん", "めいちゃん"])
+
+
+def test_mentioned_children_syncs_to_current_version_on_edit(db):
+    """「書類を見る」タブの対象児フィルタが読む索引は、編集で登場児が変わったら現行版に追従する。"""
+    entry = _diary_entry("2026-07-01", children=("はるとくん", "めいちゃん"))
+    rs.save_document("diary", entry, author_kind="ai", now=_NOW)
+    edited = _diary_entry("2026-07-01", children=("はるとくん", "ゆいちゃん"))
+    rs.save_document("diary", edited, author_kind="caregiver", now=_NOW)
+    docs = rs.list_documents()
+    assert len(docs) == 1  # 同一書類（dedupe_key）＝版が積まれるだけ
+    assert sorted(docs[0]["children"]) == sorted(["はるとくん", "ゆいちゃん"])
+
+
+def test_mentioned_children_for_class_monthly_are_individual_goal_children(db):
+    plan = {
+        "month": "2026-07",
+        "age_band": "0-2",
+        "class_name": "ひよこ組",
+        "individual_goals": [
+            {"child_id": "はるとくん", "child_state": "s", "aim_support": "a"},
+            {"child_id": "めいちゃん", "child_state": "s", "aim_support": "a"},
+        ],
+    }
+    rs.save_document("class_monthly", plan, author_kind="ai", now=_NOW)
+    docs = [d for d in rs.list_documents() if d["doc_type"] == "class_monthly"]
+    assert docs[0]["child"] in (None, "")  # クラス単位＝主対象児は持たない
+    assert sorted(docs[0]["children"]) == sorted(["はるとくん", "めいちゃん"])
+
+
+def test_mentioned_children_for_personal_docs_includes_the_main_child(db):
+    """保育経過記録・保育要録は1書類＝1児なので、children は主対象児1名だけを含む（child と重複）。"""
+    record = {"period": "2026-04〜2026-06", "child_id": "はるとくん", "age_band": "0-2"}
+    rs.save_document("child_record", record, author_kind="ai", now=_NOW)
+    doc = rs.list_documents()[0]
+    assert doc["child"] == "はるとくん"
+    assert doc["children"] == ["はるとくん"]
 
 
 def test_same_target_upserts_and_stacks_versions(db):

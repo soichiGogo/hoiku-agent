@@ -125,6 +125,12 @@
   **書類フィードバック＝`Feedback`（👍👎＝verdict up/down＋comment＋actor・migration 0008・`save_feedback`/`list_feedback`）**＝
   確定/承認画面から送る軽量シグナルを document＋その版（送信時点の現行版）に紐付けて残す（§8「回す」の一次入力＋§12 eval 質的拡充の原資）。
   audit_events（操作の証跡）とは関心事が別なので独立テーブル（評価の生ログ・混ぜない・降格safe）。
+  **登場する子ども索引＝`documents.mentioned_children`（JSON配列の表示名。migration 0014・2026-07-12）**＝
+  日誌・クラス月案は複数児が1書類に同居し `child_id`（単一FK・主対象児専用）では引けないため、
+  `_mentioned_children()`（従来は児童マスタの auto-create にしか使っていなかった）の出力を `save_document` が
+  保存のたびに現行版へ同期する。検索キーの列昇格（既存の `child_id`/`dedupe_key` と同型）の自然な拡張で、
+  射影テーブルは作らない。`_doc_view` が `children` として返し、「書類を見る」タブの対象児フィルタ
+  （`web/static/records.js`）が読む。
   スキーマ適用は repo root の Alembic（`migrations/`）。clock は外部注入。
 
 ## スタブを埋めるとき

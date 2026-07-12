@@ -208,6 +208,11 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   「編集する」で `docedit.js` の編集フォームを開き `finalizeEdit`→`saveRecord(author_kind="caregiver")`＝新版を積む（`mountEditor` を取込確認と共用）、
   未承認なら「承認する」で `approveRecord`。**承認済みを編集すると承認は失効し finalized へ戻る**（record_store が demote・偽の緑を出さない）。未接続/空/障害は正直に降格。
   **外から特定書類を編集モードで開く `openDoc(id,{edit,focus})` を公開**（`{init, refresh, openDoc}`）＝クラス月案作成時の「評価未記入の日誌へ飛んで記入」導線（下記）が使う。
+  **対象児フィルタ（`fs-filter`・2026-07-12）**＝日誌・クラス月案はクラス全体（複数児）の記録が1書類に同居し中を
+  開かないと特定児の記述と分からないため、書類メタの `children`（登場する子ども全員の表示名＝`record_store` が
+  保存のたびに現行版へ同期する索引・migration 0014）を部分一致でクライアント側フィルタし、既存の種別→子ども
+  ツリーをそのまま絞り込む（該当種別のみ表示・自動展開・サーバ往復なし＝メタ一覧は既に全件取得済み）。候補
+  （datalist）は `adk.getChildren()`（`/api/children` 全件・卒園児や未登場の子も含む）。
   **アップロード取込**＝4種別フォルダを常時表示（空でも取込先）し、各フォルダ（＋personal 種別の子フォルダ）を開くと先頭に「取り込む」行を出す
   ＝場所から kind〔＋child〕が決まる。押すと右ペインに取込フォーム（対象キー/年齢帯/対象児/ファイル・D&D 可）→`adk.parseUpload`（`/api/parse-upload`）→
   **既存 `docedit.js` の編集フォームで確認・修正**→`finalizeEdit`→`saveRecord(author_kind="imported")`→`loadTree`。取込先が未接続（store≠ok）のときは取り込めない〔正直に降格〕）／`ui.js`・`app.js`（**クラス月案作成時に前月・当該クラスの日誌で評価・反省が未記入のものを `getDiaryMeta`〔`/api/records/diary-meta`〕で検出し「N/D を記入」チップを出す＝`checkPrevMonthEvaluations`。チップは `switchTab("records")`＋`records.openDoc(id,{edit,focus:"evaluation"})` で当該日誌の評価欄へ飛ぶ＝生成はブロックしない。決定B〔評価をクラス月案の集計に反映〕の記入を促す動線**）・`styles.css`・`index.html`。
