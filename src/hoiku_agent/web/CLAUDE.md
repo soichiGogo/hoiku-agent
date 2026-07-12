@@ -55,12 +55,12 @@
   **アーカイブの失敗で本流（state 保存・承認）を壊さない**が、skipped/error は表示行で正直に出す（偽の緑を出さない）。
   子ども選択肢は入力式コンボボックス（`app.js` の `childCombo`＝前方一致の候補＋Tab/Enter/クリックで補完・
   30人規模でもスケール。チップ全列挙は廃止）。候補ソースは `/api/children`（児童マスタ）があればそこから
-  （誕生日があれば年齢帯 0-2/3-5 を満年齢で自動判定＝`ageBandOf`）・無ければ従来の仮名ロスターへ降格。
+  （誕生日があれば年齢帯 0-2/3-5 を満年齢で自動判定＝`ageBandOf`）。未接続・0件では候補を空にし、架空児を実在児のように補わない。
   **未登録名を選ぶと新規児登録フォームをコンボ直下に開く**（`onAddChild`）＝本名（姓/名）＋性別を入力し、
   呼び名（名）＋敬称（**性別導出＝男くん/女ちゃん固定**・`composeDisplayName` は harness の
   `compose_display_name` と一致）＝display_name を合成→`POST /api/children`。敬称の「くん/ちゃん問題」は
   性別セレクタで一意化し入力ゆれ・重複児を構造で防ぐ。**本名（姓名）は氏名欄用で DB のみ・§14**（eval/seed は
-  仮名のまま）。アーカイブ未接続はセッション内だけ選択肢に足す（本名/性別は保存されず氏名欄は呼び名へ降格）。
+  仮名のまま）。保存機能を利用できない場合は児童登録も止め、保存できないセッション内データを作らない。
 - **静的資産は `web/static/`（src 配下）に置く**＝Dockerfile は不変（既存 `COPY src ./src` に含まれる）。
   **フロントは原則**外部 CDN/JS/フォントを読み込まない（ローカル完結）。ただし案内画面の Google Sign-In 公式ボタンだけは
   Google が配布する `https://accounts.google.com/gsi/client` を例外として読む（独自ボタンではブランド/仕様に追随できないため）。
@@ -73,8 +73,8 @@
   今回の期に加え**過去期の列はアーカイブの保存済み保育経過記録から自動で埋める**（routes が `record_store.list_child_record_entries`
   で引き、列割当は `assign_period_columns`＝純関数：同じ子・同じ年度のみ・今回の entry が常に優先・期が読めないものは除外。
   未接続/該当なしは今回の期のみ＝空欄の罫線で手書き追記可）。テキスト版（`write_child_record_draft`）は期の縦型＝コピー用で役割分担。
-- **実名を出さない**（架空の子のみ＝§14）。対象児・サンプル投入は現場の日誌に寄せた**実在しない仮名**
-  （下の名前＋ちゃん/くん・`app.js` の `CHILDREN`）と仮メモのみ（記号名「架空児A」には戻さない）。
+- **サンプルは `harness.demo_seed` が新規 workspace に明示投入するデモデータだけ**とする。書類作成時に参照記録が
+  空でもフロントで架空の日誌・保育経過記録を自動補完せず、必要な記録を先に保存するよう案内して生成を止める。
 
 ## デザイン規約（刷新後・崩さない）
 
@@ -184,15 +184,15 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
 - `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を**カテゴリ別グループ表示の種別メニュー**。
   保育経過記録の対象期間は年度4期・各3か月固定で、`/api/config` が返す `child_record_periods` を
   単一セレクタに描く。開始・終了の二重入力やフロント独自の終了月計算は持たない）
-  （`app.js` の `DOC_CATEGORIES`＋`renderDocMenu`）で1タブに統合＝4カテゴリ〔指導計画/保育記録/保護者連携/園運営〕に分け、対応済み（DOC_TYPES に
-  フロー実体あり）は選択可・**今後対応予定（年間指導計画/週案/日案/連絡帳/おたより/勤務シフト）は灰色の非選択 placeholder〔status="soon"・クリックで一言案内・
-  生成しない＝ロードマップ提示〕**。ready item の label/icon は DOC_TYPES から引く〔二重管理しない〕）で切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
+  （`app.js` の `DOC_CATEGORIES`＋`renderDocMenu`）で1タブに統合。対応済み（DOC_TYPES にフロー実体あり）だけをカテゴリ表示し、
+  **今後対応予定（年間指導計画/週案/日案/連絡帳/おたより/勤務シフト）は畳んだ「今後追加予定の書類」にまとめる**。
+  ready item の label/icon は DOC_TYPES から引く〔二重管理しない〕）で切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
   クラス未登録/DB 未接続は年齢帯チップへ降格・記録日は既定=今日）／月案/経過記録/要録は共通の ADK フロー（`docflow.js`）。
   バックエンドの `DocTypeRouter`＝doc_type 分岐と 1:1〔日誌は載らない〕。**月案セグメントはクラス月案に一本化**）／**育てる**／
   **クラス・園児**（園の名簿管理＝`classes.js`・クラス定義＋園児登録/割当・日誌 roster の素）／**書類を見る**（アーカイブ閲覧）。**「育てる」は2サブタブ（`.subtab`/`.subpanel`＝`setupSubTabs`）＝
   「指針を育てる」（agentic な勘所）｜「表記ルール」（決定的な統一）**。仕組みは分離のまま（policy_store と notation_store・§5）で、
   保育士から見た「書類作成に教え込む場所」を1タブに集約する presentation の統合（②）。**「指針を育てる」には対象書類セレクタ**（`app.js` の
-  `POLICY_TARGETS`＝すべて/共通/日誌/月案/保育経過記録/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（いまの指針カード）を「共通＋その書類」に
+  `POLICY_TARGETS`＝すべて/共通/日誌/月案/保育経過記録/要録・PolicyScope と 1:1）を置き、選ぶとデッキ（書き方のルール）を「共通＋その書類」に
   絞り込み（`policy.setFilter`＝`render_for_doc` の前置注入範囲と一致）、`/api/improve` に `target_scope` を送って提案 scope の既定にする
   （反映先の可視化・改善AIは既定として尊重しつつ内容的に共通と判断したら ask で提案＝勝手に変えない）。ファイル＝`adk.js`（ADK REST/SSE クライアント＋`exportPdf`＝帳票PDF取得＋`listRecords`/`getRecord`＝アーカイブ読取＋`saveFeedback`/`listFeedback`）／`scopes.js`（doc kind→PolicyScope の唯一の対応表＝`POLICY_SCOPE_OF`・docflow の「指針を取り込む」絞りと feedback の target_scope で共用＝二重定義を作らない）／`feedback.js`（**確定/承認画面・アーカイブ詳細に置く 👍👎＋ひとことの軽量フィードバック導線**＝送信で `/api/records/feedback` に文書＋版で紐付け保存・ひとことがあれば「この気づきを指針に活かす」で**インラインに `makePolicy` を再インスタンス化**して改善エージェントを回す〔提案→比較相談→即反映＝育てるタブと同じ描画を再利用・二重実装しない〕・降格safe）／`docflow.js`（日誌・月案・保育経過記録 共通フロー・PREP_META で集計 prep の digest キー/文言を切替・
   `onBusy` で生成中に種別セグメントを固定・確定エリアに「帳票PDFをダウンロード」＋対応 kind のみ「Word様式でダウンロード」ボタン＝承認後も残す・**`.doc-actions` に feedback バーを設置＋アーカイブ保存/編集/承認で document_id を保持**）／`docedit.js`（確定書類を標準様式の見た目で編集するフォーム＝

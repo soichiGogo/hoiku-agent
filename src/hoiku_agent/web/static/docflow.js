@@ -5,7 +5,7 @@
 // 「最終下書き＋不足内容」だけにする（過程は経過として開けば見られる）。
 
 import * as adk from "./adk.js";
-import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner, actorName } from "./ui.js";
+import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner, actorName, makeDocumentCompletion } from "./ui.js";
 import { renderEditableDoc } from "./docedit.js";
 import { makeFeedbackBar } from "./feedback.js";
 import { POLICY_SCOPE_OF } from "./scopes.js";
@@ -25,33 +25,33 @@ const DOC_META = {
 const PREP_META = {
   monthly: {
     digestKey: "prev_month_digest",
-    digestTitle: "前月の積み重ね（自動集計・L2 還流）",
+    digestTitle: "前月の記録",
     phaseText: "前月の積み重ねを集計しています",
   },
   class_monthly: {
     digestKey: "class_diary_digest",
-    digestTitle: "保育経過記録に未反映の期間の日誌（クラス全体・自動集計）",
+    digestTitle: "今回の月案に使った記録",
     phaseText: "クラスの蓄積（経過記録・これまでの月案・日誌）を集計しています",
   },
   child_record: {
     digestKey: "period_digest",
-    digestTitle: "期間の積み重ね（自動集計・L3 還流）",
+    digestTitle: "対象期間の記録",
     phaseText: "期間の積み重ねを集計しています",
   },
   nursery_record: {
     digestKey: "record_digest",
-    digestTitle: "これまでの保育経過記録の積み重ね（自動集計・L4 還流）",
+    digestTitle: "これまでの保育経過記録",
     phaseText: "これまでの保育経過記録を集計しています",
   },
 };
 
-export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status, onBusy }) {
+export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status, onBusy, onNewDocument }) {
   const prepMeta = PREP_META[kind] || null;
-  const iPrep = steps.findIndex((s) => s.includes("集計"));
-  const iPolicy = steps.indexOf("指針を取り込む");
+  const iPrep = steps.findIndex((s) => s.includes("記録の確認"));
+  const iPolicy = steps.indexOf("書き方の確認");
   const iColl = steps.indexOf("情報を集める");
   const iDraft = steps.indexOf("下書き");
-  const iReview = steps.indexOf("レビュー");
+  const iReview = steps.indexOf("内容確認");
 
   let stepper = null;
   let maxStep = -1;
@@ -177,11 +177,11 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     const label = (DOC_META[kind] || {}).title || "この書類";
     const body = cards.length
       ? cards.map((c) => "・" + c.body).join("\n")
-      : "（現在この書類に適用する指針カードはありません。共通ルールに沿って作成します）";
+      : "（この書類に追加されたルールはありません）";
     procBody.appendChild(
       renderDocPanel({
         titleIcon: "clipboard",
-        title: `文書作成指針を取り込みました（${label}向け・${cards.length}件）`,
+        title: `書き方のルールを確認しました（${label}・${cards.length}件）`,
         formatted: body,
       }),
     );
@@ -216,7 +216,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       const session = await adk.createSession(seedState);
       await drive(session.id, adk.textMessage(messageText), null);
     } catch (e) {
-      banner(area, "err", "エラー: " + e.message);
+      console.error("下書きの作成を開始できません", e);
+      banner(area, "err", "下書きの作成を開始できませんでした。時間をおいてもう一度お試しください。");
       procStop();
       status.clearPhase();
     } finally {
@@ -303,8 +304,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     if (streamError) {
       // サーバ側エラーは正直に見せる（偽の緑を出さない・実エラー文で診断可能に）。
       procStop();
-      const msg = streamError.length > 400 ? streamError.slice(0, 400) + " …" : streamError;
-      banner(area, "err", "生成中にサーバでエラーが発生しました: " + msg);
+      console.error("下書きの作成中にエラー", streamError);
+      banner(area, "err", "下書きを作成できませんでした。時間をおいてもう一度お試しください。");
       phase("生成に失敗しました", "waiting");
       return;
     }
@@ -332,7 +333,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
         // 質問カードを復元して再回答できるようにし、原因を正直に表示する（無反応で固まらせない）。
         procStop();
         askCard(sessionId, pending);
-        banner(area, "err", "再開に失敗しました（" + e.message + "）。もう一度回答してください。");
+        console.error("確認回答後の再開に失敗", e);
+        banner(area, "err", "処理を再開できませんでした。もう一度回答してください。");
         phase("回答の再送をお待ちしています", "waiting");
       }
     };
@@ -379,7 +381,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     if (!doc || !entry) {
       // parse 失敗等＝構造化エントリが無い。編集フォームは出せないので正直に失敗表示（偽の緑を出さない）。
       procStop();
-      banner(area, "err", "下書きを生成できませんでした（" + (st.finalize_parse_error || "原因不明") + "）。");
+      console.error("下書きの整形に失敗", st.finalize_parse_error || st);
+      banner(area, "err", "下書きを作成できませんでした。時間をおいてもう一度お試しください。");
       phase("生成に失敗しました", "waiting");
       return;
     }
@@ -404,7 +407,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     editor.panel._body.appendChild(preview);
 
     pdfDownloadRow(editor, docKind); // 園の帳票PDF（現場でそのまま綴じる最終形）は承認後も残す
-    editBar(sessionId, st, editor, v, preview, docKind);
+    const completion = makeDocumentCompletion(onNewDocument);
+    completion.hidden = true;
+    editBar(sessionId, st, editor, v, preview, docKind, completion);
     // アーカイブ状態の表示行（保存/承認のたびに更新。skipped/error も正直に出す＝偽の緑を出さない）。
     const archNote = el("div", "persist-note archive-note");
     editor.panel._archNote = archNote;
@@ -415,6 +420,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     editor.panel._body.appendChild(
       makeFeedbackBar({ docKind, getDocId: () => editor.panel._recordDocId || "" }),
     );
+    // 次の書類への導線は完了後の最下部に置く。承認が成功するまでは表示しない。
+    editor.panel._body.appendChild(completion);
     area.appendChild(editor.panel);
 
     procStop();
@@ -430,14 +437,17 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   // アーカイブ（書類の永続保存）の結果表示。saved/approved＝済・skipped＝未接続降格・error＝失敗。
   function setArchiveNote(node, res, label) {
     if (!node || !res) return;
+    node.hidden = false;
     if (res.status === "saved") {
-      node.innerHTML = `${iconHTML("check")}アーカイブに保存しました（版 ${res.version_seq}${res.doc_status === "approved" ? "・承認済み書類" : ""}）`;
+      node.innerHTML = `${iconHTML("check")}保存しました`;
     } else if (res.status === "approved") {
-      node.innerHTML = `${iconHTML("check")}承認をアーカイブに記録しました（承認証跡）`;
+      node.innerHTML = "";
+      node.hidden = true;
     } else if (res.status === "skipped") {
-      node.innerHTML = `${iconHTML("info")}アーカイブ未接続（DATABASE_URL 未設定）＝この書類は DB に永続保存されません`;
+      node.innerHTML = `${iconHTML("alert")}現在、書類を保存できません。内容を控えてから、時間をおいてもう一度お試しください。`;
     } else {
-      node.innerHTML = `${iconHTML("alert")}${esc(label)}に失敗: ${esc(res.detail || "原因不明")}`;
+      console.error(label, res.detail || res);
+      node.innerHTML = `${iconHTML("alert")}保存できませんでした。時間をおいてもう一度お試しください。`;
     }
   }
 
@@ -540,9 +550,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   }
 
   // 編集バー：保存して再チェック（harness で再 validate/整形）＋ 確定・承認（真の承認ゲート）。
-  function editBar(sessionId, st, editor, vNode, preview, docKind) {
+  function editBar(sessionId, st, editor, vNode, preview, docKind, completion) {
     const bar = el("div", "approve-bar");
-    const mem = adk.config().memory_connected;
     const note = el("span", "persist-note", "");
 
     // 編集後 entry を harness で再検査・再整形し、結果を state へ反映する（型成立ゲートを編集後も効かせる）。
@@ -579,7 +588,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       try {
         const res = await save();
         note.textContent = res.ok
-          ? "保存しました（必須項目OK）。よければ「確定・承認」へ。"
+          ? "保存しました。内容を確認して確定してください。"
           : "保存しました。必須項目に不足があります（確定はできますが、確認をおすすめします）。";
       } catch (e) {
         banner(area, "err", "再チェックに失敗: " + e.message);
@@ -588,7 +597,7 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
       }
     };
 
-    const approveBtn = el("button", "btn btn-approve", `${iconHTML("check")}この内容で確定・承認する`);
+    const approveBtn = el("button", "btn btn-approve", `${iconHTML("check")}この内容で確定する`);
     approveBtn.type = "button";
     approveBtn.onclick = async () => {
       approveBtn.disabled = true;
@@ -603,24 +612,12 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
         );
         if (apRes.status !== "approved") throw new Error(apRes.detail || "承認できませんでした");
         if (apRes.document_id) editor.panel._recordDocId = apRes.document_id; // フィードバック紐付け先
-        setArchiveNote(editor.panel._archNote, apRes, "承認記録");
         lockEditor(editor.panel);
-        clear(bar);
-        bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
-        bar.appendChild(
-          el(
-            "span",
-            "persist-note",
-            apRes.memory_status === "synced" || apRes.memory_status === "already_synced"
-              ? "承認した内容を子どもの Memory Bank へ反映しました。"
-              : apRes.memory_status === "not_applicable"
-                ? "承認しました（子ども別の事実欄がないため Memory Bank への反映対象外）。"
-                : mem
-                  ? "承認しました。"
-                  : "承認しました（Memory Bank 未接続のため反映は降格）。",
-          ),
-        );
-        phase("確定・承認しました", "done");
+        bar.remove();
+        // 内部の保存・Memory Bank・監査ログは従来どおり実行するが、完了画面では説明しない。
+        editor.panel._archNote.hidden = true;
+        completion.hidden = false;
+        phase("確定しました", "done");
       } catch (e) {
         approveBtn.disabled = false;
         saveBtn.disabled = false;

@@ -6,7 +6,7 @@
 import * as adk from "./adk.js";
 import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, makeStepper, banner } from "./ui.js";
 
-const STEPS = ["修正メモ", "競合を精査", "整合", "反映"];
+const STEPS = ["気づきを確認", "似たルールを確認", "内容を整える", "反映"];
 // scope（共通/保育日誌/月案）→ 対象書類タグ（左ライン色分け・ラベル）。提案カードの描画に使う
 // （反映済みカードは backend の card_view が doc_type/doc_label を持つ）。
 const SCOPE_DT = {
@@ -42,16 +42,19 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     const node = el("div", `pcard dt-${dt}` + (isNew ? " is-new" : ""));
     const meta =
       `<span class="pcard-tag">${esc(label)}</span>` +
-      (card.source ? `<span class="pcard-src">${iconHTML("caregiver")}${esc(card.source)}</span>` : "") +
-      (card.date ? `<span class="pcard-date">${esc(card.date)}</span>` : "");
+      (card.source ? `<span class="pcard-src">${iconHTML("caregiver")}${esc(card.source)}</span>` : "");
     node.innerHTML = `<div class="pcard-body">${esc(card.body)}</div><div class="pcard-meta">${meta}</div>`;
     return node;
   }
   function historyEl(h) {
     const item = el("div", "phist-item");
+    const by = h.by || "保育士";
+    let summary = h.summary || "";
+    summary = summary.replace(/^初版（雛形）：?\s*/, "");
+    const what = summary.startsWith(by) ? summary : `${by} ${summary}`.trim();
     item.innerHTML =
       `<span class="phist-when">${esc(h.at || "")}</span>` +
-      `<span class="phist-what"><span class="phist-by">${esc(h.by || "保育士")}</span> ${esc(h.summary || "")}</span>`;
+      `<span class="phist-what">${esc(what)}</span>`;
     return item;
   }
   function renderDeck({ cards, history: hist, store, version }) {
@@ -75,8 +78,8 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
           "p",
           "policy-empty",
           filterDocTypes
-            ? "この書類に効く指針カードはまだありません。下のメモから追加できます。"
-            : "指針カードはまだありません。下のメモから育てられます。",
+            ? "この書類のルールはまだありません。下のメモから追加できます。"
+            : "書き方のルールはまだありません。下のメモから追加できます。",
         ),
       );
     } else {
@@ -84,10 +87,9 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     }
     allHistory.forEach((h) => history.appendChild(historyEl(h)));
     if (curStore && curStore !== "persistent") {
-      const msg =
-        curStore === "ephemeral"
-          ? "この環境では反映はこのセッション内の参照用です（再起動で消えます）。永続化はストア接続後に有効になります。"
-          : "指針ストアは未接続です（閲覧降格）。";
+      const msg = curStore === "ephemeral"
+        ? "この画面での変更は一時的です。"
+        : "現在、書き方のルールを表示・保存できません。時間をおいてもう一度お試しください。";
       banner(grid, "info", msg);
     }
   }
@@ -255,7 +257,7 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
     if (result.card) grid.prepend(cardEl(result.card, { isNew: true }));
     if (result.history_entry) history.prepend(historyEl(result.history_entry));
     if (result.store && result.store !== "persistent") {
-      const note = result.store === "ephemeral" ? "この環境では揮発します（再起動で消えます）" : "ストア未接続";
+      const note = result.store === "ephemeral" ? "この画面での変更は一時的です" : "現在、変更を保存できません";
       flow.appendChild(el("div", "store-note", `${iconHTML("info")}${esc(note)}`));
     }
     toStep(3, "done");
@@ -263,8 +265,9 @@ export function makePolicy({ grid, history, flow, button, stepper: stepperEl, st
 
   function onError(detail) {
     procStop();
-    banner(flow, "err", "エラー: " + detail);
-    phase("降格しました", "waiting");
+    console.error("書き方のルール更新に失敗", detail);
+    banner(flow, "err", "処理を完了できませんでした。時間をおいてもう一度お試しください。");
+    phase("処理を中断しました", "waiting");
     button.disabled = false;
   }
 

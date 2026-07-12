@@ -21,10 +21,10 @@
       </div>
       <div id="statusline" class="statusline" aria-live="polite"></div>
       <div class="header-actions">
-        <label class="actor-field" title="担当者名（保存・承認の記録に残ります）">
+        <label class="actor-field" title="保存時の担当者名として記録されます">
           <span data-ic="caregiver"></span>
           <input id="actor-name" type="text" placeholder="担当者名" maxlength="30"
-                 aria-label="担当者名（保存・承認の記録に残ります）" autocomplete="off">
+                 aria-label="保存時の担当者名" autocomplete="off">
         </label>
         <button id="reset-data" class="header-logout hidden" type="button">データを初期化して始める</button>
         <button id="logout" class="header-logout hidden" type="button">ログアウト</button>
@@ -49,7 +49,7 @@
         <div id="doc-kind" class="doc-menu" role="group" aria-labelledby="doc-kind-label"></div>
         <p id="doc-desc" class="doc-desc"></p>
 
-        <label class="field-label" id="doc-child-label">対象児（仮名）</label>
+        <label class="field-label" id="doc-child-label">対象児</label>
         <div id="doc-children" class="combo"></div>
         <!-- DB 接続済みで園児マスタが空のときだけ出す正直な案内（架空児の候補は出さない） -->
         <div id="doc-child-empty" class="seed-note" hidden>
@@ -87,8 +87,8 @@
           </div>
           <div class="seed-note">
             <span data-ic="calendar"></span>
-            <span>クラス児童の保育経過記録・これまでのクラス月案・経過記録に未反映の期間の日誌を seed します（未接続は仮名サンプル）</span>
-            <span id="monthly-seed-count" class="badge">3 件</span>
+            <span>クラスの保育経過記録・これまでの月案・未反映の日誌をもとに作成します</span>
+            <span id="monthly-seed-count" class="badge">作成時に確認</span>
           </div>
           <!-- 前月日誌で評価・反省が未記入のもの＝記入導線（作成時に検出して表示。未接続/全記入済みは非表示） -->
           <div id="monthly-eval-notice" class="eval-notice hidden"></div>
@@ -104,8 +104,8 @@
           </div>
           <div class="seed-note">
             <span data-ic="chart"></span>
-            <span>年度4期（各3か月）・期間中の日誌＋前回までの保育経過記録（未接続は仮名サンプルを seed します）</span>
-            <span id="record-seed-count" class="badge">6 件</span>
+            <span>期間中の日誌と、前回までの保育経過記録をもとに作成します</span>
+            <span id="record-seed-count" class="badge">作成時に確認</span>
           </div>
         </div>
 
@@ -120,12 +120,12 @@
           </div>
           <div class="seed-note">
             <span data-ic="chart"></span>
-            <span>その子のこれまでの保育経過記録すべて（未接続は仮名サンプルを seed します）</span>
-            <span id="youroku-seed-count" class="badge">3 件</span>
+            <span>その子のこれまでの保育経過記録をもとに作成します</span>
+            <span id="youroku-seed-count" class="badge">対象児を選択</span>
           </div>
         </div>
 
-        <button id="doc-run" class="btn btn-primary btn-block"><span data-ic="spark"></span><span id="doc-run-label">下書きを作成する</span></button>
+        <button id="doc-run" class="btn btn-primary btn-block"><span data-ic="spark"></span><span id="doc-run-label">作成する</span></button>
       </div>
 
       <!-- フロー結果は種別ごとに独立コンテナ（切替でも結果を保持＝現行タブと同等） -->
@@ -165,7 +165,7 @@
 
         <!-- 上：閲覧（現在の指針） -->
         <div class="card">
-          <div class="card-title"><span data-ic="clipboard"></span>いまの指針カード<span id="policy-scope-badge" class="badge hidden"></span></div>
+          <div class="card-title"><span data-ic="clipboard"></span>書き方のルール<span id="policy-scope-badge" class="badge hidden"></span></div>
           <div id="policy-grid" class="policy-grid"></div>
         </div>
 
@@ -184,10 +184,10 @@
         <div id="policy-flow" class="flow-area"></div>
 
         <!-- 下：変更履歴（参照ログ） -->
-        <div class="card">
-          <div class="card-title"><span data-ic="clock"></span>変更履歴（だれの気づきで・何が増えたか）</div>
+        <details class="card">
+          <summary class="card-title"><span data-ic="clock"></span>これまでの変更を見る</summary>
           <div id="policy-history" class="phist"></div>
-        </div>
+        </details>
       </div>
 
       <!-- ── サブ：表記ルール（ひらがな表記DX） ── -->
@@ -248,7 +248,7 @@
     <section id="tab-records" class="panel" role="tabpanel" aria-labelledby="tabbtn-records" tabindex="0">
       <div class="card fs">
         <div class="fs-head">
-          <div class="card-title"><span data-ic="book"></span>アーカイブ<span id="records-store" class="badge"></span></div>
+          <div class="card-title"><span data-ic="book"></span>保存した書類<span id="records-store" class="badge"></span></div>
         </div>
         <div class="fs-filter">
           <label class="fs-filter-field">

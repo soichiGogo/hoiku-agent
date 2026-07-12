@@ -152,6 +152,55 @@ def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:
     assert "textarea.de-input{overflow-y:hidden;resize:none}" in styles
 
 
+def test_document_completion_is_caregiver_facing_and_can_start_over() -> None:
+    """確定後は内部処理を見せず、次の書類作成へ戻る共通導線を出す。"""
+    c = _client()
+    docflow = c.get("/app/docflow.js").text
+    diaryform = c.get("/app/diaryform.js").text
+    ui = c.get("/app/ui.js").text
+    app = c.get("/app/app.js").text
+
+    assert "確定しました" in ui
+    assert "新しく書類を作る" in ui
+    assert "makeDocumentCompletion(onNewDocument)" in docflow
+    assert "makeDocumentCompletion(onNewDocument)" in diaryform
+    assert "function resetDocumentCreation()" in app
+    assert "保育士が確定・承認しました" not in docflow + diaryform
+    assert "承認した内容を子どもの Memory Bank へ反映しました" not in docflow + diaryform
+    assert "承認をアーカイブに記録しました（承認証跡）" not in docflow + diaryform
+
+
+def test_caregiver_ui_hides_internal_terms_and_never_fills_missing_records_with_fake_data() -> None:
+    """保育士画面は業務語に絞り、参照記録が空でも架空データを生成へ渡さない。"""
+    c = _client()
+    index = c.get("/app/").text
+    app = c.get("/app/app.js").text
+    docflow = c.get("/app/docflow.js").text
+    diaryform = c.get("/app/diaryform.js").text
+    records = c.get("/app/records.js").text
+
+    assert "対象児（仮名）" not in index
+    assert "seed します" not in index
+    assert "未接続は仮名サンプル" not in index
+    assert "保存した書類" in index
+    assert "書き方のルール" in index
+    assert "DATABASE_URL" not in docflow + diaryform + records
+    assert "アーカイブに保存しました" not in docflow + diaryform
+    assert "この内容で確定・承認する" not in docflow + diaryform
+    assert "この内容で確定する" in docflow + diaryform
+    assert "クラス月案を作成する" in app
+    assert "保育経過記録を作成する" in app
+    assert "保育要録を作成する" in app
+    assert "の下書きを作成する" not in app
+
+    assert "seed3.class_diary_entries = sampleClassPrevEntries" not in app
+    assert "samplePeriodEntries(child)" not in app
+    assert "sampleRecordEntries(child)" not in app
+    assert "const recordChildNames = [];" in app
+    assert "月案の作成に使える記録がありません" in app
+    assert "この期間の日誌がありません" in app
+
+
 def test_root_shows_welcome() -> None:
     # 配布リンクの素の URLは、強制遷移せず案内画面を表示する。
     r = _client().get("/")

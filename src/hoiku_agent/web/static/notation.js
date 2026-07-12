@@ -6,9 +6,9 @@ import { el, esc, iconHTML } from "./ui.js";
 
 const KIND_OPTIONS = ["ひらがな化", "表記統一", "その他"];
 const STORE_LABEL = {
-  persistent: "保存先: 永続",
-  ephemeral: "保存先: 一時（再起動で消えます）",
-  unavailable: "保存先: 未接続",
+  persistent: "",
+  ephemeral: "変更は一時的です",
+  unavailable: "現在利用できません",
 };
 
 export function makeNotation(ui) {
@@ -25,6 +25,7 @@ export function makeNotation(ui) {
   function setStore(s) {
     ui.store.textContent = STORE_LABEL[s] || "";
     ui.store.className = "badge " + (s === "persistent" ? "ok" : s === "ephemeral" ? "warn" : "muted");
+    ui.store.hidden = s === "persistent";
   }
 
   // 書込 API の結果を反映（失敗は正直に出す＝偽の緑を出さない）。成功なら true。
