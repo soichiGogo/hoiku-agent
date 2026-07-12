@@ -10,19 +10,34 @@
 <body>
   <main class="welcome-shell">
     <section class="welcome-card" aria-labelledby="welcome-title">
-      <div class="brand-mark" aria-hidden="true">H</div>
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 21v-9"/>
+          <path d="M12 12C12 8.7 9.3 6 6 6c0 3.3 2.7 6 6 6z"/>
+          <path d="M12 12c0-2.8 2.2-5 5-5 0 2.8-2.2 5-5 5z"/>
+        </svg>
+      </div>
       <p class="eyebrow">HOIKUAGENT</p>
-      <h1 id="welcome-title">保育の記録を、<br>もっとていねいに。</h1>
-      <p class="lead">日々の記録を土台に、書類づくりと振り返りを支える保育士のためのワークスペースです。</p>
+      <h1 id="welcome-title">日誌は自分のことばで。<br>AIは、記録を次の書類へつなぐ。</h1>
+      <p class="lead">保育士の勘所を吸収しながら、日誌からクラス月案・保育経過記録・保育要録までをつなぐ書類づくりの支援ツールです。確認・承認するのは、いつも保育士です。</p>
       {{LOGIN_CONTROL}}
       <p class="privacy">ログインすると、Google アカウントのメールアドレスを利用者の識別と記録の証跡に使用します。<a href="/privacy">プライバシーポリシー</a>・<a href="/terms">利用規約</a></p>
     </section>
     <aside class="welcome-note" aria-label="できること">
-      <p>記録をつなぎ、次の保育へ。</p>
-      <ul>
-        <li>日々の保育記録を一か所に</li>
-        <li>書類を保育士が確認・承認</li>
-        <li>園の言葉と指針を少しずつ育てる</li>
+      <p>4つの書類を、ひとつの記録の流れに。</p>
+      <ul class="note-list">
+        <li>
+          <span class="note-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5l4-1L19 7.5a2 2 0 0 0-2.8-2.8L5 15.7z"/><path d="M13.5 6l4 4"/></svg></span>
+          <span>日誌は自分のことばで手入力</span>
+        </li>
+        <li>
+          <span class="note-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg></span>
+          <span>次の書類は過去の記録から下書き</span>
+        </li>
+        <li>
+          <span class="note-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4.5"/></svg></span>
+          <span>確認・承認はいつも保育士</span>
+        </li>
       </ul>
     </aside>
   </main>
