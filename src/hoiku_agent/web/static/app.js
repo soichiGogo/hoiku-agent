@@ -1092,18 +1092,13 @@ async function main() {
   }
   await loadDiaryClasses();
 
-  // クラス月案の年齢帯チップ（クラス＝0-2/3-5）。件数は作成時に保存済み記録から確認する。
-  const classAge = chipGroup($("class-ageband"), AGE_BANDS, (label) => onClassAgeChange(label), null);
-  function onClassAgeChange(label) {
-    $("monthly-seed-count").textContent = "作成時に確認";
-  }
+  // クラス月案の年齢帯チップ（クラス＝0-2/3-5）。
+  const classAge = chipGroup($("class-ageband"), AGE_BANDS, null, null);
 
-  // 対象児が変わったら：保育経過記録/要録の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
+  // 対象児が変わったら：要録の対象年度セレクトを更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
     // クラス月案は文書の年齢帯で集計するため、対象児に依存しない。
   let childChangeSeq = 0;
   async function onChildChange(name) {
-    $("record-seed-count").textContent = "作成時に確認";
-    $("youroku-seed-count").textContent = name ? "確認中…" : "対象児を選択";
     const yearSelect = $("youroku-year");
     const seq = ++childChangeSeq;
     yearSelect.disabled = true;
@@ -1117,10 +1112,8 @@ async function main() {
     const years = fiscalYearsOf(entries);
     if (!years.length) {
       yearSelect.innerHTML = '<option value="">保育経過記録のある年度がありません</option>';
-      $("youroku-seed-count").textContent = "記録なし";
       return;
     }
-    $("youroku-seed-count").textContent = `${entries.length}件の記録`;
     years.forEach((year) => yearSelect.appendChild(new Option(`${year}年度`, year)));
     yearSelect.value = years[0];
     yearSelect.disabled = false;
@@ -1221,15 +1214,8 @@ async function main() {
     seed3.class_roster ||= [];
     if (!seed3.class_diary_entries.length && !seed3.class_record_entries.length && !seed3.past_class_plans.length) {
       showMissingRecords($("monthly-flow"), "月案の作成に使える記録がありません。先にクラスの日誌または保育経過記録を保存してください。");
-      $("monthly-seed-count").textContent = "記録なし";
       return;
     }
-    const rosterNote = seed3.class_roster.length
-      ? `在籍児 ${seed3.class_roster.length}名（名簿）`
-      : "名簿未登録（記録の登場児で作成）";
-    $("monthly-seed-count").textContent =
-      `経過記録 ${seed3.class_record_entries.length}・月案 ${seed3.past_class_plans.length}・` +
-      `日誌 ${seed3.class_diary_entries.length}件・${rosterNote}`;
     // 前月日誌で評価・反省が未記入のものを検出して記入導線を出す（生成はブロックしない＝並行）。
     checkPrevMonthEvaluations(pm, ageBand);
     const seed = { doc_type: "クラス月案", ...seed3 };
@@ -1302,12 +1288,9 @@ async function main() {
     const entries = await savedDiaryEntries(start, end);
     if (!entries.length) {
       showMissingRecords($("record-flow"), "この期間の日誌がありません。先に対象期間の日誌を保存してください。");
-      $("record-seed-count").textContent = "日誌なし";
       return;
     }
     const prevRecords = await adk.getChildRecordEntries(child, period);
-    $("record-seed-count").textContent =
-      `日誌 ${entries.length}件・前回までの経過記録 ${prevRecords.length}件`;
     const seed = { doc_type: "保育経過記録", period_entries: entries, prev_record_entries: prevRecords };
     recordFlow.run(
       seed,
@@ -1333,10 +1316,8 @@ async function main() {
     const entries = await adk.getChildRecordEntries(child);
     if (!entries.length) {
       showMissingRecords($("youroku-flow"), "保育要録の作成に使える保育経過記録がありません。先に保育経過記録を確定してください。");
-      $("youroku-seed-count").textContent = "記録なし";
       return;
     }
-    $("youroku-seed-count").textContent = `${entries.length}件の記録`;
     const seed = { doc_type: "保育要録", record_entries: entries };
     yourokuFlow.run(
       seed,
@@ -1409,8 +1390,7 @@ async function main() {
   $("doc-run").onclick = () => RUN[docKind()]();
   docKind.select("diary"); // 既定チップを点灯
   switchDocType("diary"); // 初期表示（既定＝保育日誌）
-  onChildChange(docChild()); // 初期の seed 件数・年齢帯を対象児に合わせる
-  onClassAgeChange(classAge()); // クラス月案の参照記録は作成時に確認する
+  onChildChange(docChild()); // 初期の対象年度・年齢帯を対象児に合わせる
 
   // ── 指針を育てる ──
   sampleChips($("policy-samples"), POLICY_SAMPLES, (s) => ($("policy-memo").value = s));
