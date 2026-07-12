@@ -156,7 +156,7 @@ def test_root_shows_welcome() -> None:
     # 配布リンクの素の URLは、強制遷移せず案内画面を表示する。
     r = _client().get("/")
     assert r.status_code == 200
-    assert "保育の記録を" in r.text
+    assert "日誌は自分のことばで" in r.text
     assert "/public/welcome.css" in r.text
 
 
