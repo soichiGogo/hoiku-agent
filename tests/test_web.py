@@ -112,7 +112,7 @@ def test_static_ui_served() -> None:
     # SPA 本体と各 ES モジュールが配信される。
     page = c.get("/app/")
     assert page.status_code == 200
-    assert "データを初期化して始める" in page.text
+    assert "データを初期化する" in page.text
     assert 'id="record-period"' in page.text
     assert 'id="record-start"' not in page.text
     assert 'id="record-end"' not in page.text
@@ -131,11 +131,10 @@ def test_static_ui_served() -> None:
     ):
         assert c.get(f"/app/{asset}").status_code == 200, asset
 
-    # 初期化成功後は workspace 単位の完了印を保存し、再読込後も一回限りのボタンを出さない。
+    # 一回限りの開始導線ではなく、アーカイブ接続済みなら常にリセットボタンを出す（完了印による非表示はしない）。
     app_js = c.get("/app/app.js").text
-    assert 'const DATA_INITIALIZED_KEY_PREFIX = "hoiku_data_initialized:"' in app_js
-    assert "rememberDataInitialized(cfg);" in app_js
-    assert 'resetData.classList.add("hidden");' in app_js
+    assert "hasInitializedData" not in app_js
+    assert "if (resetData && cfg.records_connected) {" in app_js
 
 
 def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:
