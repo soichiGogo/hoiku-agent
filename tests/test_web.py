@@ -101,7 +101,9 @@ def test_doc_template_shape() -> None:
 def test_static_ui_served() -> None:
     c = _client()
     # SPA 本体と各 ES モジュールが配信される。
-    assert c.get("/app/").status_code == 200
+    page = c.get("/app/")
+    assert page.status_code == 200
+    assert "データを初期化して始める" in page.text
     for asset in (
         "app.js",
         "adk.js",
@@ -116,6 +118,12 @@ def test_static_ui_served() -> None:
         "styles.css",
     ):
         assert c.get(f"/app/{asset}").status_code == 200, asset
+
+    # 初期化成功後は workspace 単位の完了印を保存し、再読込後も一回限りのボタンを出さない。
+    app_js = c.get("/app/app.js").text
+    assert 'const DATA_INITIALIZED_KEY_PREFIX = "hoiku_data_initialized:"' in app_js
+    assert "rememberDataInitialized(cfg);" in app_js
+    assert "resetData.classList.add(\"hidden\");" in app_js
 
 
 def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:

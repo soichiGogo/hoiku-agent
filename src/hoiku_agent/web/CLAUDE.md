@@ -140,9 +140,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   共用し、request body・LLM出力から workspace を受けない。**初回ログイン（touch_user が新規 workspace を作った
   呼び出し＝workspace_created）では `harness.demo_seed.seed_workspace` でデフォルト seed（クラス・園児・確定書類
   チェーン）をその場で投入**＝初見でも全タブを体感できる。seed 失敗はログイン本流を壊さない（warning＋続行）。
-  ヘッダの**「データを初期化」ボタン**（`app.js` の `#reset-data`・サインイン＋アーカイブ接続時のみ表示）は
+  ヘッダの**「データを初期化して始める」ボタン**（`app.js` の `#reset-data`・サインイン＋アーカイブ接続時のみ表示）は
   `POST /api/account/reset`＝`demo_seed.reset_workspace`（書類・園児・クラス・フィードバック・指針/表記カスタムを
-  即時消去→seed 再投入・User/Workspace/利用枠は残しログイン継続）。**アカウント削除の受付
+  即時消去→seed 再投入・User/Workspace/利用枠は残しログイン継続）。成功時は workspace 単位の完了印を
+  `localStorage` に保存し、同じブラウザでは再読込後もボタンを再表示しない（一回限りの開始導線）。**アカウント削除の受付
   （`POST /api/account/deletion-request`＝30日遅延）は API として温存・UI からは外した**（privacy.html は
   問い合わせベースの記述）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。

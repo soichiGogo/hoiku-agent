@@ -847,6 +847,28 @@ function sampleChips(container, samples, onPick) {
 /* ============================================================
    起動
    ============================================================ */
+const DATA_INITIALIZED_KEY_PREFIX = "hoiku_data_initialized:";
+
+function dataInitializedKey(cfg) {
+  return DATA_INITIALIZED_KEY_PREFIX + cfg.default_user_id;
+}
+
+function hasInitializedData(cfg) {
+  try {
+    return localStorage.getItem(dataInitializedKey(cfg)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberDataInitialized(cfg) {
+  try {
+    localStorage.setItem(dataInitializedKey(cfg), "1");
+  } catch {
+    // localStorage が使えない環境でも、現在の画面ではボタンを消して初期化結果を見せる。
+  }
+}
+
 // ヘッダの担当者欄。Google サインイン時は「自分の表示名（users.display_name）」を DB に登録/編集する欄になり
 // （証跡の actor はサーバが検証済み email＋この表示名で残す＝§13）、未サインイン時は従来の自己申告
 // （localStorage・認証導入までのつなぎ）。config を見てモードを切り替える（config 読込後に呼ぶ）。
@@ -889,7 +911,7 @@ function setupActor(cfg) {
     // データの初期化＝workspace の書類・園児・クラス・フィードバック・指針/表記のカスタムを即時に消して
     // デフォルトの初期サンプルへ戻す（ログインは継続・reload で全タブが初期状態）。DB 未接続時は
     // サーバが skipped を返すので正直に案内する（アカウント削除の受付 API とは別物）。
-    if (resetData && cfg.records_connected) {
+    if (resetData && cfg.records_connected && !hasInitializedData(cfg)) {
       resetData.classList.remove("hidden");
       resetData.onclick = async () => {
         const ok = window.confirm(
@@ -904,6 +926,8 @@ function setupActor(cfg) {
             window.alert(j.reason || j.detail || "データを初期化できませんでした。");
             return;
           }
+          rememberDataInitialized(cfg);
+          resetData.classList.add("hidden");
           window.alert("初期サンプルデータに戻しました。");
           window.location.reload();
         } finally {
