@@ -4,7 +4,7 @@
 // ＝AI を一切通さない（§5/§11）。表記の統一（子供→子ども）は finalize が決定的に当てる。ADK セッションは使わない
 // （生成パイプラインを迂回するため）＝承認はアーカイブの承認証跡で残す（Memory Bank 書き戻しは手入力では発火しない）。
 import * as adk from "./adk.js";
-import { el, esc, iconHTML, banner, actorName } from "./ui.js";
+import { el, esc, iconHTML, banner, actorName, makeDocumentCompletion } from "./ui.js";
 import { renderEditableDoc } from "./docedit.js";
 
 const KIND = "diary";
@@ -51,7 +51,7 @@ function blankEntry({ className, ageBand, date, roster }) {
   };
 }
 
-export function makeDiaryForm({ area, status }) {
+export function makeDiaryForm({ area, status, onNewDocument }) {
   // 承認済み＝公式記録にロック済みか。校正AIの「提案を反映」は render() でフォームを作り直すため、
   // 承認後に押されると全欄が編集可能へ戻ってしまう。承認時にこのフラグを立て、再マウント時に再ロックする。
   let approved = false;
@@ -72,10 +72,12 @@ export function makeDiaryForm({ area, status }) {
   // アーカイブ（保存/承認）の結果を正直に表示（saved/approved＝済・skipped＝未接続・error＝失敗）。
   function setArchiveNote(node, res, label) {
     if (!node || !res) return;
+    node.hidden = false;
     if (res.status === "saved") {
       node.innerHTML = `${iconHTML("check")}アーカイブに保存しました（版 ${res.version_seq}${res.doc_status === "approved" ? "・承認済み書類" : ""}）`;
     } else if (res.status === "approved") {
-      node.innerHTML = `${iconHTML("check")}承認をアーカイブに記録しました（承認証跡）`;
+      node.innerHTML = "";
+      node.hidden = true;
     } else if (res.status === "skipped") {
       node.innerHTML = `${iconHTML("info")}アーカイブ未接続（DATABASE_URL 未設定）＝この日誌は DB に永続保存されません`;
     } else {
@@ -314,15 +316,13 @@ export function makeDiaryForm({ area, status }) {
         if (approval.status !== "approved") {
           throw new Error(approval.detail || "承認できませんでした");
         }
-        setArchiveNote(
-          archNote,
-          approval,
-          "承認記録",
-        );
         approved = true;
         lockForm(); // 入力欄＋校正AIボタン＋提案一覧を無効化（校正経由の巻き戻しを防ぐ）
         bar.innerHTML = "";
-        bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
+        // 内部の保存・Memory Bank・監査ログは従来どおり実行するが、完了画面では説明しない。
+        archNote.hidden = true;
+        bar.appendChild(makeDocumentCompletion(onNewDocument));
+        status.setPhase("確定しました", "done");
       } catch (e) {
         approveBtn.disabled = false;
         saveBtn.disabled = false;

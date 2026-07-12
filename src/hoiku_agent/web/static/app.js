@@ -1152,7 +1152,7 @@ async function main() {
   // 日誌は手入力フォーム（AI 生成しない＝ヒアリング 2026-07：日誌は自分の言葉で打つ一次情報の蓄積口）。
   // クラスの在籍児を空欄で並べ、検査・整形・保存・帳票は既存の決定的経路（finalize-edit / records /
   // 帳票PDF・Word）を再利用する＝AI を一切通さない。他の書類（月案/経過記録/要録）は従来の作成フロー。
-  const diaryForm = makeDiaryForm({ area: $("diary-flow"), status });
+  const diaryForm = makeDiaryForm({ area: $("diary-flow"), status, onNewDocument: resetDocumentCreation });
   // 月案セグメント＝クラス月案（園の実様式・§18）。flow kind は "class_monthly"（DocTypeRouter の
   // doc_type "クラス月案" に対応）。前月集計（L2）・確定・編集フォーム・PDF/Word は共通フローで動く。
   const monthlyFlow = makeDocFlow({
@@ -1164,6 +1164,7 @@ async function main() {
     kind: "class_monthly",
     status,
     onBusy: setSegBusy,
+    onNewDocument: resetDocumentCreation,
   });
   const recordFlow = makeDocFlow({
     area: $("record-flow"),
@@ -1174,6 +1175,7 @@ async function main() {
     kind: "child_record",
     status,
     onBusy: setSegBusy,
+    onNewDocument: resetDocumentCreation,
   });
   const yourokuFlow = makeDocFlow({
     area: $("youroku-flow"),
@@ -1184,6 +1186,7 @@ async function main() {
     kind: "nursery_record",
     status,
     onBusy: setSegBusy,
+    onNewDocument: resetDocumentCreation,
   });
 
   // 種別ごとの実行（seed 組み立て＋ flow.run／日誌は手入力フォームを開く）。
@@ -1349,6 +1352,23 @@ async function main() {
     onPick: (key) => switchDocType(key),
     onSoon: (it) => showSoonNotice(it),
   });
+  // 完了画面の「新しく書類を作る」から、前回結果を残さない初期状態へ戻す。
+  // 書類種別は初期値の日誌に戻し、入力カードが見える位置までスクロールする。
+  function resetDocumentCreation() {
+    for (const d of DOC_TYPES) {
+      $(`${d.key}-flow`).innerHTML = "";
+      const stepper = $(`${d.key}-stepper`);
+      stepper.innerHTML = "";
+      stepper.classList.add("hidden");
+    }
+    docKind.select("diary");
+    switchDocType("diary");
+    status.setSubject(null);
+    status.clearPhase();
+    $("doc-run").disabled = false;
+    setSegBusy(false);
+    $("doc-kind").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   function switchDocType(key) {
     for (const d of DOC_TYPES) {
       const on = d.key === key;

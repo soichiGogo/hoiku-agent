@@ -460,6 +460,11 @@ a{color:var(--primary-d)}
 .approve-done{display:inline-flex;align-items:center;gap:6px;color:var(--state-done);font-weight:800}
 .approve-done .ic{width:18px;height:18px}
 .persist-note{font-size:var(--fs-caption);color:var(--muted);flex:1 1 200px;min-width:0}
+.document-completion{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:16px;
+  border-top:1px solid var(--line);background:var(--primary-soft)}
+.document-completion .approve-done{justify-content:center;font-size:var(--fs-md)}
+.document-completion .btn{align-self:stretch;justify-content:center}
+.document-completion[hidden]{display:none}
 
 /* ============================================================
    編集フォーム（確定書類を保育士が標準様式の見た目で自由に編集）
@@ -518,6 +523,7 @@ select.de-input{appearance:auto;min-height:38px}
 .de-body > .de-preview{margin:0 16px 12px}
 .doc-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .de-body > .doc-actions{margin:0 16px 12px}
+.de-body > .document-completion{margin-top:4px}
 .de-pre{white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:var(--fs-sm);line-height:1.85;margin:0;color:var(--ink)}
 
 /* クラス月案の区分×領域グリッド（園の実様式ルック＝罫線の表にセル内テキストエリア）。

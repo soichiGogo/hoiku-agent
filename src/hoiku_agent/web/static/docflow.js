@@ -5,7 +5,7 @@
 // 「最終下書き＋不足内容」だけにする（過程は経過として開けば見られる）。
 
 import * as adk from "./adk.js";
-import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner, actorName } from "./ui.js";
+import { el, esc, clear, iconHTML, toolMeta, whoOf, toolBadgeEl, markToolDone, renderDocPanel, makeStepper, banner, actorName, makeDocumentCompletion } from "./ui.js";
 import { renderEditableDoc } from "./docedit.js";
 import { makeFeedbackBar } from "./feedback.js";
 import { POLICY_SCOPE_OF } from "./scopes.js";
@@ -45,7 +45,7 @@ const PREP_META = {
   },
 };
 
-export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status, onBusy }) {
+export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDigest, kind, status, onBusy, onNewDocument }) {
   const prepMeta = PREP_META[kind] || null;
   const iPrep = steps.findIndex((s) => s.includes("集計"));
   const iPolicy = steps.indexOf("指針を取り込む");
@@ -404,7 +404,9 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     editor.panel._body.appendChild(preview);
 
     pdfDownloadRow(editor, docKind); // 園の帳票PDF（現場でそのまま綴じる最終形）は承認後も残す
-    editBar(sessionId, st, editor, v, preview, docKind);
+    const completion = makeDocumentCompletion(onNewDocument);
+    completion.hidden = true;
+    editBar(sessionId, st, editor, v, preview, docKind, completion);
     // アーカイブ状態の表示行（保存/承認のたびに更新。skipped/error も正直に出す＝偽の緑を出さない）。
     const archNote = el("div", "persist-note archive-note");
     editor.panel._archNote = archNote;
@@ -415,6 +417,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     editor.panel._body.appendChild(
       makeFeedbackBar({ docKind, getDocId: () => editor.panel._recordDocId || "" }),
     );
+    // 次の書類への導線は完了後の最下部に置く。承認が成功するまでは表示しない。
+    editor.panel._body.appendChild(completion);
     area.appendChild(editor.panel);
 
     procStop();
@@ -430,10 +434,12 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   // アーカイブ（書類の永続保存）の結果表示。saved/approved＝済・skipped＝未接続降格・error＝失敗。
   function setArchiveNote(node, res, label) {
     if (!node || !res) return;
+    node.hidden = false;
     if (res.status === "saved") {
       node.innerHTML = `${iconHTML("check")}アーカイブに保存しました（版 ${res.version_seq}${res.doc_status === "approved" ? "・承認済み書類" : ""}）`;
     } else if (res.status === "approved") {
-      node.innerHTML = `${iconHTML("check")}承認をアーカイブに記録しました（承認証跡）`;
+      node.innerHTML = "";
+      node.hidden = true;
     } else if (res.status === "skipped") {
       node.innerHTML = `${iconHTML("info")}アーカイブ未接続（DATABASE_URL 未設定）＝この書類は DB に永続保存されません`;
     } else {
@@ -540,9 +546,8 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
   }
 
   // 編集バー：保存して再チェック（harness で再 validate/整形）＋ 確定・承認（真の承認ゲート）。
-  function editBar(sessionId, st, editor, vNode, preview, docKind) {
+  function editBar(sessionId, st, editor, vNode, preview, docKind, completion) {
     const bar = el("div", "approve-bar");
-    const mem = adk.config().memory_connected;
     const note = el("span", "persist-note", "");
 
     // 編集後 entry を harness で再検査・再整形し、結果を state へ反映する（型成立ゲートを編集後も効かせる）。
@@ -603,24 +608,12 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
         );
         if (apRes.status !== "approved") throw new Error(apRes.detail || "承認できませんでした");
         if (apRes.document_id) editor.panel._recordDocId = apRes.document_id; // フィードバック紐付け先
-        setArchiveNote(editor.panel._archNote, apRes, "承認記録");
         lockEditor(editor.panel);
-        clear(bar);
-        bar.appendChild(el("span", "approve-done", `${iconHTML("check")}保育士が確定・承認しました`));
-        bar.appendChild(
-          el(
-            "span",
-            "persist-note",
-            apRes.memory_status === "synced" || apRes.memory_status === "already_synced"
-              ? "承認した内容を子どもの Memory Bank へ反映しました。"
-              : apRes.memory_status === "not_applicable"
-                ? "承認しました（子ども別の事実欄がないため Memory Bank への反映対象外）。"
-                : mem
-                  ? "承認しました。"
-                  : "承認しました（Memory Bank 未接続のため反映は降格）。",
-          ),
-        );
-        phase("確定・承認しました", "done");
+        bar.remove();
+        // 内部の保存・Memory Bank・監査ログは従来どおり実行するが、完了画面では説明しない。
+        editor.panel._archNote.hidden = true;
+        completion.hidden = false;
+        phase("確定しました", "done");
       } catch (e) {
         approveBtn.disabled = false;
         saveBtn.disabled = false;

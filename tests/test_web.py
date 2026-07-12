@@ -152,6 +152,24 @@ def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:
     assert "textarea.de-input{overflow-y:hidden;resize:none}" in styles
 
 
+def test_document_completion_is_caregiver_facing_and_can_start_over() -> None:
+    """確定後は内部処理を見せず、次の書類作成へ戻る共通導線を出す。"""
+    c = _client()
+    docflow = c.get("/app/docflow.js").text
+    diaryform = c.get("/app/diaryform.js").text
+    ui = c.get("/app/ui.js").text
+    app = c.get("/app/app.js").text
+
+    assert "確定しました" in ui
+    assert "新しく書類を作る" in ui
+    assert "makeDocumentCompletion(onNewDocument)" in docflow
+    assert "makeDocumentCompletion(onNewDocument)" in diaryform
+    assert "function resetDocumentCreation()" in app
+    assert "保育士が確定・承認しました" not in docflow + diaryform
+    assert "承認した内容を子どもの Memory Bank へ反映しました" not in docflow + diaryform
+    assert "承認をアーカイブに記録しました（承認証跡）" not in docflow + diaryform
+
+
 def test_root_shows_welcome() -> None:
     # 配布リンクの素の URLは、強制遷移せず案内画面を表示する。
     r = _client().get("/")

@@ -181,6 +181,18 @@ export function banner(area, kind, text) {
   area.appendChild(el("div", "banner " + kind, `${iconHTML(kind === "err" ? "alert" : "info")}<span>${esc(text)}</span>`));
 }
 
+// 書類の確定後に出す共通UI。保育士には内部処理（Memory Bank・承認証跡）を見せず、
+// 完了したことと次の作業への入口だけを示す。
+export function makeDocumentCompletion(onNewDocument) {
+  const done = el("div", "document-completion");
+  done.appendChild(el("div", "approve-done", `${iconHTML("check")}確定しました`));
+  const next = el("button", "btn btn-primary", `${iconHTML("spark")}新しく書類を作る`);
+  next.type = "button";
+  next.onclick = () => onNewDocument && onNewDocument();
+  done.appendChild(next);
+  return done;
+}
+
 /* ============================================================
    計画ステッパー（観察メモ→情報収集→下書き→レビュー→確定 等）
    ============================================================ */
