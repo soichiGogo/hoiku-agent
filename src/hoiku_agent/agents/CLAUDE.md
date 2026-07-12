@@ -46,9 +46,9 @@
   Vertex global 専用で RAG/Memory のリージョンと分離するため＝§11/`models.py`）は決定論E2E で `FakeLlm` 等の
   `BaseLlm` を差し込むための注入口。本番は引数なしで不変。
 - **受け渡しは output_key→state**（`state["draft"]` / `state["review"]`）。独自グローバルで渡さない。
-- `instructions.py` の InstructionProvider は作る書類の scope に応じた guideline と reference_policy の
-  有効 source を提示する。参照本文は固定注入せず、author/reviewer が `fetch_reference(source)` で選択取得する。
-  reviewer には reference_manifest も提示し、取得実績を検証できる（§5）。
+- `instructions.py` の InstructionProvider は作る書類の scope に応じた guideline（参照方針も他のカードと
+  同じ自然文の1枚として含む・2026-07-12簡素化）を提示する。参照本文は固定注入せず、author/reviewer が
+  `fetch_reference(source)` で選択取得する。reviewer には reference_manifest も提示し、取得実績を検証できる（§5）。
   ここは prompt 文字列の**組み立て**だけで、指針テキストの再生・集積の整形という決定ロジック実体は harness に置く
   （tools が harness を呼ぶ薄いラッパなのと同じ）。prompts.py の各 instruction は「この指示の冒頭に示した指針/集積」を参照する。
 - **instruction は `prompts.py` に分離**（ADK 慣習）。日本語で書く。

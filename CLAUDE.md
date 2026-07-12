@@ -3,7 +3,7 @@
 
 # このプロジェクトの正（SSOT）と設計判断
 
-- **参照配線（2026-07-11）**：`reference_policy` カードが書類ごとの既定 source を持つ。author/reviewer は `fetch_reference` で seed 候補を agentic に取得し `reference_manifest` に実績を残す。固定 digest 注入と pipeline 常設 prep は使わない。seed API/state key/workspace 境界は不変。
+- **参照配線（2026-07-11・2026-07-12簡素化）**：書類ごとの参照方針は専用カード種別でなく、他の指針カードと同じ自然文の1枚（PolicyScope 別）として書く（例:「保育経過記録の作成では、対象期間の保育日誌と、前回までの保育経過記録すべてを参照する」）。author/reviewer は `fetch_reference` で seed 候補を agentic に取得し `reference_manifest` に実績を残す。固定 digest 注入と pipeline 常設 prep は使わない。seed API/state key/workspace 境界は不変。チェックボックス式の構造化トグルUI（旧 `reference_policy`/`ReferenceRule`）は撤去し、改善エージェントの提案→比較相談→即反映フローで育てる（UXの単純さを精度より優先＝ユーザー判断）。
 
 - **最終的な正は Obsidian vault `google-cloud-hackathon` の `設計/プロダクト方針.md`（製品方針）と
   `設計/エージェント設計.md`（アーキ）**。リポジトリ外にあり Claude からは読めない。

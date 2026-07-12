@@ -4,7 +4,7 @@
 §18（園の実様式）。個別月案（monthly_author_agent.py）と対称に、**園の実様式のクラス月案**も単一
 LlmAgent で構築する（内部を多層化しない・巡回＝再作成は harness の `build_authoring_loop` が日誌/月案と
 共用で担う）。違いは instruction（ClassMonthlyPlan スキーマ＝区分×領域グリッド＋0–2 の個人目標）だけで、
-reference_policy の既定から参照候補を選ぶ点は個別月案と同じ（scope も月案を流用）。
+参照方針カードの案内から参照候補を選ぶ点は個別月案と同じ（scope も月案を流用）。
 
 "型"（必須欄・グリッド正準7行・整形）は harness（schema_check.validate_class_monthly_fields /
 draft.write_class_monthly_draft）が確定段で保証するので、ここは「中身」に集中する。

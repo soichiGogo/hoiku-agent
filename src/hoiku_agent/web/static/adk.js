@@ -55,17 +55,6 @@ export async function getPolicy() {
   }
 }
 
-export async function updateReferencePolicy(payload) {
-  const r = await fetch("/api/policy/reference", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.detail || "既定参照を保存できませんでした");
-  return data;
-}
-
 // 表記ルール辞書（ひらがな表記DX）を読む（未配線/壊れは空＋unavailable に降格＝偽の中身を出さない）。
 export async function getNotation() {
   try {

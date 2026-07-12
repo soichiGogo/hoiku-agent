@@ -37,7 +37,8 @@ def _manifest_text(state) -> str:
 
 
 def build_author_instruction(base: str, scope: PolicyScope) -> Callable[[ReadonlyContext], str]:
-    """scope 固定の author provider。参照本文は注入せず、既定リストと取得指示だけを渡す。"""
+    """scope 固定の author provider。参照方針も含む文書作成指針をそのまま前置し、参照本文自体は
+    注入しない（author が指針の案内に従い `fetch_reference` で選択取得する＝§5）。"""
 
     def provider(ctx: ReadonlyContext) -> str:
         return "\n\n".join(part for part in (_policy_text(scope), base) if part)

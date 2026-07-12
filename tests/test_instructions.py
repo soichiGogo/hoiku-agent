@@ -5,7 +5,7 @@ from __future__ import annotations
 import hoiku_agent.agents.instructions as instr
 from hoiku_agent.agents.instructions import build_author_instruction, build_review_instruction
 from hoiku_agent.harness.policy_store import load_book
-from hoiku_agent.schemas import PolicyScope, ReferenceSource
+from hoiku_agent.schemas import PolicyScope
 
 
 class _Ctx:
@@ -13,30 +13,25 @@ class _Ctx:
         self.state = state
 
 
-def test_author_injects_enabled_reference_defaults_without_digest():
+def test_author_injects_scope_guideline_text():
+    """scope の指針カード（参照方針も自然文の1枚として含む）が author instruction にそのまま前置される。"""
     out = build_author_instruction("BASE", PolicyScope.保育経過記録)(_Ctx({}))
-    assert "period_diary" in out
-    assert "prev_child_records" in out
-    assert "fetch_reference" in out
+    assert (
+        "保育経過記録の作成では" in out
+    )  # seed の参照方針カード本文（自然文・knowledge/文書作成指針.json）
     assert "【期間の集積" not in out
     assert out.endswith("BASE")
 
 
-def test_disabled_reference_disappears(monkeypatch):
+def test_author_reflects_edited_guideline_text(monkeypatch):
+    """指針カードの本文を差し替えると author instruction にもそのまま反映される（他カードと同じ自然文編集）。"""
     book = load_book()
-    card = next(
-        c
-        for c in book.cards
-        if c.kind.value == "reference_policy" and c.scope == PolicyScope.保育経過記録
-    )
-    card.references = [
-        r.model_copy(update={"enabled": False}) if r.source == ReferenceSource.period_diary else r
-        for r in card.references
-    ]
+    for c in book.cards:
+        if c.scope == PolicyScope.保育経過記録:
+            c.body = "テスト用の差し替えテキスト：期間日誌だけを参照する。"
     monkeypatch.setattr(instr, "load_book", lambda: book)
     out = build_author_instruction("BASE", PolicyScope.保育経過記録)(_Ctx({}))
-    assert "period_diary" not in out
-    assert "prev_child_records" in out
+    assert "テスト用の差し替えテキスト：期間日誌だけを参照する。" in out
 
 
 def test_review_injects_reference_manifest():

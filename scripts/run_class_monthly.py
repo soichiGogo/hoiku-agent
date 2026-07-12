@@ -13,7 +13,7 @@
    同梱の仮名サンプル（③のみ・複数児）へ降格。
 2. session state に doc_type="クラス月案" と class_record_entries・past_class_plans・
    class_diary_entries・class_roster を seed して root_agent を回す。
-3. author が reference_policy に従い3系統を fetch_reference で選択取得し、
+3. author が参照方針カードに従い3系統を fetch_reference で選択取得し、
    クラス全体のねらい・区分×領域グリッド・0–2 の個人目標を生成（計画の連続性・
    PDCA）→ reviewer → finalize（検査・整形）。
 

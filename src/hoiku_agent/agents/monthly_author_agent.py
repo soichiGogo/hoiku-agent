@@ -5,7 +5,7 @@
 巡回＝再作成は harness の `build_authoring_loop` が日誌と共用で担う）。違いは instruction（月案スキーマ）と、
 前月集積（L2 還流）を読む点だけ。
 
-月案 author は reference_policy の既定を踏まえて fetch_reference で前月日誌を選択取得し、
+月案 author は参照方針カードの既定を踏まえて fetch_reference で前月日誌を選択取得し、
 その応答と recall_child_history を突き合わせ「前月の子どもの姿／
 評価・反省」を要約する（集計＝harness／要約＝author の責務分離・§10）。
 

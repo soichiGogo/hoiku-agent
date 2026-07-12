@@ -8,7 +8,7 @@
 1. 前月日誌を読む。優先順位＝ `--prev-entries-file`（JSON 配列）＞ 書類アーカイブ
    （`DATABASE_URL` 設定時・record_store から前月分を取得＝Phase 1）＞ 同梱の仮名サンプル（降格）。
 2. session state に doc_type="月案" と prev_month_entries を seed して root_agent（DocTypeRouter）を回す。
-3. 月案 author が reference_policy に従い fetch_reference(prev_month_diaries) で候補を取得・要約し、
+3. 月案 author が参照方針カードに従い fetch_reference(prev_month_diaries) で候補を取得・要約し、
    reviewer → 月案 finalize（MonthlyPlan を検査・整形）へ進む。
 
 使い方（要 LLM 資格情報＝Vertex/Gemini。`gcloud auth application-default login` 済み・.env 設定済み）:

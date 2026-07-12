@@ -6,7 +6,7 @@
 **開示前提＝小学校への引き継ぎ＋保護者開示**・「最終年度に至るまでの育ち」の複数年叙述）と、最終年度の
 保育経過記録の集積（L4 還流）を読む点。
 
-要録 author は reference_policy に従ってそれまでの保育経過記録を fetch_reference で選択取得し、
+要録 author は参照方針カードに従ってそれまでの保育経過記録を fetch_reference で選択取得し、
 その応答と recall_child_history を
 突き合わせ「保育の展開と子どもの育ち／個人の重点／最終年度に至るまでの育ち」を叙述する（集計＝harness／要約＝author・§10/§19）。
 
@@ -38,7 +38,7 @@ def build_nursery_record_author_agent(model: str | BaseLlm | None = None) -> Llm
             model_location＝global に固定した Gemini。§11／models.py）。
             決定論E2E（tests/test_e2e/）では FakeLlm 等の BaseLlm を注入する差込口（§16）。
 
-    文書作成指針と reference_policy の既定 source は InstructionProvider が提示し、参照本文は
+    文書作成指針と参照方針カードの既定 source は InstructionProvider が提示し、参照本文は
     fetch_reference で取得する（§5）。日誌は要録の候補に加えない。validate_fields ツールは配線せず、要録の
     確定 validation は harness（validate_nursery_record_fields）が末尾で決定的に行う（§6・ツールを 4–8 個に絞る原則）。
     output_key は日誌・月案・保育経過記録と共通の "draft"（後段 finalize が kind="nursery_record" で復元する）。

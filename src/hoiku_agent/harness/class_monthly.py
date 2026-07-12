@@ -1,7 +1,7 @@
 """harness：クラス月案パイプラインの順序と型の保証（§3/§10/§18）。
 
 依存モデル 2026-07 の候補3系統は scripts/web が既存 state key に seed する。author が
-reference_policy に基づき fetch_reference を選択すると、harness.reference が既存 aggregate と児童別境界を
+参照方針カードに基づき fetch_reference を選択すると、harness.reference が既存 aggregate と児童別境界を
 使って決定的に取得する。pipeline は authoring_loop→finalize のみで、承認時書き戻しは Web が担う（§9）。
 """
 

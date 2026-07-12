@@ -1,7 +1,7 @@
 """harness：個別月案パイプラインの順序と型の保証（§3/§4/§10）。
 
 前月日誌は session state ``prev_month_entries`` に候補として seed する。参照本文を固定注入せず、
-月案 author が reference_policy に従い ``fetch_reference(prev_month_diaries)`` を選択した時点で
+月案 author が参照方針カードに従い ``fetch_reference(prev_month_diaries)`` を選択した時点で
 ``harness.reference`` が決定的に集計する。pipeline は authoring_loop→finalize のみを組む。
 保存済み現行版の承認と Memory Bank 書き戻しは Web 承認 API に一本化する（§9）。
 """

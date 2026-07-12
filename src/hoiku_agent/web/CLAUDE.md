@@ -1,6 +1,6 @@
 # web/ ＝ 保育士向け配布 UI（層A・配信の presentation）
 
-`指針を育てる` の reference_policy カードは source の on/off とメモを直接編集できる。保存は `PATCH /api/policy/reference` を使い、PolicyBook の version 楽観ロックと workspace 書込境界に従う。improver は guideline のみを提案・commit する。
+`指針を育てる` のカード（参照方針の自然文カードを含む）はすべて同じ表示・同じ改善エージェントの提案→比較相談→即反映フローで育つ（専用の編集エンドポイントは持たない・2026-07-12簡素化）。
 
 ここで Claude がすること：審査員・保育士が**1枚で触れる UI**を提供し、3責務（harness/agents/improver）を
 そのまま見せる。生成ロジックは持たない。設計コンテキスト §11（Cloud Run 直ホスト）／北極星。

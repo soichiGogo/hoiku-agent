@@ -29,12 +29,10 @@ from .template import DocTemplate, Section, SectionKind, ShowRule, TemplateBook
 from .policy import (
     PolicyBook,
     PolicyCard,
-    PolicyCardKind,
     PolicyChange,
     PolicyChangeAction,
     PolicyScope,
     PolicyStatus,
-    ReferenceRule,
     ReferenceSource,
 )
 
@@ -72,8 +70,6 @@ __all__ = [
     "PolicyStatus",
     "PolicyChangeAction",
     "PolicyCard",
-    "PolicyCardKind",
-    "ReferenceRule",
     "ReferenceSource",
     "PolicyChange",
     "PolicyBook",
