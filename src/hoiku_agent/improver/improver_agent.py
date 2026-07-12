@@ -15,15 +15,16 @@ from google.adk.agents import LlmAgent
 
 from ..models import build_model
 from .prompts import IMPROVER_INSTRUCTION
-from .tools import ask_caregiver, commit_policy_card, propose_policy_card, read_policy_cards
+from .tools import ask_caregiver, build_policy_tools
 
 
-def build_improver_agent() -> LlmAgent:
+def build_improver_agent(book_id: str | None = None) -> LlmAgent:
     """改善エージェント（単一 LlmAgent）を構築して返す。root_agent とは別エントリ（§8）。"""
+    policy_tools = build_policy_tools(book_id)
     return LlmAgent(
         name="improver",
         model=build_model(),
         instruction=IMPROVER_INSTRUCTION,
-        tools=[read_policy_cards, propose_policy_card, ask_caregiver, commit_policy_card],
+        tools=[*policy_tools[:2], ask_caregiver, *policy_tools[2:]],
         output_key="policy_change",
     )

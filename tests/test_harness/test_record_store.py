@@ -621,10 +621,13 @@ def test_touch_user_provisions_and_is_idempotent(db):
         "display_name": "",
         "active": True,
         "workspace_id": r1["workspace_id"],
+        # 初回＝新規 workspace を作った呼び出しだけ True（デフォルト seed の単発トリガ）。
+        "workspace_created": True,
     }
     r2 = rs.touch_user("sensei@example.com", now=_NOW)  # 2回目も同じ行（重複を作らない）
     assert r2["status"] == "ok"
     assert r2["workspace_id"] == r1["workspace_id"]
+    assert r2["workspace_created"] is False
     with rs.Session(rs._engine()) as session:
         emails = [u.email for u in session.scalars(rs.sa.select(rs.User))]
     assert emails == ["sensei@example.com"]

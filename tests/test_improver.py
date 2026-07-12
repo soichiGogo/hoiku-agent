@@ -10,8 +10,17 @@ from __future__ import annotations
 import pytest
 
 from hoiku_agent.harness import policy_store as ps
-from hoiku_agent.improver.tools import commit_policy_card, propose_policy_card, read_policy_cards
-from hoiku_agent.schemas.policy import PolicyBook, PolicyCard, PolicyScope
+from hoiku_agent.improver.tools import (
+    build_policy_tools,
+    commit_policy_card,
+    propose_policy_card,
+    read_policy_cards,
+)
+from hoiku_agent.schemas.policy import (
+    PolicyBook,
+    PolicyCard,
+    PolicyScope,
+)
 
 
 @pytest.fixture()
@@ -74,6 +83,24 @@ def test_propose_unknown_conflict_id_is_surfaced_not_dropped(store):
     assert r["has_conflict"] is True  # 「競合なし」で ask をスキップさせない
     assert r["declared_conflicts"] == []
     assert "見つかりません" in r["guidance"]
+
+
+def test_propose_inactive_conflict_card_is_not_loaded_as_current_policy(store):
+    """置換済みカードを申告されても、現行指針として提案へ取り込まない。"""
+    committed = commit_policy_card(
+        "共通", "個人名は仮名・属性で表す", op="supersede", supersede_id="card-0001"
+    )
+    assert committed["status"] == "committed"
+
+    r = propose_policy_card("共通", "個人名は書かない", conflicts_with="card-0001")
+
+    assert r["status"] == "ok"
+    assert r["proposal"]["op"] == "add"
+    assert r["proposal"]["supersede_id"] == ""
+    assert r["declared_conflicts"] == []
+    assert r["inactive_conflict_ids"] == ["card-0001"]
+    assert r["has_conflict"] is True
+    assert "現行指針ではありません" in r["guidance"]
 
 
 def test_propose_invalid_scope_lists_all_scopes(store):
@@ -154,3 +181,25 @@ def test_commit_version_conflict_rejected(policy_db, monkeypatch):
     r = commit_policy_card("保育日誌", "感触遊びは感触語と表情を併記する")
     assert r["status"] == "rejected"
     assert "競合" in r["detail"]
+
+
+def test_bound_policy_tools_write_only_to_workspace_book(policy_db):
+    """commit は束縛された book だけを書き、default へ漏らさない（workspace 認可境界の回帰確認）。"""
+    import inspect
+
+    book_id = "workspace:test-workspace"
+    tools = {tool.__name__: tool for tool in build_policy_tools(book_id)}
+    assert all("book_id" not in inspect.signature(tool).parameters for tool in tools.values())
+    implementations = {
+        "read_policy_cards": read_policy_cards,
+        "propose_policy_card": propose_policy_card,
+        "commit_policy_card": commit_policy_card,
+    }
+    assert all(tool.__doc__ == implementations[name].__doc__ for name, tool in tools.items())
+
+    guideline = tools["commit_policy_card"]("共通", "観察した事実を先に書く")
+
+    assert guideline["status"] == "committed"
+    workspace_book = ps.load_book(book_id=book_id)
+    assert any(card.body == "観察した事実を先に書く" for card in workspace_book.cards)
+    assert ps.load_book().cards == []

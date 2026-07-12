@@ -49,7 +49,12 @@ export async function getPolicy() {
     const r = await fetch("/api/policy");
     if (!r.ok) return { cards: [], history: [], store: "unavailable" };
     const j = await r.json();
-    return { cards: j.cards || [], history: j.history || [], store: j.store || "unavailable" };
+    return {
+      cards: j.cards || [],
+      history: j.history || [],
+      store: j.store || "unavailable",
+      version: j.version ?? 0,
+    };
   } catch {
     return { cards: [], history: [], store: "unavailable" };
   }

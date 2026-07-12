@@ -8,7 +8,8 @@
   決定的な完全重複は安全網（policy_store.find_exact_duplicate）が併せて検出する。
 - ask_caregiver … 競合があれば該当カードと新案を**比較相談**、無くても反映可否を確認（人に訊く口は一階と共用）。
 - commit_policy_card … 保育士の決定で**即反映**（add／supersede→save_book。「回した証拠」＝カード内蔵の
-  変更履歴。GCS 運用時はオブジェクトバージョニングも併用）。
+  変更履歴）。参照方針（何を参照するか）も専用ツールを持たず、他のカードと同じ4ツールで育てる
+  （2026-07-12簡素化＝自然文の1枚として guideline カード群に相乗り）。
 
 決定的ロジックの実体は harness（policy_store）に1つ（§5）。ここは harness を呼ぶ薄いラッパ＋
 runtime 境界（`datetime.now()` の注入）だけ。意味的競合の判定は LLM（このエージェント）の責務で、
@@ -21,7 +22,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from ..harness import policy_store
-from ..schemas.policy import PolicyCard, PolicyScope
+from ..schemas.policy import PolicyCard, PolicyScope, PolicyStatus
 from ..tools import ask_caregiver as ask_caregiver  # noqa: PLC0414  人に訊く口は一階と共用
 
 _SCOPES = {
@@ -35,7 +36,7 @@ def _parse_scope(scope: str) -> PolicyScope | None:
     return _SCOPES.get((scope or "").strip())
 
 
-def read_policy_cards(scope: str = "") -> dict:
+def read_policy_cards(scope: str = "", *, book_id: str | None = None) -> dict:
     """既存の active 指針カードを返す（意味的競合を精査する材料）。
 
     Args:
@@ -44,7 +45,7 @@ def read_policy_cards(scope: str = "") -> dict:
     Returns:
         {"cards": [{id, scope, body, rationale, source}], "count": n}
     """
-    book = policy_store.load_book()
+    book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
     cards = policy_store.active_cards(book, _parse_scope(scope))
     return {
         "cards": [
@@ -68,6 +69,8 @@ def propose_policy_card(
     source: str = "",
     conflicts_with: str = "",
     note: str = "",
+    *,
+    book_id: str | None = None,
 ) -> dict:
     """修正差分から導いた指針カード案を申告し、競合（意味的＋完全重複）を返す（§8）。
 
@@ -78,6 +81,7 @@ def propose_policy_card(
     Returns:
         {status, proposal:{scope,body,rationale,source,op,supersede_id,note},
          exact_duplicate:{id,body}|None, declared_conflicts:[{id,body,scope}],
+         inactive_conflict_ids:[id], unknown_conflict_ids:[id],
          has_conflict:bool, guidance:str}
     """
     sc = _parse_scope(scope)
@@ -89,23 +93,26 @@ def propose_policy_card(
     if not body.strip():
         return {"status": "error", "detail": "body（カード本文）が空です"}
 
-    book = policy_store.load_book()
+    book = policy_store.load_book(**({"book_id": book_id} if book_id is not None else {}))
     dup = policy_store.find_exact_duplicate(book, sc, body)
     declared = []
+    inactive_ids = []  # 置換済み・取り下げ済みカードを現行指針として再採用しない
     unknown_ids = []  # 申告されたが存在しない競合カード id（黙って捨てず素通りさせない）
     for cid in (c.strip() for c in conflicts_with.split(",")):
         if not cid:
             continue
         card = policy_store.find_card(book, cid)
-        if card is not None:
+        if card is not None and card.status == PolicyStatus.active:
             declared.append(card)
+        elif card is not None:
+            inactive_ids.append(cid)
         else:
             unknown_ids.append(cid)
 
     op = "supersede" if declared else "add"
     supersede_id = declared[0].id if declared else ""
-    # 不明 id は「競合を意図したが id が誤り」の可能性が高いので競合ありとして扱い、素通りを防ぐ。
-    has_conflict = bool(declared) or dup is not None or bool(unknown_ids)
+    # 不明・非現行 id は競合参照の見直しが必要なので、競合ありとして扱い素通りを防ぐ。
+    has_conflict = bool(declared) or dup is not None or bool(inactive_ids) or bool(unknown_ids)
 
     if dup is not None:
         guidance = (
@@ -117,6 +124,12 @@ def propose_policy_card(
             "意味的競合あり：ask_caregiver で既存カードと新案を比較相談し、保育士に "
             "『既存を残す／新しい案に置きかえる(supersede)／両方活かして統合』を選んでもらう。"
             "決定後に commit_policy_card で即反映。"
+        )
+    elif inactive_ids:
+        guidance = (
+            f"申告された競合カードは現行指針ではありません（{', '.join(inactive_ids)}）。"
+            "置換済み・取り下げ済みカードを競合相手として扱わず、read_policy_cards が返す active カードだけで "
+            "競合を確認し直してください。"
         )
     elif unknown_ids:
         guidance = (
@@ -145,6 +158,7 @@ def propose_policy_card(
         "declared_conflicts": [
             {"id": c.id, "body": c.body, "scope": c.scope.value} for c in declared
         ],
+        "inactive_conflict_ids": inactive_ids,
         "unknown_conflict_ids": unknown_ids,
         "has_conflict": has_conflict,
         "guidance": guidance,
@@ -159,6 +173,8 @@ def commit_policy_card(
     op: str = "add",
     supersede_id: str = "",
     decided_by: str = "保育士",
+    *,
+    book_id: str | None = None,
 ) -> dict:
     """保育士の決定で指針カードを**即反映**する（add／supersede→save_book・§8）。
 
@@ -180,7 +196,8 @@ def commit_policy_card(
 
     now = datetime.now()  # runtime 境界でのみ now を注入（harness/schemas は純関数を保つ＝§5）
     # generation＝GCS 外部ストアの楽観ロック前提条件（ローカルは None＝従来動作）。
-    book, version = policy_store.load_book_meta()
+    storage = {"book_id": book_id} if book_id is not None else {}
+    book, version = policy_store.load_book_meta(**storage)
     card = PolicyCard(
         id=policy_store.next_card_id(book),
         scope=sc,
@@ -209,7 +226,9 @@ def commit_policy_card(
         return {"status": "rejected", "detail": str(e)}
 
     try:
-        policy_store.save_book(new_book, if_version=version)  # 即反映（DB は version 楽観ロック）
+        policy_store.save_book(
+            new_book, if_version=version, **storage
+        )  # 即反映（DB は version 楽観ロック）
     except ValueError as e:
         # 読み込み後に他所で更新された（generation 競合）。黙って上書きせず再試行を促す。
         return {"status": "rejected", "detail": str(e)}
@@ -221,3 +240,72 @@ def commit_policy_card(
         "history_entry": policy_store.history_view(change),
         "store": policy_store.store_status(),
     }
+
+
+_READ_POLICY_CARDS_IMPL = read_policy_cards
+_PROPOSE_POLICY_CARD_IMPL = propose_policy_card
+_COMMIT_POLICY_CARD_IMPL = commit_policy_card
+
+
+def build_policy_tools(book_id: str | None = None) -> list:
+    """認可済みの PolicyBook ID を閉じ込めた FunctionTool 用関数を構築する。
+
+    book_id は LLM の引数へ公開しない。Web は workspace book を束縛し、CLI は None のまま
+    従来の default book を使う。functools.partial は ADK のツール名導出を壊すため使わない。
+    """
+
+    def read_policy_cards(scope: str = "") -> dict:
+        """認可済み領域にある既存の指針カードを読む。"""
+        return _READ_POLICY_CARDS_IMPL(scope, book_id=book_id)
+
+    read_policy_cards.__doc__ = _READ_POLICY_CARDS_IMPL.__doc__
+
+    def propose_policy_card(
+        scope: str,
+        body: str,
+        rationale: str = "",
+        source: str = "",
+        conflicts_with: str = "",
+        note: str = "",
+    ) -> dict:
+        """認可済み領域の既存カードに対する指針カード案を作る。"""
+        return _PROPOSE_POLICY_CARD_IMPL(
+            scope,
+            body,
+            rationale,
+            source,
+            conflicts_with,
+            note,
+            book_id=book_id,
+        )
+
+    propose_policy_card.__doc__ = _PROPOSE_POLICY_CARD_IMPL.__doc__
+
+    def commit_policy_card(
+        scope: str,
+        body: str,
+        rationale: str = "",
+        source: str = "",
+        op: str = "add",
+        supersede_id: str = "",
+        decided_by: str = "保育士",
+    ) -> dict:
+        """保育士の決定後、認可済み領域へ指針カードを反映する。"""
+        return _COMMIT_POLICY_CARD_IMPL(
+            scope,
+            body,
+            rationale,
+            source,
+            op,
+            supersede_id,
+            decided_by,
+            book_id=book_id,
+        )
+
+    commit_policy_card.__doc__ = _COMMIT_POLICY_CARD_IMPL.__doc__
+
+    return [
+        read_policy_cards,
+        propose_policy_card,
+        commit_policy_card,
+    ]

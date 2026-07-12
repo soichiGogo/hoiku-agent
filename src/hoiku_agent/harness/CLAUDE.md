@@ -88,6 +88,20 @@
   「回した証拠」＝カード内蔵の変更履歴（decided_by 含む）。
 - `db.py` … harness 共通の DB 接続基盤（engine キャッシュ・Declarative Base・JSONB variant）。
   record_store と policy_store が同じ `DATABASE_URL` を共有するための最小インフラ＝ドメインロジックを置かない。
+- `demo_seed_data.py`／`demo_seed.py` … **デモ用デフォルト seed**（実在しない仮名のみ・§14）：物語時刻＝
+  **FY2026 の7月中旬**。データ部（名簿 ROSTER 10人〔あおぞら5＋ひよこ5〕・CLASSES＝ひよこ組/あおぞら組・
+  卒園児 GRADUATE・確定書類チェーン 計167件＝**保育日誌 138〔2026-04-01〜07-10 の平日毎日×2クラスを週テーマ×
+  子ども別観察プールの決定的ローテで合成・age_months は生年月日から `age_months_on` で機械計算〕**／クラス月案8
+  〔2026-04〜07・4〜6月は月末評価記入済み〕／保育経過記録20〔**前年度 FY2025**＝「前回まで」還流と年度跨ぎ集積の素〕／
+  要録1〔卒園児 FY2025・小学校引継ぎデモ〕。今年度Ⅰ期の経過記録はあえて未作成＝「溜まった日誌から作る」デモの
+  主戦場を残す。承認フロー体感用の UNAPPROVED＋`INCOMPLETE_DATES`〔直近2日の日誌は評価未記入＝記入導線デモ〕）と
+  ロジック部（`validate_all`＝型成立検査〔is_incomplete は除外〕／`seed_workspace`＝finalize_entry→
+  save_document/approve_document の冪等投入・種別×児×期間で既存スキップ・is_incomplete は検証エラーを許容し保存
+  〔承認はしない＝finalized 止まり〕／`reset_workspace`＝`record_store.purge_workspace_data`→再 seed）。
+  **初回ログイン（web/workspace.py の provision_user）と「データを初期化」（web `/api/account/reset`）と
+  CLI（scripts/seed_children.py・seed_documents.py＝薄いラッパ）が同じ実体を呼ぶ**（二重実装しない・§5）。
+  LLM 非依存・clock 外部注入・未接続は skipped 降格。整合（月齢⇄生年月日・全員毎月登場・平日のみ・閉集合）は
+  `tests/test_harness/test_demo_seed.py` が検算する。
 - `record_store.py` … 書類アーカイブ＝確定書類・児童マスタ・監査証跡の決定的ストア（Cloud SQL
   PostgreSQL・Phase 1）。本文は JSON（PG は JSONB）が SSOT・検索キーだけ列昇格・版管理
   （AI 確定/保育士編集を区別）・承認証跡（actor は自己申告注入）。読取は L2/L3 seed（`list_diary_entries`）に
