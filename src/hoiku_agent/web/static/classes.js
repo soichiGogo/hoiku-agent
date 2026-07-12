@@ -306,9 +306,6 @@ export function makeClasses(ui) {
 
   async function init() {
     ui.addBtn.onclick = createClass;
-    ui.nameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") createClass();
-    });
     await reload();
   }
 
