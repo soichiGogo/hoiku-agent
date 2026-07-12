@@ -67,6 +67,8 @@ const ICONS = {
   folder: '<path d="M4 7.5a2 2 0 0 1 2-2h3.3a2 2 0 0 1 1.4.6l1.1 1.1a2 2 0 0 0 1.4.6H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/>',
   chevron: '<path d="M9 6l6 6-6 6"/>',
   file: '<path d="M6.5 3.5H13l5 5V19a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5A1.5 1.5 0 0 1 6.5 3.5z"/><path d="M13 3.5V9h5"/>',
+  // 対象児フィルタ（書類を見るタブ）の入力欄アイコン。
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
 };
 export function iconHTML(name, cls = "") {
   const path = ICONS[name] || ICONS.tool;

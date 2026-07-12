@@ -773,6 +773,14 @@ select.de-input{appearance:auto;min-height:38px}
 /* 2ペイン explorer（左＝フォルダツリー／右＝書類の内容） */
 .fs-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-3)}
 .fs-body{display:grid;grid-template-columns:minmax(230px,330px) 1fr;gap:var(--sp-4);align-items:start}
+
+/* 対象児フィルタ（ある子どもに関連する書類を種別横断で絞り込む＝fs-head の下） */
+.fs-filter{display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3);flex-wrap:wrap}
+.fs-filter-field{position:relative;flex:1 1 260px;max-width:320px;display:flex;align-items:center}
+.fs-filter-ic{position:absolute;left:11px;color:var(--muted);display:flex;pointer-events:none}
+.fs-filter-ic .ic{width:15px;height:15px}
+.fs-filter-input{width:100%;padding-left:34px}
+.fs-filter-hint{font-size:var(--fs-caption);color:var(--muted)}
 .fs-tree{min-width:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
   padding:var(--sp-2);max-height:66vh;overflow:auto}
 .fs-detail{min-width:0}
