@@ -98,7 +98,23 @@ const TOOL_META = {
   propose_policy_card: { icon: "edit", label: "追加する内容を整理" },
   commit_policy_card: { icon: "check", label: "ルールに反映" },
 };
-export function toolMeta(name) {
+// fetch_reference は schemas.ReferenceSource（閉じた語彙）ごとに保育士向けの文言へ翻訳する
+// （ツール名がそのままバッジに出ると「何をしているか」が伝わらないため・args.source で分岐）。
+const REFERENCE_SOURCE_META = {
+  period_diary: { icon: "diary", label: "対象期間の保育日誌を確認" },
+  prev_month_diaries: { icon: "diary", label: "前月の保育日誌を確認" },
+  uncovered_class_diaries: { icon: "diary", label: "経過記録に未反映の日誌を確認" },
+  prev_child_records: { icon: "memo", label: "前回までの保育経過記録を確認" },
+  class_child_records: { icon: "memo", label: "クラス児童の保育経過記録を確認" },
+  past_class_plans: { icon: "clipboard", label: "これまでのクラス月案を確認" },
+  class_roster: { icon: "users", label: "クラスの在籍児名簿を確認" },
+};
+export function toolMeta(name, args) {
+  if (name === "fetch_reference") {
+    return (
+      REFERENCE_SOURCE_META[args && args.source] || { icon: "book", label: "参考資料を確認" }
+    );
+  }
   return TOOL_META[name] || { icon: "tool", label: name };
 }
 
@@ -141,8 +157,8 @@ export function stateChipHTML(state, label) {
    タイムライン部品
    ============================================================ */
 // ツールバッジ（busy=スピナー付き。後で markToolDone で結果に差し替え）。
-export function toolBadgeEl(name, { busy = true } = {}) {
-  const m = toolMeta(name);
+export function toolBadgeEl(name, { busy = true, args } = {}) {
+  const m = toolMeta(name, args);
   const b = el("span", "tbadge" + (busy ? " busy" : ""));
   b.innerHTML = `${iconHTML(m.icon)}<span class="lbl">${esc(m.label)}</span>` + (busy ? `<span class="spinner"></span>` : "");
   return b;

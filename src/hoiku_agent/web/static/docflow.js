@@ -129,13 +129,13 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
     p.textContent = text;
     c.body.appendChild(p);
   }
-  function addTool(author, name) {
+  function addTool(author, name, args) {
     const c = actorTurn(author);
     if (!c.toolsRow) {
       c.toolsRow = el("div", "tools-row");
       c.body.appendChild(c.toolsRow);
     }
-    const b = toolBadgeEl(name);
+    const b = toolBadgeEl(name, { args });
     c.toolsRow.appendChild(b);
     return b;
   }
@@ -281,10 +281,10 @@ export function makeDocFlow({ area, button, stepper: stepperEl, steps, showDiges
               lastKind = kind;
             }
           } else if (it.kind === "call") {
-            const badge = addTool(it.author, it.name);
+            const badge = addTool(it.author, it.name, it.args);
             if (it.id) toolBadges[it.id] = badge;
             toStep(iColl);
-            phase(toolMeta(it.name).label + "…", "working");
+            phase(toolMeta(it.name, it.args).label + "…", "working");
             if (it.name === "ask_caregiver" && it.longRunning) {
               pending = { id: it.id, question: it.args.question, choices: it.args.choices, invId };
             }
