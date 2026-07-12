@@ -5,7 +5,7 @@
 巡回＝再作成は harness の `build_authoring_loop` が日誌・月案と共用で担う）。違いは instruction
 （保育経過記録スキーマ・**開示前提の肯定的・非断定的表現**）と、期間集積（L3 還流）を読む点だけ。
 
-保育経過記録 author は reference_policy に従って期間日誌と前回までの保育経過記録を fetch_reference で
+保育経過記録 author は参照方針カードに従って期間日誌と前回までの保育経過記録を fetch_reference で
 選択取得し、その応答と recall_child_history を
 突き合わせ「発達の経過／総合所見」を領域別に叙述する（集計＝harness／要約＝author・§10/§19）。
 

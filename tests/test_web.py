@@ -170,18 +170,11 @@ def test_policy_route_returns_cards_and_history() -> None:
     assert isinstance(body.get("history"), list)
     assert body.get("store") in ("persistent", "ephemeral", "unavailable")
     # seed（共通/月案）が読める環境ではカードが入る。カード形（doc_type/body）も確認。
+    # 参照方針も他のカードと同じ自然文の1枚として入る（専用の kind/references は持たない・2026-07-12簡素化）。
     if body["cards"]:
-        assert {"id", "body", "doc_type", "doc_label"} <= body["cards"][0].keys()
-    reference_cards = [card for card in body["cards"] if card.get("kind") == "reference_policy"]
-    assert reference_cards
-    assert all(
-        rule.get("label") and rule.get("description")
-        for card in reference_cards
-        for rule in card["references"]
-    )
-    rules = {rule["source"]: rule for card in reference_cards for rule in card["references"]}
-    assert rules["period_diary"]["label"] == "期間内の保育日誌"
-    assert rules["period_diary"]["description"] == "作成対象の期間に書かれた日誌です。"
+        card = body["cards"][0]
+        assert {"id", "body", "doc_type", "doc_label"} <= card.keys()
+        assert "kind" not in card and "references" not in card
 
 
 def test_list_apps_has_root_agent() -> None:

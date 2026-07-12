@@ -25,6 +25,6 @@ def build_improver_agent(book_id: str | None = None) -> LlmAgent:
         name="improver",
         model=build_model(),
         instruction=IMPROVER_INSTRUCTION,
-        tools=[*policy_tools[:4], ask_caregiver, *policy_tools[4:]],
+        tools=[*policy_tools[:2], ask_caregiver, *policy_tools[2:]],
         output_key="policy_change",
     )

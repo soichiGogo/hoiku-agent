@@ -62,24 +62,40 @@
       "updated_at": "2026-07-05T00:00:00"
     },
     {
-      "id": "card-0006", "scope": "月案", "kind": "reference_policy", "body": "月案作成時の既定参照", "references": [
-        {"source": "class_roster", "enabled": true, "note": "クラスの在籍児名簿（0–2 個人目標は在籍児全員が基準）"},
-        {"source": "prev_month_diaries", "enabled": true, "note": "個別月案の前月日誌"},
-        {"source": "class_child_records", "enabled": true, "note": "クラス児童の保育経過記録すべて"},
-        {"source": "past_class_plans", "enabled": true, "note": "それまでのクラス月案すべて"},
-        {"source": "uncovered_class_diaries", "enabled": true, "note": "保育経過記録に未反映の期間の日誌"}
-      ], "rationale": "依存モデル 2026-07", "source": "seed:初版", "status": "active", "supersedes": null, "superseded_by": null, "created_at": "2026-07-11T00:00:00", "updated_at": "2026-07-11T00:00:00"
+      "id": "card-0006",
+      "scope": "月案",
+      "body": "個別月案の作成では、対象児の前月の保育日誌を参照する。クラス月案の作成では、クラスの在籍児名簿、クラス児童のこれまでの保育経過記録すべて、それまでのクラス月案すべて、保育経過記録に未反映の期間の日誌を参照する。",
+      "rationale": "依存モデル 2026-07。個別月案とクラス月案は同じ「月案」scopeを共有するため、両方の参照方針を1枚に明示する。",
+      "source": "seed:初版",
+      "status": "active",
+      "supersedes": null,
+      "superseded_by": null,
+      "created_at": "2026-07-12T00:00:00",
+      "updated_at": "2026-07-12T00:00:00"
     },
     {
-      "id": "card-0007", "scope": "保育経過記録", "kind": "reference_policy", "body": "保育経過記録作成時の既定参照", "references": [
-        {"source": "period_diary", "enabled": true, "note": "該当期間の日誌"},
-        {"source": "prev_child_records", "enabled": true, "note": "前回までの保育経過記録すべて"}
-      ], "rationale": "依存モデル 2026-07", "source": "seed:初版", "status": "active", "supersedes": null, "superseded_by": null, "created_at": "2026-07-11T00:00:00", "updated_at": "2026-07-11T00:00:00"
+      "id": "card-0007",
+      "scope": "保育経過記録",
+      "body": "保育経過記録の作成では、対象期間の保育日誌と、前回までの保育経過記録すべてを参照する。",
+      "rationale": "依存モデル 2026-07",
+      "source": "seed:初版",
+      "status": "active",
+      "supersedes": null,
+      "superseded_by": null,
+      "created_at": "2026-07-12T00:00:00",
+      "updated_at": "2026-07-12T00:00:00"
     },
     {
-      "id": "card-0008", "scope": "保育要録", "kind": "reference_policy", "body": "保育要録作成時の既定参照", "references": [
-        {"source": "prev_child_records", "enabled": true, "note": "それまでの保育経過記録すべて"}
-      ], "rationale": "依存モデル 2026-07", "source": "seed:初版", "status": "active", "supersedes": null, "superseded_by": null, "created_at": "2026-07-11T00:00:00", "updated_at": "2026-07-11T00:00:00"
+      "id": "card-0008",
+      "scope": "保育要録",
+      "body": "保育要録の作成では、それまでの保育経過記録すべてを参照する（日誌は参照しない）。",
+      "rationale": "依存モデル 2026-07",
+      "source": "seed:初版",
+      "status": "active",
+      "supersedes": null,
+      "superseded_by": null,
+      "created_at": "2026-07-12T00:00:00",
+      "updated_at": "2026-07-12T00:00:00"
     }
   ],
   "history": [
@@ -128,8 +144,8 @@
       "source": "seed:初版",
       "decided_by": "初版"
     },
-    {"timestamp": "2026-07-11T00:00:00", "action": "add", "card_id": "card-0006", "superseded_id": null, "summary": "月案の既定参照を登録", "source": "seed:初版", "decided_by": "初版"},
-    {"timestamp": "2026-07-11T00:00:00", "action": "add", "card_id": "card-0007", "superseded_id": null, "summary": "保育経過記録の既定参照を登録", "source": "seed:初版", "decided_by": "初版"},
-    {"timestamp": "2026-07-11T00:00:00", "action": "add", "card_id": "card-0008", "superseded_id": null, "summary": "保育要録の既定参照を登録", "source": "seed:初版", "decided_by": "初版"}
+    {"timestamp": "2026-07-12T00:00:00", "action": "add", "card_id": "card-0006", "superseded_id": null, "summary": "初版（雛形）：月案（個別・クラス）の参照方針を登録", "source": "seed:初版", "decided_by": "初版"},
+    {"timestamp": "2026-07-12T00:00:00", "action": "add", "card_id": "card-0007", "superseded_id": null, "summary": "初版（雛形）：保育経過記録の参照方針を登録", "source": "seed:初版", "decided_by": "初版"},
+    {"timestamp": "2026-07-12T00:00:00", "action": "add", "card_id": "card-0008", "superseded_id": null, "summary": "初版（雛形）：保育要録の参照方針を登録", "source": "seed:初版", "decided_by": "初版"}
   ]
 }

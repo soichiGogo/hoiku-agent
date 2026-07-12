@@ -13,19 +13,13 @@ from hoiku_agent.harness import policy_store as ps
 from hoiku_agent.improver.tools import (
     build_policy_tools,
     commit_policy_card,
-    commit_reference_update,
     propose_policy_card,
-    propose_reference_update,
     read_policy_cards,
-    read_reference_policy,
 )
 from hoiku_agent.schemas.policy import (
     PolicyBook,
     PolicyCard,
-    PolicyCardKind,
     PolicyScope,
-    ReferenceRule,
-    ReferenceSource,
 )
 
 
@@ -49,35 +43,6 @@ def store(tmp_path, monkeypatch):
     )
     ps.save_book(book)
     return p
-
-
-@pytest.fixture()
-def reference_store(store):
-    """保育経過記録の参照ポリシーを加えた tmp ストア。"""
-    when = __import__("datetime").datetime(2026, 7, 11, 0, 0, 0)
-    book = ps.load_book()
-    book = book.model_copy(
-        update={
-            "cards": [
-                *book.cards,
-                PolicyCard(
-                    id="card-0002",
-                    scope=PolicyScope.保育経過記録,
-                    kind=PolicyCardKind.reference_policy,
-                    body="保育経過記録作成時の既定参照",
-                    references=[
-                        ReferenceRule(source=ReferenceSource.period_diary, enabled=True),
-                        ReferenceRule(source=ReferenceSource.prev_child_records, enabled=True),
-                    ],
-                    source="seed:初版",
-                    created_at=when,
-                    updated_at=when,
-                ),
-            ]
-        }
-    )
-    ps.save_book(book)
-    return store
 
 
 def test_read_policy_cards(store):
@@ -218,198 +183,23 @@ def test_commit_version_conflict_rejected(policy_db, monkeypatch):
     assert "競合" in r["detail"]
 
 
-def test_read_reference_policy_returns_labels_with_plain_str(reference_store):
-    """FunctionTool と同じ素の str scope で、日本語ラベル付きの現在設定を読める。"""
-    result = read_reference_policy("保育経過記録")
-    assert result["scope"] == "保育経過記録"
-    assert result["references"][0] == {
-        "source": "period_diary",
-        "enabled": True,
-        "note": None,
-        "label": "期間内の保育日誌",
-        "description": "作成対象の期間に書かれた日誌です。",
-    }
-
-
-def test_read_reference_policy_missing_scope_degrades(store):
-    result = read_reference_policy("共通")
-    assert result["references"] == []
-    assert "ありません" in result["detail"]
-
-
-def test_propose_reference_update_with_plain_str_is_stateless(reference_store):
-    """素の str 引数から変更案を作るだけで、保存済み book は変えない。"""
-    result = propose_reference_update(
-        "保育経過記録",
-        "prev_month_diaries",
-        "period_diary",
-        reason="前月の流れを確認するため",
-    )
-    assert result["status"] == "ok"
-    proposal = result["proposal"]
-    assert proposal["reason"] == "前月の流れを確認するため"
-    before = {rule["source"]: rule for rule in proposal["before"]}
-    after = {rule["source"]: rule for rule in proposal["after"]}
-    assert before["period_diary"]["enabled"] is True
-    assert after["period_diary"]["enabled"] is False
-    assert after["prev_month_diaries"]["enabled"] is True
-    assert "前月の保育日誌" == after["prev_month_diaries"]["label"]
-    assert ps.reference_policy_card(ps.load_book(), PolicyScope.保育経過記録).references == [
-        ReferenceRule(source=ReferenceSource.period_diary, enabled=True),
-        ReferenceRule(source=ReferenceSource.prev_child_records, enabled=True),
-    ]
-
-
-def test_propose_reference_update_rejects_unknown_source(reference_store):
-    result = propose_reference_update("保育経過記録", "unknown_source", "")
-    assert result["status"] == "rejected"
-    assert "unknown_source" in result["detail"]
-    assert {item["source"] for item in result["valid_sources"]} == {
-        source.value for source in ReferenceSource
-    }
-
-
-def test_commit_reference_update_with_plain_str_records_history(reference_store):
-    result = commit_reference_update(
-        "保育経過記録",
-        "prev_month_diaries",
-        "period_diary",
-        decided_by="主任保育士",
-    )
-    assert result["status"] == "committed"
-    assert result["card"]["kind"] == "reference_policy"
-    book = ps.load_book()
-    card = ps.reference_policy_card(book, PolicyScope.保育経過記録)
-    states = {rule.source: rule.enabled for rule in card.references}
-    assert states[ReferenceSource.period_diary] is False
-    assert states[ReferenceSource.prev_month_diaries] is True
-    assert book.history[-1].decided_by == "主任保育士"
-    assert book.history[-1].source == "改善エージェント"
-    assert result["history_entry"]["by"] == "主任保育士"
-
-
-def test_commit_reference_update_version_conflict_rejected(policy_db, monkeypatch):
-    """参照設定も read-modify-write の競合を黙って上書きしない。"""
-    when = __import__("datetime").datetime(2026, 7, 11, 0, 0, 0)
-    ps.save_book(
-        PolicyBook(
-            cards=[
-                PolicyCard(
-                    id="card-0001",
-                    scope=PolicyScope.保育経過記録,
-                    kind=PolicyCardKind.reference_policy,
-                    body="保育経過記録作成時の既定参照",
-                    references=[ReferenceRule(source=ReferenceSource.period_diary)],
-                    created_at=when,
-                    updated_at=when,
-                )
-            ]
-        )
-    )
-    original = ps.load_book_meta
-
-    def stale_load(*args, **kwargs):
-        book, version = original(*args, **kwargs)
-        return book, version - 1
-
-    monkeypatch.setattr(ps, "load_book_meta", stale_load)
-    result = commit_reference_update("保育経過記録", "", "period_diary")
-    assert result["status"] == "rejected"
-    assert "競合" in result["detail"]
-
-
 def test_bound_policy_tools_write_only_to_workspace_book(policy_db):
-    """guideline と reference の commit は束縛された book だけを書き、default へ漏らさない。"""
+    """commit は束縛された book だけを書き、default へ漏らさない（workspace 認可境界の回帰確認）。"""
     import inspect
 
-    when = __import__("datetime").datetime(2026, 7, 11, 0, 0, 0)
     book_id = "workspace:test-workspace"
-    ps.save_book(
-        PolicyBook(
-            cards=[
-                PolicyCard(
-                    id="card-0001",
-                    scope=PolicyScope.保育経過記録,
-                    kind=PolicyCardKind.reference_policy,
-                    body="保育経過記録作成時の既定参照",
-                    references=[ReferenceRule(source=ReferenceSource.period_diary)],
-                    created_at=when,
-                    updated_at=when,
-                )
-            ]
-        ),
-        book_id=book_id,
-    )
     tools = {tool.__name__: tool for tool in build_policy_tools(book_id)}
     assert all("book_id" not in inspect.signature(tool).parameters for tool in tools.values())
     implementations = {
         "read_policy_cards": read_policy_cards,
         "propose_policy_card": propose_policy_card,
         "commit_policy_card": commit_policy_card,
-        "read_reference_policy": read_reference_policy,
-        "propose_reference_update": propose_reference_update,
-        "commit_reference_update": commit_reference_update,
     }
     assert all(tool.__doc__ == implementations[name].__doc__ for name, tool in tools.items())
 
     guideline = tools["commit_policy_card"]("共通", "観察した事実を先に書く")
-    reference = tools["commit_reference_update"](
-        "保育経過記録", "prev_child_records", "period_diary"
-    )
 
     assert guideline["status"] == "committed"
-    assert reference["status"] == "committed"
     workspace_book = ps.load_book(book_id=book_id)
     assert any(card.body == "観察した事実を先に書く" for card in workspace_book.cards)
-    rules = {
-        rule.source: rule.enabled
-        for rule in ps.reference_policy_card(workspace_book, PolicyScope.保育経過記録).references
-    }
-    assert rules == {
-        ReferenceSource.period_diary: False,
-        ReferenceSource.prev_child_records: True,
-    }
     assert ps.load_book().cards == []
-
-
-def test_reference_update_preserves_existing_order_and_appends_new_source(reference_store):
-    """変更後はカードの規則順を維持し、新規有効化した資料だけを末尾へ足す。"""
-    book = ps.load_book()
-    card = ps.reference_policy_card(book, PolicyScope.保育経過記録)
-    reordered = card.model_copy(
-        update={
-            "references": [
-                ReferenceRule(source=ReferenceSource.prev_child_records, enabled=False),
-                ReferenceRule(source=ReferenceSource.period_diary, enabled=True),
-                ReferenceRule(source=ReferenceSource.class_child_records, enabled=True),
-            ]
-        }
-    )
-    ps.save_book(
-        book.model_copy(
-            update={
-                "cards": [
-                    reordered if existing.id == card.id else existing for existing in book.cards
-                ]
-            }
-        )
-    )
-
-    result = propose_reference_update(
-        "保育経過記録",
-        "prev_child_records,past_class_plans",
-        "period_diary",
-    )
-
-    assert [rule["source"] for rule in result["proposal"]["after"]] == [
-        "prev_child_records",
-        "period_diary",
-        "class_child_records",
-        "past_class_plans",
-    ]
-    assert [rule["enabled"] for rule in result["proposal"]["after"]] == [
-        True,
-        False,
-        True,
-        True,
-    ]

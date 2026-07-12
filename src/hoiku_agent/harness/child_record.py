@@ -1,7 +1,7 @@
 """harness：保育経過記録パイプラインの順序と型の保証（§19・L3）。
 
 該当期間の日誌と前回までの保育経過記録は ``period_entries`` と ``prev_record_entries`` に候補として
-seed する。author が reference_policy に基づき fetch_reference を選択した時点で harness.reference が
+seed する。author が参照方針カードに基づき fetch_reference を選択した時点で harness.reference が
 決定的に集計する。作成対象期の除外と workspace 境界は seed 側、承認時書き戻しは Web が担う（§9）。
 """
 

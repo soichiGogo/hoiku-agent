@@ -58,15 +58,15 @@ class PolicyStatus(str, Enum):
     retired = "retired"  # ソフト削除（参照されない）
 
 
-class PolicyCardKind(str, Enum):
-    """カード種別。既存カードは guideline として後方互換で読む。"""
-
-    guideline = "guideline"
-    reference_policy = "reference_policy"
-
-
 class ReferenceSource(str, Enum):
-    """author が取得できる参照候補。自由文検索や識別子指定を許さない閉じた語彙。"""
+    """author が取得できる参照候補。自由文検索や識別子指定を許さない閉じた語彙（§5）。
+
+    どの書類でどのsourceを使うかは固定コードでなく、育つ指針カード（自然言語の参照方針・
+    PolicyScope 別）が author への案内を担う（2026-07-12 簡素化＝旧 reference_policy カード/
+    ReferenceRule のチェックボックスUIを撤去し、他の指針カードと同じ自然文編集に統一）。
+    各メンバーの用途は `tools/fetch_reference.py` のツール docstring に doc_type 非依存の
+    固定語彙表として集約する（ここでは列挙のみ）。
+    """
 
     period_diary = "period_diary"
     prev_child_records = "prev_child_records"
@@ -77,46 +77,6 @@ class ReferenceSource(str, Enum):
     class_roster = (
         "class_roster"  # クラスの在籍児名簿（クラス・園児マスタ＝0–2 個人目標の対象の与件）
     )
-
-
-REFERENCE_SOURCE_META: dict[ReferenceSource, tuple[str, str]] = {
-    ReferenceSource.period_diary: (
-        "期間内の保育日誌",
-        "作成対象の期間に書かれた日誌です。",
-    ),
-    ReferenceSource.prev_child_records: (
-        "前回までの保育経過記録",
-        "同じ子どもの過去の期の経過記録すべてです。",
-    ),
-    ReferenceSource.class_child_records: (
-        "クラス児童の保育経過記録",
-        "クラス在籍児の経過記録すべてです。",
-    ),
-    ReferenceSource.past_class_plans: (
-        "これまでのクラス月案",
-        "過去に確定したクラス月案です。",
-    ),
-    ReferenceSource.uncovered_class_diaries: (
-        "経過記録に未反映の日誌",
-        "まだ経過記録にまとめていない期間の日誌です。",
-    ),
-    ReferenceSource.prev_month_diaries: (
-        "前月の保育日誌",
-        "前の月に書かれた日誌です。",
-    ),
-    ReferenceSource.class_roster: (
-        "クラスの在籍児名簿",
-        "クラス・園児マスタに登録された現在の在籍児です。",
-    ),
-}
-
-
-class ReferenceRule(BaseModel):
-    """reference_policy カード内の参照規則1件。"""
-
-    source: ReferenceSource
-    enabled: bool = True
-    note: str | None = None
 
 
 class PolicyChangeAction(str, Enum):
@@ -136,9 +96,9 @@ class PolicyCard(BaseModel):
 
     id: str  # 決定的採番（policy_store.next_card_id ＝ "card-0001" 形式）
     scope: PolicyScope
-    kind: PolicyCardKind = PolicyCardKind.guideline
-    body: str  # カード本文（旧・箇条書き本文）。空は add 時に弾く
-    references: list[ReferenceRule] = Field(default_factory=list)
+    body: (
+        str  # カード本文（旧・箇条書き本文）。空は add 時に弾く。参照方針も自然文でここに書く（§5）
+    )
     rationale: str = ""  # なぜこの勘所か（指針整合・園ルール 等）
     source: str = ""  # 由来＝だれの気づきか（保育士の修正メモ / session / "seed:初版" 等）
     status: PolicyStatus = PolicyStatus.active

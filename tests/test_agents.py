@@ -15,22 +15,22 @@ def _tool_names(agent) -> set[str]:
     return {getattr(t, "__name__", None) or getattr(t, "name", "") for t in agent.tools}
 
 
-def test_improver_reference_tools_and_confirmation_gate_are_wired():
-    """参照変更は read→propose→ask→commit を同じ単一エージェントで回す。"""
+def test_improver_policy_tools_and_confirmation_gate_are_wired():
+    """指針カード（参照方針を含む自然文カード）は read→propose→ask→commit を同じ単一エージェントで回す。"""
     pytest.importorskip("google.adk", reason="google-adk 未インストール（uv sync で有効化）")
     from hoiku_agent.improver.improver_agent import build_improver_agent
     from hoiku_agent.improver.prompts import IMPROVER_INSTRUCTION
 
     names = _tool_names(build_improver_agent())
     assert {
-        "read_reference_policy",
-        "propose_reference_update",
+        "read_policy_cards",
+        "propose_policy_card",
         "ask_caregiver",
-        "commit_reference_update",
+        "commit_policy_card",
     } <= names
     assert "同意前、拒否、取消時は絶対に commit しない" in IMPROVER_INSTRUCTION
     assert IMPROVER_INSTRUCTION.index("`ask_caregiver`") < IMPROVER_INSTRUCTION.index(
-        "`commit_reference_update`"
+        "`commit_policy_card`"
     )
 
 

@@ -15,18 +15,18 @@
   「一般化できる勘所か」を判断し、特定の書類・場面に固有で一般化できない気づきなら指針を変えず終える
   （`IMPROVER_INSTRUCTION`／`_build_input`〔web/scripts 両方・二重定義に注意〕に分岐あり）。フィードバックは
   record_store に別途保存済みなので情報は失われない。
-- **番人＝意味的競合精査＋保育士の決定で即反映。** guideline は4ツールで回す：`read_policy_cards`（既存カードを読む）→
+- **番人＝意味的競合精査＋保育士の決定で即反映。** 4ツールで回す：`read_policy_cards`（既存カードを読む）→
   `propose_policy_card`（追加/改訂案＋意味的競合の申告。完全重複は安全網が検出）→ 競合なら `ask_caregiver`
   で**該当カードと新案を比較相談**（無くても反映可否を確認）→ `commit_policy_card`（保育士の決定で
-  **即反映**＝add／supersede→`policy_store.save_book`）。参照資料の話は `read_reference_policy`→
-  `propose_reference_update`→`ask_caregiver`→`commit_reference_update` に分岐し、同意後だけ
-  `policy_store.update_reference_policy` へ渡す。**評価ゲート（eval）は取り込みフローから外す**
-  （eval は CI の品質回帰として別系統で温存＝decouple）。**保育士の決定＝確定**（保育士OK≠マージOK は撤回）。
+  **即反映**＝add／supersede→`policy_store.save_book`）。**参照方針（どの資料を参照するか）も専用ツールを
+  持たず、この4ツールで他のカードと同じ自然文編集として育てる**（2026-07-12簡素化）。**評価ゲート（eval）は
+  取り込みフローから外す**（eval は CI の品質回帰として別系統で温存＝decouple）。**保育士の決定＝確定**
+  （保育士OK≠マージOK は撤回）。
 - **指針の編集の決定的実体は harness/policy_store**（CRUD/render/完全重複ガード/履歴）。「回した証拠」＝
   カード内蔵の変更履歴（decided_by 含む）。ここで subprocess・採点・JSON 編集を再実装しない。
 - **意味的競合の判定はこのエージェント（LLM）の責務**。harness は完全重複の安全網のみ（決定的）。
 - **単一 LlmAgent＋少数ツール**（多層化しない＝§4）。factory `build_improver_agent` で返す。
-- **PolicyBook の認可境界は呼び出し側が束縛する。** `build_policy_tools(book_id)` が6ツールの実関数ラッパへ
+- **PolicyBook の認可境界は呼び出し側が束縛する。** `build_policy_tools(book_id)` が3ツールの実関数ラッパへ
   book_id を閉じ込め、LLM のツール引数には公開しない。Web は検証済み session の workspace book、CLI は
   `book_id=None` の default book を使う（従来互換）。
 - v0 スコープ：add／supersede（置換）。「閉じる1事例」を提出前に必達（捕捉→精査→提案→比較相談→即反映 を1周）。

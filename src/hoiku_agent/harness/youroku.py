@@ -1,6 +1,6 @@
 """harness：保育要録パイプラインの順序と型の保証（§19・L4）。
 
-それまでの保育経過記録は ``record_entries`` に候補として seed する。author が reference_policy に基づき
+それまでの保育経過記録は ``record_entries`` に候補として seed する。author が参照方針カードに基づき
 ``fetch_reference(prev_child_records)`` を選択した時点で harness.reference が決定的に取得する。日誌は
 候補へ加えない。pipeline は authoring_loop→finalize のみで、承認時書き戻しは Web が担う（§9）。
 """
