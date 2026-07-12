@@ -1297,6 +1297,8 @@ async function main() {
     }
     const ageBand = ageBandOf(child);
     status.setSubject(child);
+    // 期間文字列（YYYY-MM〜YYYY-MM）を開始・終了の年月へ分解（seedEntries は年月を取る）。
+    const [start, end] = period.split(/[〜~～−―–]/);
     // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
     const { entries, source } = await seedEntries(start, end, samplePeriodEntries(child));
     // 前回までの保育経過記録（自己履歴・作成対象の期は除外＝依存モデル 2026-07）。未接続/初回は 0 件降格。
