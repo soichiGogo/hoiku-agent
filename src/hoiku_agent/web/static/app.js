@@ -1463,6 +1463,9 @@ async function main() {
     tree: $("records-tree"),
     store: $("records-store"),
     detail: $("records-detail"),
+    childFilterInput: $("records-child-filter"),
+    childFilterList: $("records-child-filter-list"),
+    childFilterClear: $("records-child-filter-clear"),
     childRecordPeriods: cfg.child_record_periods,
     currentChildRecordPeriod: cfg.current_child_record_period,
   });

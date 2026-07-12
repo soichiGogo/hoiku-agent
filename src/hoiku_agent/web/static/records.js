@@ -12,6 +12,12 @@
 // 場所から決まる。解析（LLM＝/api/parse-upload）→ 既存の標準様式編集フォーム（docedit.js）で確認・修正 →
 // finalize-edit で再検査 → /api/records（author_kind=imported）で保存。検査・整形・保存の決定的実体は
 // harness に1つ（ここは中継・描画のみ＝§5）。保存先が未接続のときは取り込めない（正直に降格）。
+//
+// 対象児フィルタ（fs-filter）：保育日誌・クラス月案はクラス全体（複数児）が1書類に同居し、中を開かないと
+// 特定の子の記述と分からない。書類メタの children（登場する子ども全員の表示名＝record_store が保存の
+// たびに現行版へ同期する索引）を部分一致でクライアント側フィルタし、既存の種別→子どもツリーをそのまま
+// 絞り込む（該当種別のみ表示・自動展開）。候補は /api/children の全件（卒園児・未登場の子も含む）。
+// サーバ往復なし＝メタ一覧は既にタブオープン時に全件取得済みのため、フィルタは再描画のみで完結する。
 import * as adk from "./adk.js";
 import { renderEditableDoc } from "./docedit.js";
 import { actorName, banner, el, esc, iconHTML } from "./ui.js";
@@ -45,13 +51,15 @@ const STORE_LABEL = {
 const STORE_CLASS = { ok: "ok", disabled: "muted", unavailable: "warn" };
 
 export function makeRecords(ui) {
-  // ui = { tree, store, detail }
+  // ui = { tree, store, detail, childFilterInput, childFilterList, childFilterClear }
   const bodyCache = new Map(); // id -> 本文（現行版・整形テキスト＋entry）。タブ再オープンで捨てる。
   const expanded = new Set(); // 展開中フォルダの key（再読込を跨いで保持＝辿り位置を失わない）。
   let selectedId = null;
-  let docs = []; // メタ一覧（本文なし）。
+  let docs = []; // メタ一覧（本文なし）。各書類は登場する子ども（children＝表示名の配列）を持つ。
   let formMeta = null; // 編集フォームのタグ語彙（/api/form-meta・遅延取得）。
   let docTemplates = null; // 様式テンプレート（/api/doc-template・遅延取得）。
+  let childFilter = ""; // 対象児フィルタ（部分一致・空なら絞り込みなし）。
+  let lastStore = "disabled"; // フィルタ変更だけの再描画（再取得なし）用に直近の store 状態を覚えておく。
 
   function setStore(s) {
     ui.store.textContent = STORE_LABEL[s] || "";
@@ -74,10 +82,46 @@ export function makeRecords(ui) {
     renderTree(store);
   }
 
-  // フラットなメタ配列を 種別→子ども→書類 の入れ子へ畳む（描画は展開時に遅延）。
+  // 対象児フィルタの候補（児童マスタ全件＝卒園児・まだ書類がない子も含む）。タブを開くたび最新化する。
+  async function loadChildFilterOptions() {
+    if (!ui.childFilterList) return;
+    const children = await adk.getChildren();
+    ui.childFilterList.innerHTML = "";
+    for (const c of children) {
+      const opt = el("option");
+      opt.value = c.display_name;
+      ui.childFilterList.appendChild(opt);
+    }
+  }
+
+  // 対象児フィルタ入力欄の配線（部分一致でツリーを即座に絞り込む・サーバ再取得なし）。
+  function wireChildFilter() {
+    if (!ui.childFilterInput) return;
+    const apply = () => {
+      childFilter = ui.childFilterInput.value.trim();
+      if (ui.childFilterClear) ui.childFilterClear.classList.toggle("hidden", !childFilter);
+      renderTree(lastStore);
+    };
+    ui.childFilterInput.addEventListener("input", apply);
+    if (ui.childFilterClear) {
+      ui.childFilterClear.addEventListener("click", () => {
+        ui.childFilterInput.value = "";
+        apply();
+        ui.childFilterInput.focus();
+      });
+    }
+  }
+
+  // フラットなメタ配列を 種別→子ども→書類 の入れ子へ畳む（描画は展開時に遅延）。対象児フィルタが
+  // 効いていれば、その子が登場する書類（children＝表示名の配列・部分一致）だけに絞る。日誌・クラス月案
+  // のようなクラス全体の書類も、中の個別記録に登場していれば拾える（§根本要件＝クラス単位に埋もれた
+  // 個別の記述を横断的に見つける）。
   function groupDocs(documents) {
+    const filtered = childFilter
+      ? documents.filter((d) => (d.children || []).some((name) => name.includes(childFilter)))
+      : documents;
     const byType = new Map();
-    for (const d of documents) {
+    for (const d of filtered) {
       if (!byType.has(d.doc_type)) byType.set(d.doc_type, new Map());
       const byChild = byType.get(d.doc_type);
       const ck = d.child || NO_CHILD;
@@ -95,6 +139,7 @@ export function makeRecords(ui) {
   }
 
   function renderTree(store) {
+    lastStore = store; // フィルタ変更だけの再描画（loadTree を経ない）でも直近の store を使えるようにする。
     ui.tree.innerHTML = "";
     if (store === "disabled" || store === "unavailable") {
       ui.tree.appendChild(
@@ -119,10 +164,18 @@ export function makeRecords(ui) {
           "まだ書類がありません。フォルダを開いて「取り込む」からファイルを取り込むか、「書類作成」で確定すると、ここに並びます。",
         ),
       );
+    } else if (childFilter && ![...byType.values()].some((byChild) => byChild.size)) {
+      // 対象児フィルタが効いていて、どの種別にも該当がない＝正直に「見つからない」を伝える。
+      ui.tree.appendChild(
+        el("p", "rempty", `「${esc(childFilter)}」が登場する書類が見つかりませんでした。`),
+      );
     }
-    // 4 種別フォルダは常に出す（空でも取込先＝ファイルシステム的に場所から種別を選ぶ）。
+    // 4 種別フォルダは常に出す（空でも取込先＝ファイルシステム的に場所から種別を選ぶ）。ただし対象児
+    // フィルタ中は、その種別に該当書類が無ければ畳んで出さない（絞り込み結果として見やすくする）。
     for (const type of TYPE_ORDER) {
-      ui.tree.appendChild(typeFolder(type, byType.get(type) || new Map()));
+      const byChild = byType.get(type) || new Map();
+      if (childFilter && byChild.size === 0) continue;
+      ui.tree.appendChild(typeFolder(type, byChild));
     }
     // 未知の doc_type も末尾に出す（種別が増えても取りこぼさない）。
     for (const [type, byChild] of byType) {
@@ -143,7 +196,9 @@ export function makeRecords(ui) {
     const row = el("button", "fsrow is-folder");
     row.type = "button";
     row.style.setProperty("--depth", depth);
-    const open = expanded.has(key);
+    // 対象児フィルタ中は該当フォルダを自動展開する（絞り込み結果を1クリックで見せる）。expanded
+    // 自体は変更しないので、フィルタを解除すれば手動での開閉状態にそのまま戻る。
+    const open = childFilter ? true : expanded.has(key);
     row.setAttribute("aria-expanded", String(open));
     row.innerHTML =
       `<span class="fsrow-tw">${iconHTML("chevron", "fs-chev")}</span>` +
@@ -692,7 +747,13 @@ export function makeRecords(ui) {
 
   async function init() {
     renderPlaceholder();
-    await loadTree();
+    wireChildFilter();
+    await Promise.all([loadTree(), loadChildFilterOptions()]);
+  }
+
+  // タブを開くたびに最新化する（他タブで確定した書類・クラス・園児タブで追加した子が反映される）。
+  async function refresh() {
+    await Promise.all([loadTree(), loadChildFilterOptions()]);
   }
 
   // 特定の書類（id）を外（別タブ）から開く導線。edit=true なら編集フォームで開き、focus 指定の欄へ寄せる
@@ -719,6 +780,5 @@ export function makeRecords(ui) {
     return true;
   }
 
-  // タブを開くたびに最新化する（他タブで確定した書類がすぐ反映される）。
-  return { init, refresh: loadTree, openDoc };
+  return { init, refresh, openDoc };
 }
