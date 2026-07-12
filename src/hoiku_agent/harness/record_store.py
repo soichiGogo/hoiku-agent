@@ -248,6 +248,10 @@ class DocumentRecord(Base):
     doc_type: Mapped[str] = mapped_column(sa.String(20), index=True)
     dedupe_key: Mapped[str] = mapped_column(sa.String(200))
     child_id: Mapped[uuid.UUID | None] = mapped_column(sa.ForeignKey("children.id"), index=True)
+    # 登場する子ども（表示名）の索引＝検索キーの列昇格（migration 0014）。日誌/クラス月案は複数児が
+    # 1書類に同居し child_id 単体（主対象児専用）では引けないため、_mentioned_children() の出力を
+    # 保存のたびに現行版へ同期する（「書類を見る」タブの対象児フィルタが読む）。
+    mentioned_children: Mapped[list[str]] = mapped_column(_JSON, default=list)
     target_date: Mapped[date | None] = mapped_column(sa.Date, index=True)  # 日誌
     target_month: Mapped[str | None] = mapped_column(sa.String(7))  # 月案（YYYY-MM）
     target_period: Mapped[str | None] = mapped_column(
@@ -702,7 +706,8 @@ def save_document(
         workspace = _workspace_uuid(workspace_id)
         with Session(eng) as session, session.begin():
             _ensure_workspace(session, workspace, now)
-            for name in _mentioned_children(kind, entry):
+            mentioned = _mentioned_children(kind, entry)
+            for name in mentioned:
                 _resolve_child(session, name, workspace, now)
             doc = session.scalar(
                 sa.select(DocumentRecord).where(
@@ -719,6 +724,7 @@ def save_document(
                         if child_display
                         else None
                     ),
+                    mentioned_children=mentioned,
                     target_date=target_date,
                     target_month=target_month,
                     target_period=target_period,
@@ -744,6 +750,8 @@ def save_document(
             session.add(version)
             session.flush()
             doc.current_version_id = version.id
+            # 登場する子どもは現行版に合わせて同期する（編集で子が増減しても索引が現行版を反映する）。
+            doc.mentioned_children = mentioned
             doc.updated_at = now
             # 承認後に新しい版が積まれたら承認は失効させる（現行版＝未承認の finalized へ戻す）。旧内容への
             # 承認証跡は audit に残るが、編集後の現行内容を「承認済み」と偽らない（§偽の緑を出さない）。
@@ -1398,6 +1406,9 @@ def _doc_view(doc: DocumentRecord, child_display: str | None) -> dict:
         "id": str(doc.id),
         "doc_type": doc.doc_type,
         "child": child_display or "",
+        # 登場する子ども（表示名）全員＝現行版の索引（対象児フィルタ用）。主対象児のみの書類も
+        # _mentioned_children が main を含めるため "child" と重複して入る（フィルタ側は一律 children を見る）。
+        "children": list(doc.mentioned_children or []),
         "target": (
             doc.target_date.isoformat()
             if doc.target_date
