@@ -27,6 +27,7 @@ from ..schemas import (
     NurseryRecord,
     ThreeViewpoint,
 )
+from .child_record_period import child_record_period_problem
 
 
 def _month_format_problem(month: str) -> str | None:
@@ -222,6 +223,10 @@ def validate_child_record_fields(record: ChildRecord) -> list[str]:
     # ── 必須欄の充足（空文字も "未記入" 扱い） ── §19 保育経過記録：共通構造
     if not record.period.strip():
         problems.append("対象期間（period）が未記入")
+    else:
+        period_problem = child_record_period_problem(record.period)
+        if period_problem:
+            problems.append(period_problem)
     if not record.child_id.strip():
         problems.append("対象児（child_id）が未記入（保育経過記録は児童別＝§19）")
     if not record.overall_note.strip():

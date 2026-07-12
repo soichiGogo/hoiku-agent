@@ -20,6 +20,7 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -38,6 +39,10 @@ from ..harness import (
     template_store,
 )
 from ..harness.finalize import finalize_entry
+from ..harness.child_record_period import (
+    child_record_period_for,
+    child_record_period_options,
+)
 from ..harness.memory_writeback import approved_memory_facts, persist_approved_facts
 from ..harness.pipeline import MAX_REVIEW_ITERATIONS
 from ..schemas import (
@@ -235,10 +240,10 @@ def _doc_filename(kind: str, entry: dict, ext: str) -> str:
 
 
 def _period_end_date(period: str) -> date | None:
-    """期間の自由記述（例 "2026-04〜2026-06"）の**末尾**の年月を月末日として返す（不明は None）。
+    """対象期間（例 "2026-04〜2026-06"）の**末尾**の年月を月末日として返す（不明は None）。
 
-    保育経過記録の月齢は「期末（記入時点）」で数える（保育士確認済みの基準日）。区切りは自由記述なので
-    正規表現で年月を全部拾い最後を採る（"2026-04〜2026-06"→2026-06 / 単月 "2026-06"→2026-06）。
+    保育経過記録の月齢は「期末（記入時点）」で数える。新規確定は年度4期・各3か月固定だが、
+    移行前データも描画できるよう正規表現で年月を全部拾い最後を採る。
     """
     import calendar
     import re
@@ -470,6 +475,8 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
             )
             display_name = str((user or {}).get("display_name") or "")
             workspace_id = str((user or {}).get("workspace_id") or "")
+        # Cloud Run のOS時刻はUTCでも、保育現場の「現在期」は日本時間で切り替える。
+        today = datetime.now(ZoneInfo("Asia/Tokyo")).date()
         return {
             "app_name": APP_NAME,
             # ADK session の user_id も workspace に結び、Google account 間で会話 state を共有しない。
@@ -491,6 +498,10 @@ def register_web_ui(app: FastAPI, *, memory_service: object | None = None) -> Fa
             "model": settings.gemini_model,
             "user_email": email,
             "user_display_name": display_name,
+            # 保育経過記録は年度4期・各3か月固定。UI はこの閉じた選択肢をそのまま描き、
+            # 期間計算を再実装しない（決定ロジックの正は harness.child_record_period）。
+            "child_record_periods": child_record_period_options(today),
+            "current_child_record_period": child_record_period_for(today).value,
             # 園の実 Word 様式（.docx）流し込みに対応済みの kind＝UI が Word ダウンロードの出し分けに使う。
             "docx_kinds": docx_supported_kinds(),
             # レビュー巡回の上限（harness の SSOT）。UI は差し戻し時に「N巡目/最大M」を出す際の M に使う

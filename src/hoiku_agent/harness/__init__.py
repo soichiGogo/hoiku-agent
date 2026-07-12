@@ -22,6 +22,15 @@ from .draft import (
     write_monthly_draft,
     write_nursery_record_draft,
 )
+from .child_record_period import (
+    ChildRecordPeriod,
+    child_record_period_for,
+    child_record_period_options,
+    child_record_period_problem,
+    child_record_periods,
+    fiscal_year_of,
+    parse_child_record_period,
+)
 from .finalize import (
     FinalizedDocument,
     finalize_child_record_document,
@@ -96,6 +105,13 @@ __all__ = [
     "parse_draft_to_child_record",
     "parse_draft_to_nursery_record",
     "FinalizedDocument",
+    "ChildRecordPeriod",
+    "child_record_periods",
+    "child_record_period_for",
+    "child_record_period_options",
+    "child_record_period_problem",
+    "fiscal_year_of",
+    "parse_child_record_period",
     "aggregate_by_child",
     "prev_month_digest",
     "format_digest_for_prompt",

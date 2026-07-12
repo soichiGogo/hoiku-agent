@@ -153,7 +153,7 @@ def test_render_child_record_period_quarters_and_extras():
         ],
     }
     assert render_pdf("child_record", entry)[:4] == b"%PDF"
-    # 期間が読めない自由記述でも落ちない（先頭列へフォールバック）。
+    # 保存済み旧データの不正な期間でも描画自体は落とさない（先頭列へフォールバック）。
     assert render_pdf("child_record", {**_CHILD_RECORD, "period": "第1期"})[:4] == b"%PDF"
 
 

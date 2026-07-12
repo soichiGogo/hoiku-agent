@@ -215,6 +215,23 @@ def test_monthly_and_child_record_targets(db):
     assert len([d for d in rs.list_documents() if d["doc_type"] == "monthly"]) == 2
 
 
+def test_child_record_save_normalizes_period_and_rejects_non_quarter(db):
+    record = {"period": "2026-04～2026-06", "child_id": "はるとくん", "age_band": "0-2"}
+    saved = rs.save_document("child_record", record, author_kind="ai", now=_NOW)
+    assert saved["status"] == "saved"
+    detail = rs.get_document(saved["document_id"])
+    assert detail is not None and detail["entry"]["period"] == "2026-04〜2026-06"
+
+    invalid = rs.save_document(
+        "child_record",
+        {**record, "period": "2026-04〜2026-07"},
+        author_kind="ai",
+        now=_NOW,
+    )
+    assert invalid["status"] == "error"
+    assert "年度4期の3か月単位" in invalid["detail"]
+
+
 def test_class_monthly_is_class_level_and_auto_creates_goal_children(db):
     """クラス月案（class_monthly）はクラス単位（主対象児なし・月が対象期間キー）で保存でき、
     個人目標の登場児が児童マスタへ auto-create される（§18）。"""
@@ -829,7 +846,7 @@ def test_period_date_range_parses_month_span_or_none():
     # 全角チルダ U+FF5E（Windows IME 既定で最頻出）・EN DASH も区切りとして受ける（取込・手入力の表記ゆれ）。
     assert rs.period_date_range("2026-04～2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
     assert rs.period_date_range("2026-04–2026-06") == (date(2026, 4, 1), date(2026, 6, 30))
-    # 期制は園差＝自由記述。月〜月以外は None（黙って誤解釈せず呼び出し側がサンプルへ降格）。
+    # 移行前データ互換：月〜月以外は None（黙って誤解釈せず呼び出し側が安全側へ降格）。
     assert rs.period_date_range("1学期") is None
     assert rs.period_date_range("2026-06〜2026-04") is None  # 逆転も None
 

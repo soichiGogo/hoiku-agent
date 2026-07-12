@@ -86,7 +86,7 @@ def _label_row_value_cell(tbl: Table, label: str):
 
 
 def _fiscal_year_label(period: str) -> str:
-    """対象期間の自由記述先頭から年度（4月始まり）を推定して「YYYY年度」を返す。読めなければ空。"""
+    """対象期間の先頭から年度（4月始まり）を推定して「YYYY年度」を返す。読めなければ空。"""
     m = re.search(r"(\d{4})\s*[-/年]\s*(\d{1,2})", str(period or ""))
     if not m:
         return ""
