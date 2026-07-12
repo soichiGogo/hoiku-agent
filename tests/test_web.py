@@ -14,6 +14,7 @@ import server
 from fastapi.testclient import TestClient
 from hoiku_agent.config import settings
 from hoiku_agent.harness import demo_seed, record_store
+from hoiku_agent.harness.child_record_period import parse_child_record_period
 
 # autouse スタブから実物へ戻すための参照（初回ログイン auto-seed の実挙動テスト用）。
 _REAL_SEED_WORKSPACE = demo_seed.seed_workspace
@@ -78,6 +79,14 @@ def test_config_shape() -> None:
     assert body["default_user_id"] == "caregiver"
     for key in ("memory_connected", "rag_connected", "llm_budget", "model"):
         assert key in body
+    assert parse_child_record_period(body["current_child_record_period"]) is not None
+    assert body["current_child_record_period"] in {
+        option["value"] for option in body["child_record_periods"]
+    }
+    assert all(
+        {"value", "label", "fiscal_year", "quarter"} <= set(option)
+        for option in body["child_record_periods"]
+    )
     assert {"available", "limit_yen", "used_yen", "remaining_yen"} <= body["llm_budget"].keys()
     # 園の実 Word 様式に対応済みの kind を UI の出し分け用に返す（保育経過記録・クラス月案は配線済み）。
     assert "child_record" in body["docx_kinds"]
@@ -101,7 +110,12 @@ def test_doc_template_shape() -> None:
 def test_static_ui_served() -> None:
     c = _client()
     # SPA 本体と各 ES モジュールが配信される。
-    assert c.get("/app/").status_code == 200
+    page = c.get("/app/")
+    assert page.status_code == 200
+    assert "データを初期化して始める" in page.text
+    assert 'id="record-period"' in page.text
+    assert 'id="record-start"' not in page.text
+    assert 'id="record-end"' not in page.text
     for asset in (
         "app.js",
         "adk.js",
@@ -116,6 +130,12 @@ def test_static_ui_served() -> None:
         "styles.css",
     ):
         assert c.get(f"/app/{asset}").status_code == 200, asset
+
+    # 初期化成功後は workspace 単位の完了印を保存し、再読込後も一回限りのボタンを出さない。
+    app_js = c.get("/app/app.js").text
+    assert 'const DATA_INITIALIZED_KEY_PREFIX = "hoiku_data_initialized:"' in app_js
+    assert "rememberDataInitialized(cfg);" in app_js
+    assert 'resetData.classList.add("hidden");' in app_js
 
 
 def test_edit_textareas_grow_with_content_without_inner_scroll() -> None:
@@ -1087,7 +1107,7 @@ def test_export_pdf_nursery_uses_registered_real_name(records_db) -> None:
 def test_child_record_entries_endpoint_seeds_youroku(records_db) -> None:
     """保育要録 L4 の seed 取得口＝指定児の保育経過記録（最新版・期間順）を返す（読取なので非ゲート）。"""
     c = _client()
-    for period, overall in [("2026-04〜2026-07", "1期"), ("2026-08〜2026-11", "2期")]:
+    for period, overall in [("2026-04〜2026-06", "1期"), ("2026-07〜2026-09", "2期")]:
         c.post(
             "/api/records",
             json={
@@ -1104,13 +1124,13 @@ def test_child_record_entries_endpoint_seeds_youroku(records_db) -> None:
         )
     body = c.get("/api/records/child-record-entries", params={"child": "架空児A"}).json()
     assert body["store"] == "ok"
-    assert [e["period"] for e in body["entries"]] == ["2026-04〜2026-07", "2026-08〜2026-11"]
+    assert [e["period"] for e in body["entries"]] == ["2026-04〜2026-06", "2026-07〜2026-09"]
     # exclude_period＝作成対象の期を「前回まで」seed から除く（保育経過記録の自己履歴・依存モデル 2026-07）
     past = c.get(
         "/api/records/child-record-entries",
-        params={"child": "架空児A", "exclude_period": "2026-08〜2026-11"},
+        params={"child": "架空児A", "exclude_period": "2026-07〜2026-09"},
     ).json()
-    assert [e["period"] for e in past["entries"]] == ["2026-04〜2026-07"]
+    assert [e["period"] for e in past["entries"]] == ["2026-04〜2026-06"]
     # 未登録児は空＝フロントがサンプルへ降格
     assert (
         c.get("/api/records/child-record-entries", params={"child": "未登録"}).json()["entries"]

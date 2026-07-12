@@ -146,7 +146,7 @@ def _sample_period_entries(child_id: str) -> list[dict]:
 def _archive_period_entries(period: str) -> list[dict]:
     """書類アーカイブから期間中の日誌を引く（L3 seed の本命経路・Phase 1）。
 
-    DATABASE_URL 未設定・期間の解釈不能（期制は園差＝自由記述）・該当なしは []＝
+    DATABASE_URL 未設定・期間の解釈不能・該当なしは []＝
     呼び出し側がサンプルへ降格する（黙って誤解釈しない）。
     """
     from hoiku_agent.harness import record_store
@@ -218,7 +218,11 @@ async def _run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="保育経過記録パイプライン（L3 還流）の手動起動")
-    parser.add_argument("--period", default="2026-04〜2026-06", help="対象期間（自由記述）")
+    parser.add_argument(
+        "--period",
+        default="2026-04〜2026-06",
+        help="対象期間（年度4期の3か月単位: 4〜6月／7〜9月／10〜12月／1〜3月）",
+    )
     parser.add_argument(
         "--child-id", default="はるとくん", help="対象児（実在しない仮名のみ＝§14）"
     )
@@ -226,12 +230,18 @@ def main() -> None:
         "--entries-file", help="期間中の日誌（DiaryEntry の JSON 配列）。無ければ同梱サンプル"
     )
     args = parser.parse_args()
+    from hoiku_agent.harness.child_record_period import parse_child_record_period
+
+    parsed_period = parse_child_record_period(args.period)
+    if parsed_period is None:
+        parser.error("--period は年度4期の3か月単位で指定してください（例: 2026-04〜2026-06）")
+    period = parsed_period.value
 
     if args.entries_file:
         period_entries = json.loads(Path(args.entries_file).read_text(encoding="utf-8"))
         seed_src = f"ファイル {args.entries_file}"
     else:
-        period_entries = _archive_period_entries(args.period)
+        period_entries = _archive_period_entries(period)
         seed_src = "書類アーカイブ（DATABASE_URL）"
         if not period_entries:
             period_entries = _sample_period_entries(args.child_id)
@@ -239,12 +249,12 @@ def main() -> None:
     print(f"[seed] 期間日誌 {len(period_entries)} 件（{seed_src}）")
 
     # 前回までの保育経過記録（自己履歴）＝アーカイブから全期を引く（初回/未接続は 0 件＝降格）。
-    prev_records = _archive_prev_records(args.child_id, args.period)
+    prev_records = _archive_prev_records(args.child_id, period)
     print(
         f"[seed] 前回までの保育経過記録 {len(prev_records)} 件（書類アーカイブ・作成対象の期は除外）"
     )
 
-    asyncio.run(_run(args.period, args.child_id, period_entries, prev_records))
+    asyncio.run(_run(period, args.child_id, period_entries, prev_records))
 
 
 if __name__ == "__main__":

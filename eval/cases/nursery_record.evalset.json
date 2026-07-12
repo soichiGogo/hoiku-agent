@@ -34,7 +34,7 @@
           "doc_type": "保育要録",
           "record_entries": [
             {
-              "period": "2026-04〜2026-07",
+              "period": "2026-04〜2026-06",
               "age_band": "3-5",
               "child_id": "はるとくん",
               "age_months": "5歳4か月",
@@ -58,7 +58,7 @@
               "next_aims": ""
             },
             {
-              "period": "2026-08〜2026-11",
+              "period": "2026-07〜2026-09",
               "age_band": "3-5",
               "child_id": "はるとくん",
               "age_months": "5歳8か月",
@@ -82,7 +82,7 @@
               "next_aims": ""
             },
             {
-              "period": "2026-12〜2027-03",
+              "period": "2026-10〜2026-12",
               "age_band": "3-5",
               "child_id": "はるとくん",
               "age_months": "6歳0か月",
@@ -142,7 +142,7 @@
           "doc_type": "保育要録",
           "record_entries": [
             {
-              "period": "2026-04〜2026-07",
+              "period": "2026-04〜2026-06",
               "age_band": "3-5",
               "child_id": "ゆいちゃん",
               "age_months": "5歳3か月",
@@ -166,7 +166,7 @@
               "next_aims": ""
             },
             {
-              "period": "2026-08〜2026-11",
+              "period": "2026-07〜2026-09",
               "age_band": "3-5",
               "child_id": "ゆいちゃん",
               "age_months": "5歳7か月",
@@ -190,7 +190,7 @@
               "next_aims": ""
             },
             {
-              "period": "2026-12〜2027-03",
+              "period": "2026-10〜2026-12",
               "age_band": "3-5",
               "child_id": "ゆいちゃん",
               "age_months": "6歳0か月",
@@ -250,7 +250,7 @@
           "doc_type": "保育要録",
           "record_entries": [
             {
-              "period": "2026-04〜2026-07",
+              "period": "2026-04〜2026-06",
               "age_band": "3-5",
               "child_id": "そうたくん",
               "age_months": "5歳5か月",
@@ -274,7 +274,7 @@
               "next_aims": ""
             },
             {
-              "period": "2026-08〜2026-11",
+              "period": "2026-07〜2026-09",
               "age_band": "3-5",
               "child_id": "そうたくん",
               "age_months": "5歳9か月",
@@ -298,7 +298,7 @@
               "next_aims": ""
             },
             {
-              "period": "2026-12〜2027-03",
+              "period": "2026-10〜2026-12",
               "age_band": "3-5",
               "child_id": "そうたくん",
               "age_months": "6歳0か月",

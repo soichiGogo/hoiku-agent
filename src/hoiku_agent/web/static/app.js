@@ -312,23 +312,27 @@ function samplePeriodEntries(childId) {
   }));
 }
 
-// 保育要録（L4）の seed＝最終年度（年長=3–5）の保育経過記録サンプル。1年を3期に区切り、育ちの推移
+// 保育要録（L4）の seed＝最終年度（年長=3–5）の保育経過記録サンプル。1年を年度4期（各3か月）に区切り、育ちの推移
 // （自己発揮→協同→就学期待）を含める＝要録の「期の記録→1年の育ちの線」への再構成が見える（§14/§19）。
 // scripts/run_youroku.py の _sample_record_entries と同趣旨（ChildRecord の配列）。
 function sampleRecordEntries(childId) {
   const periods = [
-    { period: "2026-04〜2026-07", months: "5歳4か月",
+    { period: "2026-04〜2026-06", months: "5歳3か月",
       dev: [["進級当初は新しい環境に戸惑いも見られたが、生活の流れが分かると安心して過ごした", "健康"],
             ["鬼ごっこなど走る遊びを好み、気の合う友だちと関わって遊んだ", "人間関係"]],
       overall: "新しい環境に慣れ、好きな遊びを見つけて自分を発揮し始めた", next: "友だちとの関わりを広げていく" },
-    { period: "2026-08〜2026-11", months: "5歳8か月",
+    { period: "2026-07〜2026-09", months: "5歳6か月",
       dev: [["製作活動で自分なりの思いを描き加えながら満足感を味わった", "表現"],
             ["散歩で摘んできた草花に興味をもち、図鑑で名前や色を調べようとした", "環境"]],
       overall: "自分の思いを表現しようとする姿が増え、探究する意欲が育った", next: "言葉で伝え合う楽しさを広げる" },
-    { period: "2026-12〜2027-03", months: "6歳0か月",
+    { period: "2026-10〜2026-12", months: "5歳9か月",
       dev: [["メッセージボード作りが友だちに広がり、伝え合う喜びを味わった", "言葉"],
-            ["就学への期待をもち、当番活動に責任をもって取り組んだ", "人間関係"]],
-      overall: "自信をもって表現し、就学に向けて意欲的に生活する姿が育った", next: "小学校生活への期待をもつ" },
+            ["当番活動に責任をもって取り組み、友だちと声を掛け合った", "人間関係"]],
+      overall: "自信をもって表現し、仲間と役割を担う姿が育った", next: "就学への期待を高める" },
+    { period: "2027-01〜2027-03", months: "6歳0か月",
+      dev: [["小学校見学を通して就学への期待を高め、見通しをもって準備した", "環境"],
+            ["生活発表会で友だちと協力し、最後までやり遂げた", "表現"]],
+      overall: "就学への期待を力に変え、自信をもって卒園を迎える姿が育った", next: "小学校生活を楽しみに待つ" },
   ];
   return periods.map((p) => ({
     period: p.period,
@@ -599,7 +603,7 @@ function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
   input.setAttribute("aria-autocomplete", "list");
   input.setAttribute("aria-expanded", "false");
   input.setAttribute("aria-controls", listId);
-  input.placeholder = "名前を入力（先頭一致で候補・Tabで補完）";
+  input.placeholder = "名前を入力";
   if (labelId) input.setAttribute("aria-labelledby", labelId);
   const list = el("ul", "combo-list");
   list.id = listId;
@@ -847,6 +851,28 @@ function sampleChips(container, samples, onPick) {
 /* ============================================================
    起動
    ============================================================ */
+const DATA_INITIALIZED_KEY_PREFIX = "hoiku_data_initialized:";
+
+function dataInitializedKey(cfg) {
+  return DATA_INITIALIZED_KEY_PREFIX + cfg.default_user_id;
+}
+
+function hasInitializedData(cfg) {
+  try {
+    return localStorage.getItem(dataInitializedKey(cfg)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberDataInitialized(cfg) {
+  try {
+    localStorage.setItem(dataInitializedKey(cfg), "1");
+  } catch {
+    // localStorage が使えない環境でも、現在の画面ではボタンを消して初期化結果を見せる。
+  }
+}
+
 // ヘッダの担当者欄。Google サインイン時は「自分の表示名（users.display_name）」を DB に登録/編集する欄になり
 // （証跡の actor はサーバが検証済み email＋この表示名で残す＝§13）、未サインイン時は従来の自己申告
 // （localStorage・認証導入までのつなぎ）。config を見てモードを切り替える（config 読込後に呼ぶ）。
@@ -889,7 +915,7 @@ function setupActor(cfg) {
     // データの初期化＝workspace の書類・園児・クラス・フィードバック・指針/表記のカスタムを即時に消して
     // デフォルトの初期サンプルへ戻す（ログインは継続・reload で全タブが初期状態）。DB 未接続時は
     // サーバが skipped を返すので正直に案内する（アカウント削除の受付 API とは別物）。
-    if (resetData && cfg.records_connected) {
+    if (resetData && cfg.records_connected && !hasInitializedData(cfg)) {
       resetData.classList.remove("hidden");
       resetData.onclick = async () => {
         const ok = window.confirm(
@@ -904,6 +930,8 @@ function setupActor(cfg) {
             window.alert(j.reason || j.detail || "データを初期化できませんでした。");
             return;
           }
+          rememberDataInitialized(cfg);
+          resetData.classList.add("hidden");
           window.alert("初期サンプルデータに戻しました。");
           window.location.reload();
         } finally {
@@ -952,6 +980,17 @@ async function main() {
   status.setBudget(cfg.llm_budget);
   window.addEventListener("llm-budget", (event) => status.setBudget(event.detail));
   setupActor(cfg); // config 後＝Google サインイン有無でモードを決める（表示名編集 / 自己申告）
+
+  // 保育経過記録は年度4期・各3か月固定。選択肢と現在期は harness 由来の /api/config をそのまま描き、
+  // フロントで終了月計算や期判定を重複実装しない。
+  const recordPeriod = $("record-period");
+  for (const period of cfg.child_record_periods || []) {
+    const option = el("option", "");
+    option.value = period.value;
+    option.textContent = period.label;
+    recordPeriod.appendChild(option);
+  }
+  if (cfg.current_child_record_period) recordPeriod.value = cfg.current_child_record_period;
 
   // 子ども選択肢：DB 接続時は児童マスタが正（0件なら空のまま「園児が未登録」を正直に案内＝
   // 架空児をあたかも実在の候補のように出さない）。未接続だけデモ用の仮名ロスターへ降格。
@@ -1251,9 +1290,11 @@ async function main() {
       status.setPhase("対象児を選択してください", "waiting");
       return;
     }
-    const start = $("record-start").value || "2026-04";
-    const end = $("record-end").value || "2026-06";
-    const period = `${start}〜${end}`;
+    const period = recordPeriod.value;
+    if (!period) {
+      status.setPhase("対象期間を選択してください", "waiting");
+      return;
+    }
     const ageBand = ageBandOf(child);
     status.setSubject(child);
     // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
@@ -1420,6 +1461,8 @@ async function main() {
     tree: $("records-tree"),
     store: $("records-store"),
     detail: $("records-detail"),
+    childRecordPeriods: cfg.child_record_periods,
+    currentChildRecordPeriod: cfg.current_child_record_period,
   });
   await records.init();
   // タブを開くたびに最新化（他タブで確定・承認した書類がすぐ反映される）。

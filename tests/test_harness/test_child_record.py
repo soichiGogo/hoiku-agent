@@ -93,6 +93,11 @@ def test_child_record_missing_required_fields_are_violations():
     assert any("発達の経過" in p for p in problems)
 
 
+def test_child_record_period_must_be_fixed_three_month_quarter():
+    problems = validate_child_record_fields(_record(period="2026-04〜2026-07"))
+    assert any("年度4期の3か月単位" in problem for problem in problems)
+
+
 # ──────────────────────── write_child_record_draft ────────────────────────
 
 
@@ -149,3 +154,11 @@ def test_finalize_child_record_dict_roundtrip():
     payload = json.loads(_record().model_dump_json())
     draft = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
     assert finalize_child_record_document(draft).ok
+
+
+def test_finalize_child_record_normalizes_valid_separator_variation():
+    record = _record(period="2026-04～2026-06")
+    draft = "```json\n" + record.model_dump_json() + "\n```"
+    result = finalize_child_record_document(draft)
+    assert result.ok
+    assert result.entry is not None and result.entry.period == "2026-04〜2026-06"

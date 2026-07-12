@@ -35,6 +35,7 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.doctemplate import LayoutError
 
+from ..harness.child_record_period import parse_child_record_period
 from ..harness.template_store import load_template
 from ..schemas import FiveDomains, ThreeViewpoint
 from ..schemas.template import SectionKind
@@ -580,31 +581,12 @@ def _class_monthly_story(entry: dict) -> list:
 
 _L_CONTENT_W = A4[1] - 2 * _MARGIN  # A4 横の本文幅（landscape で幅は A4 の長辺）
 _QUARTER_LABELS = ["4月〜6月", "7月〜9月", "10月〜12月", "1月〜3月"]
-_MONTH_TO_QUARTER = {4: 0, 5: 0, 6: 0, 7: 1, 8: 1, 9: 1, 10: 2, 11: 2, 12: 2, 1: 3, 2: 3, 3: 3}
-
-
-def _period_start(period: str) -> tuple[int, int] | None:
-    """period 自由記述の先頭から (年, 月) を読み取る（例 "2026-04〜2026-06" → (2026, 4)）。不明は None。"""
-    import re
-
-    m = re.search(r"(\d{4})\s*[-/年]\s*(\d{1,2})", str(period or ""))
-    if not m:
-        return None
-    year, month = int(m.group(1)), int(m.group(2))
-    return (year, month) if 1 <= month <= 12 else None
 
 
 def _P_multi(texts: list[str], style: ParagraphStyle = _SMALL) -> Paragraph:
     """複数の叙述を1セルに積む（各要素をエスケープして <br/> 連結。空はスペーサ行＝空欄の高さ確保）。"""
     body = "<br/><br/>".join(_t(t) for t in texts if str(t).strip())
     return Paragraph(body if body else "&nbsp;<br/>&nbsp;<br/>&nbsp;", style)
-
-
-def _fiscal_year(start: tuple[int, int] | None) -> int | None:
-    """(年, 月) → 年度（4月始まり）。不明は None。"""
-    if start is None:
-        return None
-    return start[0] if start[1] >= 4 else start[0] - 1
 
 
 def assign_period_columns(entry: dict, past_entries: list[dict] | None = None) -> dict[int, dict]:
@@ -616,10 +598,10 @@ def assign_period_columns(entry: dict, past_entries: list[dict] | None = None) -
       年度が違う/期が読めない/別の子は黙って除外（誤った列に描かない）。同じ列に複数来たら後勝ち
       （record_store が期間順で返す＝新しい期間表記が残る）。
     """
-    current_start = _period_start(str(entry.get("period") or ""))
-    quarter = _MONTH_TO_QUARTER[current_start[1]] if current_start else 0
+    current_period = parse_child_record_period(str(entry.get("period") or ""))
+    quarter = current_period.quarter - 1 if current_period else 0
     columns: dict[int, dict] = {}
-    fiscal = _fiscal_year(current_start)
+    fiscal = current_period.fiscal_year if current_period else None
     child = str(entry.get("child_id") or "").strip()
     if fiscal is not None:
         for past in past_entries or []:
@@ -628,10 +610,10 @@ def assign_period_columns(entry: dict, past_entries: list[dict] | None = None) -
             past_child = str(past.get("child_id") or "").strip()
             if child and past_child and past_child != child:
                 continue
-            past_start = _period_start(str(past.get("period") or ""))
-            if _fiscal_year(past_start) != fiscal:
+            past_period = parse_child_record_period(str(past.get("period") or ""))
+            if past_period is None or past_period.fiscal_year != fiscal:
                 continue
-            columns[_MONTH_TO_QUARTER[past_start[1]]] = past
+            columns[past_period.quarter - 1] = past
     columns[quarter] = entry  # 今回の期が常に勝つ
     return columns
 
@@ -667,10 +649,8 @@ def _child_record_story(
     row_labels = [e.value for e in (FiveDomains if age == "3-5" else ThreeViewpoint)] + ["その他"]
 
     period = str(entry.get("period") or "")
-    start = _period_start(period)
-    fiscal = ""
-    if start:
-        fiscal = f"{start[0] if start[1] >= 4 else start[0] - 1}年度"
+    parsed_period = parse_child_record_period(period)
+    fiscal = f"{parsed_period.fiscal_year}年度" if parsed_period else ""
 
     # 列（4期）ごとに割当 entry の行別セルを作る（割当の実体は assign_period_columns＝純関数）。
     columns = assign_period_columns(entry, past_entries)

@@ -28,6 +28,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..schemas import ChildRecord, ClassMonthlyPlan, DiaryEntry, MonthlyPlan, NurseryRecord
 from . import notation_store
+from .child_record_period import parse_child_record_period
 from .draft import (
     write_child_record_draft,
     write_class_monthly_draft,
@@ -213,7 +214,11 @@ def parse_draft_to_class_plan(text: str) -> ClassMonthlyPlan:
 
 def parse_draft_to_child_record(text: str) -> ChildRecord:
     """保育経過記録 author のドラフト文字列から ChildRecord を復元する。失敗時は ValueError（§19）。"""
-    return _parse_json_to_model(text, ChildRecord, "ChildRecord")  # type: ignore[return-value]
+    entry = _parse_json_to_model(text, ChildRecord, "ChildRecord")
+    parsed_period = parse_child_record_period(str(entry.period))
+    if parsed_period is not None:
+        entry = entry.model_copy(update={"period": parsed_period.value})
+    return entry  # type: ignore[return-value]
 
 
 def parse_draft_to_nursery_record(text: str) -> NurseryRecord:
@@ -389,6 +394,9 @@ def finalize_entry(
             write_child_record_draft,
             "ChildRecord",
         )
+        parsed_period = parse_child_record_period(str(data.get("period") or ""))
+        if parsed_period is not None:
+            data = {**data, "period": parsed_period.value}
     elif kind == "nursery_record":
         model_cls = NurseryRecord
         validate, write, label = (

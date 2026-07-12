@@ -31,6 +31,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from . import db
+from .child_record_period import parse_child_record_period
 
 _logger = logging.getLogger(__name__)
 
@@ -251,7 +252,7 @@ class DocumentRecord(Base):
     target_month: Mapped[str | None] = mapped_column(sa.String(7))  # 月案（YYYY-MM）
     target_period: Mapped[str | None] = mapped_column(
         sa.String(50)
-    )  # 保育経過記録（期間・自由記述）
+    )  # 保育経過記録（年度4期・各3か月の正準期間）
     status: Mapped[str] = mapped_column(sa.String(20), default="finalized")  # finalized/approved
     current_version_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid)
     # Memory Bankへ同期済みの版。current_version_id と一致するときだけ現行版の同期完了を表す。
@@ -444,8 +445,8 @@ def prev_month_of(month: str) -> str:
 def period_date_range(period: str) -> tuple[date, date] | None:
     """保育経過記録の期間（例 "2026-04〜2026-06"。〜/~/− 区切り）→（開始月初日, 終了月末日）。
 
-    期制は園差＝自由記述（§19）なので、月〜月の形だけ決定的に解釈し、それ以外は None を返す
-    （呼び出し側がサンプル/手渡し seed へ降格する＝黙って誤解釈しない）。
+    新規確定は年度4期・各3か月に固定する。ここでは移行前の保存済みデータも安全に読めるよう、
+    月〜月の形を広く解釈し、それ以外は None を返す（黙って誤解釈しない）。
     """
     raw = period.strip()
     # 区切り候補：波ダッシュ U+301C・チルダ・全角チルダ U+FF5E（Windows IME 既定で最頻出）・
@@ -467,8 +468,8 @@ def period_date_range(period: str) -> tuple[date, date] | None:
 def covered_until(periods: Iterable[str]) -> date | None:
     """保育経過記録の期間群から「経過記録に反映済みの最終日」を決定的に求める（クラス月案の未反映判定用）。
 
-    各期間を `period_date_range` で解釈し、その終了日の最大値を返す。解釈不能な期間（自由記述で
-    月〜月の形でない）は境界に寄与しない＝その分の日誌は「未反映」として安全側に残る（情報を落とさない）。
+    各期間を `period_date_range` で解釈し、その終了日の最大値を返す。移行前データなどの解釈不能な期間は
+    境界に寄与しない＝その分の日誌は「未反映」として安全側に残る（情報を落とさない）。
     期間が1つも解釈できなければ None（＝全日誌が未反映）。年度は日付比較なので自然に跨ぐ。
     """
     latest: date | None = None
@@ -689,6 +690,12 @@ def save_document(
         }
     actor = _clamp_actor(actor)  # created_by / AuditEvent.actor は VARCHAR(100)
     try:
+        if kind == "child_record":
+            parsed_period = parse_child_record_period(str(entry.get("period") or ""))
+            if parsed_period is None:
+                raise ValueError("保育経過記録の period は年度4期の3か月単位で指定してください")
+            # 区切り表記ゆれを正準化し、JSON・検索キー・dedupe_key を同じ値にそろえる。
+            entry = {**entry, "period": parsed_period.value}
         target_date, target_month, target_period = _extract_target(kind, entry)
         child_display = _extract_child_display(kind, entry)
         key = _dedupe_key(kind, child_display, entry)

@@ -140,9 +140,10 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   共用し、request body・LLM出力から workspace を受けない。**初回ログイン（touch_user が新規 workspace を作った
   呼び出し＝workspace_created）では `harness.demo_seed.seed_workspace` でデフォルト seed（クラス・園児・確定書類
   チェーン）をその場で投入**＝初見でも全タブを体感できる。seed 失敗はログイン本流を壊さない（warning＋続行）。
-  ヘッダの**「データを初期化」ボタン**（`app.js` の `#reset-data`・サインイン＋アーカイブ接続時のみ表示）は
+  ヘッダの**「データを初期化して始める」ボタン**（`app.js` の `#reset-data`・サインイン＋アーカイブ接続時のみ表示）は
   `POST /api/account/reset`＝`demo_seed.reset_workspace`（書類・園児・クラス・フィードバック・指針/表記カスタムを
-  即時消去→seed 再投入・User/Workspace/利用枠は残しログイン継続）。**アカウント削除の受付
+  即時消去→seed 再投入・User/Workspace/利用枠は残しログイン継続）。成功時は workspace 単位の完了印を
+  `localStorage` に保存し、同じブラウザでは再読込後もボタンを再表示しない（一回限りの開始導線）。**アカウント削除の受付
   （`POST /api/account/deletion-request`＝30日遅延）は API として温存・UI からは外した**（privacy.html は
   問い合わせベースの記述）。
 - `chohyo_pdf.py` … 確定 entry（final_entry）→ 園の様式に近い**帳票PDF**（ReportLab・日誌/個別月案/保育要録＝A4 縦・保育経過記録＝**A4 横の年間マトリクス**（行=領域×列=4期・担任印ヘッダ・身長体重欄・期→列は period 先頭の年月で決定/不明は先頭列・過去期の列は past_entries＝アーカイブの保存済み保育経過記録で自動埋め＝`assign_period_columns`）・**クラス月案＝A4 横で園フォーム（月間指導計画）を再現**（`_class_monthly_story`＝ヘッダ〔年度・月/クラス/担任・園長・主任印〕＋保育目標・先月の姿・行事・保護者支援＋区分×領域グリッド〔養護/教育を rowspan〕＋食育/健康・安全/家庭/職員の連携＋0–2 は個人目標小表＋評価系の空欄。園の docx が横向きのため横で描く＝`_LANDSCAPE_KINDS`））。**保育経過記録/要録の氏名欄は `render_pdf(..., official_name=)` で本名（姓＋名）を描く**（呼び名＋敬称でなく＝公式様式・routes が児童マスタから解決・未指定は child_id へ降格）。
@@ -180,7 +181,9 @@ UI は「Claude Code の見た目の丸写し」でなく、agent UX の**実質
   触らせない・§14）、`build_proofreader_agent` を InMemoryRunner で1パス駆動→```json フェンスの提案を復元→**id→entry の
   パスへ写像**して返す（元と同一/空/対象外 id は落とす安全網）。中継のみ（採否・反映は front・提案の実体は agents）。
   `/api/proofread`＝LLM 口＝`llm_budget` で利用枠を予約・creds 無/LLM 失敗は 200＋error で正直に降格（そのまま保存できる）。
-- `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を**カテゴリ別グループ表示の種別メニュー**
+- `static/` … 保育士 SPA。**上位タブは4つ**：**書類を作る**（日誌/クラス月案/保育経過記録/保育要録を**カテゴリ別グループ表示の種別メニュー**。
+  保育経過記録の対象期間は年度4期・各3か月固定で、`/api/config` が返す `child_record_periods` を
+  単一セレクタに描く。開始・終了の二重入力やフロント独自の終了月計算は持たない）
   （`app.js` の `DOC_CATEGORIES`＋`renderDocMenu`）で1タブに統合＝4カテゴリ〔指導計画/保育記録/保護者連携/園運営〕に分け、対応済み（DOC_TYPES に
   フロー実体あり）は選択可・**今後対応予定（年間指導計画/週案/日案/連絡帳/おたより/勤務シフト）は灰色の非選択 placeholder〔status="soon"・クリックで一言案内・
   生成しない＝ロードマップ提示〕**。ready item の label/icon は DOC_TYPES から引く〔二重管理しない〕）で切替。**保育日誌は手入力フォーム**（`diaryform.js`＝クラス選択→在籍児 roster を空欄で並べる＝AI を通さない・needsChild=false。
