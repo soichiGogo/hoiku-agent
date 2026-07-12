@@ -188,6 +188,10 @@ def test_caregiver_ui_hides_internal_terms_and_never_fills_missing_records_with_
     assert "アーカイブに保存しました" not in docflow + diaryform
     assert "この内容で確定・承認する" not in docflow + diaryform
     assert "この内容で確定する" in docflow + diaryform
+    assert "クラス月案を作成する" in app
+    assert "保育経過記録を作成する" in app
+    assert "保育要録を作成する" in app
+    assert "の下書きを作成する" not in app
 
     assert "seed3.class_diary_entries = sampleClassPrevEntries" not in app
     assert "samplePeriodEntries(child)" not in app
