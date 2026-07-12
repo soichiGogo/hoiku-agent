@@ -2,30 +2,6 @@
   "version": 1,
   "cards": [
     {
-      "id": "card-0001",
-      "scope": "共通",
-      "body": "子ども・保護者の個人名は書類に書かない（仮名・イニシャル・属性で表す）。",
-      "rationale": "個人情報保護（§14）。生成書類に実名を残さない。",
-      "source": "seed:初版",
-      "status": "active",
-      "supersedes": null,
-      "superseded_by": null,
-      "created_at": "2026-06-21T00:00:00",
-      "updated_at": "2026-06-21T00:00:00"
-    },
-    {
-      "id": "card-0002",
-      "scope": "共通",
-      "body": "断定的な発達評価を避け、観察事実と解釈を分けて書く。",
-      "rationale": "保護者向け表現の適切さ・保育所保育指針との整合。",
-      "source": "seed:初版",
-      "status": "active",
-      "supersedes": null,
-      "superseded_by": null,
-      "created_at": "2026-06-21T00:00:00",
-      "updated_at": "2026-06-21T00:00:00"
-    },
-    {
       "id": "card-0003",
       "scope": "月案",
       "body": "記述は5領域（乳児は3つの視点）と10の姿に紐づける。",
@@ -99,24 +75,6 @@
     }
   ],
   "history": [
-    {
-      "timestamp": "2026-06-21T00:00:00",
-      "action": "add",
-      "card_id": "card-0001",
-      "superseded_id": null,
-      "summary": "初版（雛形）：共通ルール「個人名を書かない」を登録",
-      "source": "seed:初版",
-      "decided_by": "初版"
-    },
-    {
-      "timestamp": "2026-06-21T00:00:00",
-      "action": "add",
-      "card_id": "card-0002",
-      "superseded_id": null,
-      "summary": "初版（雛形）：共通ルール「断定的評価を避ける」を登録",
-      "source": "seed:初版",
-      "decided_by": "初版"
-    },
     {
       "timestamp": "2026-06-21T00:00:00",
       "action": "add",
