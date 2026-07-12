@@ -92,9 +92,9 @@ const TOOL_META = {
   validate_fields: { icon: "shield", label: "必須項目を自己点検" },
   ask_caregiver: { icon: "ask", label: "保育士に確認" },
   // improver（指針を育てる）
-  read_policy_cards: { icon: "clipboard", label: "いまの指針カードを確認" },
-  propose_policy_card: { icon: "edit", label: "指針に足す案を作成" },
-  commit_policy_card: { icon: "check", label: "指針に反映" },
+  read_policy_cards: { icon: "clipboard", label: "書き方のルールを確認" },
+  propose_policy_card: { icon: "edit", label: "追加する内容を整理" },
+  commit_policy_card: { icon: "check", label: "ルールに反映" },
 };
 export function toolMeta(name) {
   return TOOL_META[name] || { icon: "tool", label: name };
@@ -105,7 +105,7 @@ export function toolMeta(name) {
    ============================================================ */
 export function whoOf(author) {
   const a = (author || "").toLowerCase();
-  if (a.includes("review")) return { label: "レビューAI", cls: "review", icon: "review" };
+  if (a.includes("review")) return { label: "内容の確認", cls: "review", icon: "review" };
   // prep を author/monthly より先に判定する（monthly_prep が "monthly" に先取りされ
   // 作成AI に誤分類されるのを防ぐ。docflow drive() のステッパー routing と順序を一致させる）。
   // 保育経過記録の period_prep は「期間の集計」、要録の record_prep は「最終年度の集計」、月案の monthly_prep は「前月の集計」。
@@ -114,8 +114,8 @@ export function whoOf(author) {
     if (a.includes("record")) return { label: "最終年度の集計", cls: "prep", icon: "chart" };
     return { label: "前月の集計", cls: "prep", icon: "chart" };
   }
-  if (a.includes("author") || a.includes("monthly")) return { label: "作成AI", cls: "author", icon: "author" };
-  if (a.includes("improv")) return { label: "改善エージェント", cls: "improver", icon: "refresh" };
+  if (a.includes("author") || a.includes("monthly")) return { label: "下書きの作成", cls: "author", icon: "author" };
+  if (a.includes("improv")) return { label: "書き方の整理", cls: "improver", icon: "refresh" };
   return { label: author || "AI", cls: "", icon: "robot" };
 }
 
@@ -126,7 +126,7 @@ const STATE = {
   working: { label: "処理中", icon: "spinner" },
   waiting: { label: "確認待ち", icon: "ask" },
   done: { label: "完了", icon: "check" },
-  degraded: { label: "降格", icon: "alert" },
+  degraded: { label: "一部利用できません", icon: "alert" },
   fail: { label: "失敗", icon: "xcircle" },
 };
 export function stateChipHTML(state, label) {

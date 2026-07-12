@@ -38,9 +38,9 @@ const ACCEPT = ".pdf,.docx,.xlsx";
 
 // record_store.store_status は disabled/ok/unavailable を返す（policy/notation の persistent 系とは別語彙）。
 const STORE_LABEL = {
-  ok: "保存先: 接続済み",
-  disabled: "保存先: 未接続",
-  unavailable: "保存先: 接続エラー",
+  ok: "",
+  disabled: "現在利用できません",
+  unavailable: "現在利用できません",
 };
 const STORE_CLASS = { ok: "ok", disabled: "muted", unavailable: "warn" };
 
@@ -56,11 +56,12 @@ export function makeRecords(ui) {
   function setStore(s) {
     ui.store.textContent = STORE_LABEL[s] || "";
     ui.store.className = "badge " + (STORE_CLASS[s] || "muted");
+    ui.store.hidden = s === "ok";
   }
 
   function statusBadge(status) {
     const approved = status === "approved";
-    return `<span class="rbadge ${approved ? "ok" : "muted"}">${approved ? "承認済み" : "確定"}</span>`;
+    return `<span class="rbadge ${approved ? "ok" : "muted"}">${approved ? "確定済み" : "保存済み"}</span>`;
   }
 
   // ── メタ一覧の取得（本文は取らない）→ ツリー再構築 ──
@@ -101,9 +102,7 @@ export function makeRecords(ui) {
         el(
           "p",
           "rempty",
-          store === "disabled"
-            ? "書類アーカイブが未接続です（DATABASE_URL を設定すると、確定した書類がここに並び、ファイルの取り込みもできます）。"
-            : "アーカイブに接続できませんでした。",
+          "現在、保存した書類を表示できません。時間をおいてからもう一度お試しください。",
         ),
       );
       renderPlaceholder();
@@ -338,12 +337,12 @@ export function makeRecords(ui) {
 
     // 未承認（finalized）なら承認できる（編集で失効した承認の再承認もここから＝decision A）。
     if (doc.status !== "approved") {
-      const apBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("check")}承認する`);
+      const apBtn = el("button", "btn btn-ghost btn-sm", `${iconHTML("check")}確定する`);
       apBtn.type = "button";
       apBtn.onclick = async () => {
         apBtn.disabled = true;
         const o = apBtn.innerHTML;
-        apBtn.innerHTML = `<span class="spinner"></span>承認中…`;
+        apBtn.innerHTML = `<span class="spinner"></span>確定中…`;
         msg.classList.add("hidden");
         try {
           const r = await adk.approveRecord(
@@ -356,13 +355,15 @@ export function makeRecords(ui) {
             await loadTree();
             await select(doc.id, ui.tree.querySelector(`.fsrow.is-file[data-id="${doc.id}"]`) || null);
           } else {
-            msg.textContent = "承認できませんでした: " + (r.detail || r.reason || "未接続/エラー");
+            console.error("書類の確定に失敗", r.detail || r.reason || r);
+            msg.textContent = "確定できませんでした。時間をおいてもう一度お試しください。";
             msg.classList.remove("hidden");
             apBtn.disabled = false;
             apBtn.innerHTML = o;
           }
         } catch (e) {
-          msg.textContent = "承認に失敗: " + e.message;
+          console.error("書類の確定に失敗", e);
+          msg.textContent = "確定できませんでした。時間をおいてもう一度お試しください。";
           msg.classList.remove("hidden");
           apBtn.disabled = false;
           apBtn.innerHTML = o;
@@ -602,16 +603,18 @@ export function makeRecords(ui) {
           const row = id ? ui.tree.querySelector(`.fsrow.is-file[data-id="${id}"]`) : null;
           if (id) await select(id, row || null); // 保存後は読取ビューへ（現行版を表示）。
         } else if (saved.status === "skipped") {
-          banner(ui.detail, "err", "保存先が未接続のため保存できませんでした（DATABASE_URL を設定してください）。");
+          banner(ui.detail, "err", "現在、書類を保存できません。時間をおいてもう一度お試しください。");
           saveBtn.disabled = false;
           recheck.disabled = false;
         } else {
-          banner(ui.detail, "err", "保存に失敗: " + (saved.detail || "不明なエラー"));
+          console.error("書類の保存に失敗", saved.detail || saved);
+          banner(ui.detail, "err", "保存できませんでした。時間をおいてもう一度お試しください。");
           saveBtn.disabled = false;
           recheck.disabled = false;
         }
       } catch (e) {
-        banner(ui.detail, "err", "保存に失敗: " + e.message);
+        console.error("書類の保存に失敗", e);
+        banner(ui.detail, "err", "保存できませんでした。時間をおいてもう一度お試しください。");
         saveBtn.disabled = false;
         recheck.disabled = false;
       }
@@ -635,7 +638,7 @@ export function makeRecords(ui) {
   async function renderConfirm(kind, res) {
     await mountEditor(kind, res.entry || {}, {
       title: `${KIND_LABEL[kind]}を確認・修正`,
-      sub: "AI が読み取った内容です。日付・子ども・タグや本文を直してから保存してください（保存時の検査・整形は harness が行います）。",
+      sub: "読み取った内容です。日付・子ども・タグや本文を確認し、必要に応じて直してから保存してください。",
       saveLabel: "取り込んで保存する",
       authorKind: "imported",
       note: "内容を確認・修正して「取り込んで保存」を押してください。",
@@ -648,7 +651,7 @@ export function makeRecords(ui) {
   function renderEditDoc(doc, { focusKey } = {}) {
     return mountEditor(doc.doc_type, doc.entry || {}, {
       title: `${KIND_LABEL[doc.doc_type] || doc.doc_type}を編集`,
-      sub: "内容を直して保存すると、新しい版として記録されます（承認済みの場合は、編集後にもう一度承認が必要です）。",
+      sub: "内容を直して保存したあと、もう一度確定してください。",
       saveLabel: "保存する",
       authorKind: "caregiver",
       note: "内容を直して「保存する」を押してください。",

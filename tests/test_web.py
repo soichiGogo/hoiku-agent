@@ -170,6 +170,33 @@ def test_document_completion_is_caregiver_facing_and_can_start_over() -> None:
     assert "承認をアーカイブに記録しました（承認証跡）" not in docflow + diaryform
 
 
+def test_caregiver_ui_hides_internal_terms_and_never_fills_missing_records_with_fake_data() -> None:
+    """保育士画面は業務語に絞り、参照記録が空でも架空データを生成へ渡さない。"""
+    c = _client()
+    index = c.get("/app/").text
+    app = c.get("/app/app.js").text
+    docflow = c.get("/app/docflow.js").text
+    diaryform = c.get("/app/diaryform.js").text
+    records = c.get("/app/records.js").text
+
+    assert "対象児（仮名）" not in index
+    assert "seed します" not in index
+    assert "未接続は仮名サンプル" not in index
+    assert "保存した書類" in index
+    assert "書き方のルール" in index
+    assert "DATABASE_URL" not in docflow + diaryform + records
+    assert "アーカイブに保存しました" not in docflow + diaryform
+    assert "この内容で確定・承認する" not in docflow + diaryform
+    assert "この内容で確定する" in docflow + diaryform
+
+    assert "seed3.class_diary_entries = sampleClassPrevEntries" not in app
+    assert "samplePeriodEntries(child)" not in app
+    assert "sampleRecordEntries(child)" not in app
+    assert "const recordChildNames = [];" in app
+    assert "月案の作成に使える記録がありません" in app
+    assert "この期間の日誌がありません" in app
+
+
 def test_root_shows_welcome() -> None:
     # 配布リンクの素の URLは、強制遷移せず案内画面を表示する。
     r = _client().get("/")

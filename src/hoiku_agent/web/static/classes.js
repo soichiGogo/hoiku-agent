@@ -26,10 +26,9 @@ export function makeClasses(ui) {
 
   function setStore(s) {
     storeState = s;
-    const label =
-      s === "ok" ? "保存先: 永続" : s === "disabled" ? "未接続" : "未接続（一時）";
-    ui.store.textContent = label;
+    ui.store.textContent = s === "ok" ? "" : "現在利用できません";
     ui.store.className = "badge " + (s === "ok" ? "ok" : "muted");
+    ui.store.hidden = s === "ok";
   }
 
   const childrenOf = (classId) => children.filter((c) => c.class_id === classId);
@@ -89,7 +88,8 @@ export function makeClasses(ui) {
   function applyWrite(res, okMsg) {
     const ok = res && ["created", "exists", "ok"].includes(res.status);
     if (!ok) {
-      flash((res && res.detail) || "うまくいきませんでした", "err");
+      console.error("クラス・園児情報の更新に失敗", (res && res.detail) || res);
+      flash("更新できませんでした。時間をおいてもう一度お試しください。", "err");
       return false;
     }
     if (okMsg) flash(okMsg);
@@ -111,7 +111,7 @@ export function makeClasses(ui) {
         el(
           "p",
           "cempty",
-          "クラス・園児の管理には書類アーカイブ（データベース）への接続が必要です。未接続のあいだは保存できません。",
+          "現在、クラス・園児の情報を表示できません。時間をおいてからもう一度お試しください。",
         ),
       );
       return;

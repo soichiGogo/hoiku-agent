@@ -74,14 +74,15 @@ export function makeDiaryForm({ area, status, onNewDocument }) {
     if (!node || !res) return;
     node.hidden = false;
     if (res.status === "saved") {
-      node.innerHTML = `${iconHTML("check")}アーカイブに保存しました（版 ${res.version_seq}${res.doc_status === "approved" ? "・承認済み書類" : ""}）`;
+      node.innerHTML = `${iconHTML("check")}保存しました`;
     } else if (res.status === "approved") {
       node.innerHTML = "";
       node.hidden = true;
     } else if (res.status === "skipped") {
-      node.innerHTML = `${iconHTML("info")}アーカイブ未接続（DATABASE_URL 未設定）＝この日誌は DB に永続保存されません`;
+      node.innerHTML = `${iconHTML("alert")}現在、日誌を保存できません。内容を控えてから、時間をおいてもう一度お試しください。`;
     } else {
-      node.innerHTML = `${iconHTML("alert")}${esc(label)}に失敗: ${esc(res.detail || "原因不明")}`;
+      console.error(label, res.detail || res);
+      node.innerHTML = `${iconHTML("alert")}保存できませんでした。時間をおいてもう一度お試しください。`;
     }
   }
 
@@ -119,7 +120,7 @@ export function makeDiaryForm({ area, status, onNewDocument }) {
   async function open(seed) {
     area.innerHTML = "";
     approved = false; // 新しい日誌を開くたびにロック状態をリセットする
-    if (status) status.setSubject(seed.className || "クラス");
+    if (status) status.setSubject(seed.className || "クラス", "対象");
 
     // タグ語彙・様式テンプレ（本文セクションの順序/ラベル）を取得（失敗しても編集自体は可能）。
     let formMeta = {};
@@ -291,7 +292,7 @@ export function makeDiaryForm({ area, status, onNewDocument }) {
       try {
         const res = await save();
         note.textContent = res.ok
-          ? "保存しました（必須項目OK）。よければ「確定・承認」へ。"
+          ? "保存しました。内容を確認して確定してください。"
           : "保存しました。必須項目に不足があります（確定はできますが、確認をおすすめします）。";
       } catch (e) {
         banner(area, "err", "再チェックに失敗: " + e.message);
@@ -300,7 +301,7 @@ export function makeDiaryForm({ area, status, onNewDocument }) {
       }
     };
 
-    const approveBtn = el("button", "btn btn-approve", `${iconHTML("check")}この内容で確定・承認する`);
+    const approveBtn = el("button", "btn btn-approve", `${iconHTML("check")}この内容で確定する`);
     approveBtn.type = "button";
     approveBtn.onclick = async () => {
       approveBtn.disabled = true;

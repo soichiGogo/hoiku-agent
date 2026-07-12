@@ -86,10 +86,11 @@ export function makeFeedbackBar({ docKind, getDocId }) {
       note.innerHTML = `${iconHTML("check")}フィードバックを保存しました（この書類に紐付け）。ありがとうございます。`;
     } else if (res.status === "skipped") {
       note.innerHTML = hadDoc
-        ? `${iconHTML("info")}アーカイブ未接続のため保存はされませんが、ひとことは指針づくりに活かせます。`
+        ? `${iconHTML("info")}現在、感想を保存できません。ひとことは書き方のルールづくりに活かせます。`
         : `${iconHTML("info")}この書類はまだ保存されていないため記録は紐付きませんが、ひとことは指針づくりに活かせます。`;
     } else {
-      note.innerHTML = `${iconHTML("alert")}保存に失敗しました：${esc(res.detail || "原因不明")}`;
+      console.error("感想の保存に失敗", res.detail || res);
+      note.innerHTML = `${iconHTML("alert")}感想を保存できませんでした。時間をおいてもう一度お試しください。`;
     }
   }
 

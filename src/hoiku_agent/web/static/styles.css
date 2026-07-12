@@ -558,7 +558,7 @@ select.de-input{appearance:auto;min-height:38px}
 
 /* 指針カード：1行1カードのリスト（横並びグリッドから変更）。本文は左、タグ・日付は右の整列カラムに。 */
 .policy-grid{display:flex;flex-direction:column;gap:var(--sp-2)}
-.policy-grid:empty::after{content:"まだ指針カードがありません。下の提案フローから育て始められます。";
+.policy-grid:empty::after{content:"書き方のルールはまだありません。下のメモから追加できます。";
   color:var(--muted);font-size:var(--fs-sm)}
 
 /* 指針カード（左ライン＝対象書類で色分け・提案／比較カードでも共用＝従来の縦積み） */

@@ -1,18 +1,12 @@
 // 保育士 UI のブートストラップ：アイコン展開・テーマ・ステータスライン・タブ・各フローの配線。
 import * as adk from "./adk.js";
-import { el, esc, iconHTML, hydrateIcons } from "./ui.js";
+import { el, esc, iconHTML, hydrateIcons, banner } from "./ui.js";
 import { makeDocFlow } from "./docflow.js";
 import { makePolicy } from "./policy.js";
 import { makeNotation } from "./notation.js";
 import { makeRecords } from "./records.js";
 import { makeClasses } from "./classes.js";
 import { makeDiaryForm } from "./diaryform.js";
-
-// 対象児は実在しない仮名（下の名前＋ちゃん/くん）＝現場の日誌の書き方に寄せる（§14・実名は扱わない）。
-// さくらちゃんは 3–5 歳児クラスの仮名児（全年齢対応＝§19。年齢帯で枠組み＝3視点/5領域が切り替わるデモ）。
-const CHILDREN = ["はるとくん", "ゆいちゃん", "そうたくん"];
-const RECORD_CHILDREN = [...CHILDREN, "さくらちゃん"];
-const AGE_BAND_OF = { さくらちゃん: "3-5" }; // 既定は 0-2
 
 // 性別→敬称（男→くん / 女→ちゃん 固定）。呼び名（名）＋敬称＝表示名＝child_id の同定キー。
 // サーバ（record_store.compose_display_name）と一致させる（新規児登録のプレビュー・降格時のセッション追加用）。
@@ -141,7 +135,7 @@ function ageBandOf(name) {
       return age >= 3 ? "3-5" : "0-2";
     }
   }
-  return AGE_BAND_OF[name] || "0-2";
+  return "0-2";
 }
 
 const POLICY_SAMPLES = [
@@ -413,14 +407,14 @@ function buildStatusline() {
   slEls = { dot: null, subject, phase, budget };
 }
 const status = {
-  setSubject(name) {
+  setSubject(name, label = "対象児") {
     if (!slEls.subject) return;
     if (!name) {
       slEls.subject.classList.add("hidden");
       return;
     }
     slEls.subject.classList.remove("hidden");
-    slEls.subject.innerHTML = `${iconHTML("caregiver")}対象児 <b>${esc(name)}</b>`;
+    slEls.subject.innerHTML = `${iconHTML("caregiver")}${esc(label)} <b>${esc(name)}</b>`;
   },
   setPhase(text, state) {
     if (!slEls.phase) return;
@@ -436,11 +430,12 @@ const status = {
   },
   setBudget(budget) {
     if (!slEls.budget || !budget || !budget.available) return;
-    slEls.budget.classList.remove("hidden");
     const exhausted = budget.remaining_yen <= 0;
-    slEls.budget.innerHTML = `${iconHTML("sparkle")}AI利用枠 <b>${esc(String(budget.remaining_yen))}円</b> / ${esc(String(budget.limit_yen))}円`;
+    const low = exhausted || budget.remaining_yen <= budget.limit_yen * 0.2;
+    slEls.budget.classList.toggle("hidden", !low);
+    slEls.budget.innerHTML = `${iconHTML("sparkle")}${exhausted ? "AI作成の利用上限に達しています" : "AI作成の利用枠が残りわずかです"}`;
     slEls.budget.classList.toggle("is-budget-limit", exhausted);
-    slEls.budget.title = exhausted ? "上限に達しました。次の時間帯に再開できます。" : "1時間ごとのAI利用可能額です。";
+    slEls.budget.title = exhausted ? "時間をおいてから、もう一度お試しください。" : "";
   },
 };
 
@@ -527,10 +522,7 @@ function chipGroup(container, values, onPick, iconName, labelOf) {
   return getter;
 }
 
-// 書類作成の種別セレクタ（案A：カテゴリ別グループ表示）。categories を歩いてカテゴリ見出し＋チップ行を描く。
-// ready チップは選択可（onPick）、soon チップは灰色の非選択 placeholder（クリックで onSoon＝一言案内・
-// 選択状態は変えない）。契約は chipGroup と同じ＝選択中の ready key を返すゲッター（.select(key) も持つ）。
-// setSegBusy が `#doc-kind .chip` の disabled を切るので、生成中は soon も含め全チップがロックされる。
+// 作成できる書類を前面に出し、今後追加する書類は畳んで表示する。
 function renderDocMenu(container, categories, { onPick, onSoon } = {}) {
   container.innerHTML = "";
   let selected = null;
@@ -541,37 +533,42 @@ function renderDocMenu(container, categories, { onPick, onSoon } = {}) {
     if (c) c.classList.add("is-active");
     selected = key;
   };
+  const future = [];
   for (const cat of categories) {
+    const readyItems = cat.items.filter((it) => it.status === "ready");
+    future.push(...cat.items.filter((it) => it.status !== "ready"));
+    if (!readyItems.length) continue;
     const group = el("div", "doc-cat");
     group.appendChild(el("div", "doc-cat-head", iconHTML(cat.icon) + esc(cat.label)));
     const row = el("div", "doc-cat-row");
-    for (const it of cat.items) {
+    for (const it of readyItems) {
       const meta = DOC_TYPE_OF[it.key];
-      const ready = it.status === "ready";
       const label = it.label || (meta && meta.label) || it.key;
       const icon = it.icon || (meta && meta.icon) || cat.icon;
-      const chip = el(
-        "button",
-        "chip" + (ready ? "" : " is-soon"),
-        iconHTML(icon) + esc(label) + (ready ? "" : '<span class="chip-soon">近日</span>'),
-      );
+      const chip = el("button", "chip", iconHTML(icon) + esc(label));
       chip.type = "button";
-      if (ready) {
-        chip.onclick = () => {
-          activate(it.key);
-          onPick && onPick(it.key);
-        };
-        chips.set(it.key, chip);
-      } else {
-        // 非選択だが click は拾って案内を出す（disabled にすると無反応になるため aria で伝える）。
-        chip.setAttribute("aria-disabled", "true");
-        chip.title = "この書類は今後対応予定です";
-        chip.onclick = () => onSoon && onSoon({ ...it, label });
-      }
+      chip.onclick = () => {
+        activate(it.key);
+        onPick && onPick(it.key);
+      };
+      chips.set(it.key, chip);
       row.appendChild(chip);
     }
     group.appendChild(row);
     container.appendChild(group);
+  }
+  if (future.length) {
+    const details = el("details", "doc-future");
+    details.appendChild(el("summary", "doc-future-summary", "今後追加予定の書類"));
+    const row = el("div", "doc-cat-row");
+    for (const it of future) {
+      const chip = el("button", "chip is-soon", `${iconHTML(it.icon || "memo")}${esc(it.label)}`);
+      chip.type = "button";
+      chip.onclick = () => onSoon && onSoon(it);
+      row.appendChild(chip);
+    }
+    details.appendChild(row);
+    container.appendChild(details);
   }
   const getter = () => selected;
   getter.select = (key) => {
@@ -887,7 +884,7 @@ function setupActor(cfg) {
     // サインイン済み＝表示名の登録/編集。値は DB（user_display_name）が正。未登録は email をプレースホルダに出して促す。
     inp.value = cfg.user_display_name || "";
     inp.placeholder = email;
-    const tip = `サインイン: ${email}（この名前が保存・承認の記録に残ります）`;
+    const tip = `サインイン: ${email}（保存時の担当者として記録されます）`;
     inp.title = tip;
     inp.setAttribute("aria-label", `表示名（${email} として記録されます）`);
     if (field) field.title = tip;
@@ -992,13 +989,18 @@ async function main() {
   }
   if (cfg.current_child_record_period) recordPeriod.value = cfg.current_child_record_period;
 
-  // 子ども選択肢：DB 接続時は児童マスタが正（0件なら空のまま「園児が未登録」を正直に案内＝
-  // 架空児をあたかも実在の候補のように出さない）。未接続だけデモ用の仮名ロスターへ降格。
+  // 子ども選択肢は児童マスタだけを使う。未接続時に架空児を実在の候補として混ぜない。
   // 配列は childCombo と閉包共有＝ in-place 更新でタブ切替後の再取得（loadDiaryClasses）が候補に追従する
   // （クラス・園児タブで登録した児がリロード無しで対象児コンボに出る）。
-  const recordChildNames = cfg.records_connected ? [] : [...RECORD_CHILDREN];
+  const recordChildNames = [];
   function updateChildEmptyNote() {
-    $("doc-child-empty").hidden = !(cfg.records_connected && recordChildNames.length === 0);
+    const note = $("doc-child-empty");
+    const shouldShow = recordChildNames.length === 0;
+    note.hidden = !shouldShow;
+    note.classList.toggle("hidden", !shouldShow);
+    note.querySelector("span:last-child").textContent = cfg.records_connected
+      ? "園児が未登録です。「クラス・園児」で登録してください。"
+      : "現在、園児の記録を確認できません。時間をおいてからもう一度お試しください。";
   }
   function applyDbChildren(dbChildren) {
     recordChildNames.length = 0;
@@ -1015,19 +1017,14 @@ async function main() {
   // フロー本体（HITL・ステッパー・編集フォーム・承認・PDF・アーカイブ）は makeDocFlow 1実装の共用で、
   // 種別で違うのは入力欄と seed の組み立てだけ（バックエンドの DocTypeRouter＝doc_type 分岐と 1:1）。
 
-  // 対象児コンボは1つに統合（種別を切り替えても選び直し不要）。候補は DB 接続時は児童マスタ、
-  // 未接続は仮名ロスター（3–5 児さくらちゃんを含む＝全年齢デモ）。日誌/月案でも 3–5 児を選べる。
+  // 対象児コンボは1つに統合（種別を切り替えても選び直し不要）。候補は児童マスタを正とする。
   const docChild = childCombo($("doc-children"), recordChildNames, {
     onPick: (name) => onChildChange(name),
     labelId: "doc-child-label",
     // 未登録名を選んだら本名（姓/名）＋性別で新規登録（呼び名＋敬称はサーバが合成＝重複児を防ぐ）。
     onAddChild: async ({ family_name, given_name, gender, birthdate }) => {
-      // アーカイブ未接続はセッション内だけ選択肢へ足す（本名/性別/生年月日は保存されない＝氏名欄は呼び名へ降格）。
       if (!cfg.records_connected) {
-        const dn = composeDisplayName(given_name, gender);
-        // 生年月日はセッション内でも控える（再読込までは ageBandOf が満年齢で年齢帯を判定できる）。
-        if (birthdate) BIRTHDATE_OF[dn] = birthdate;
-        return { ok: true, displayName: dn };
+        return { ok: false, message: "現在、園児を登録できません。時間をおいてからもう一度お試しください。" };
       }
       const res = await adk.addChild({ family_name, given_name, gender, birthdate });
       if (!res || res.status === "error") {
@@ -1037,7 +1034,8 @@ async function main() {
       // 3–5 児がフォールバックの 0-2 に誤判定され author プロンプト・タグ語彙がずれるのを防ぐ）。
       const dn = res.display_name || composeDisplayName(given_name, gender);
       if (birthdate) BIRTHDATE_OF[dn] = birthdate;
-      $("doc-child-empty").hidden = true; // 1人登録された＝「園児が未登録」の案内を畳む
+      $("doc-child-empty").hidden = true;
+      $("doc-child-empty").classList.add("hidden"); // 1人登録された＝「園児が未登録」の案内を畳む
       return { ok: true, displayName: res.display_name };
     },
   });
@@ -1094,19 +1092,18 @@ async function main() {
   }
   await loadDiaryClasses();
 
-  // クラス月案の年齢帯チップ（クラス＝0-2/3-5）。切替で前月サンプルの件数表示を追従する。
+  // クラス月案の年齢帯チップ（クラス＝0-2/3-5）。件数は作成時に保存済み記録から確認する。
   const classAge = chipGroup($("class-ageband"), AGE_BANDS, (label) => onClassAgeChange(label), null);
   function onClassAgeChange(label) {
-    const band = AGE_BAND_VALUE[label] || "0-2";
-    $("monthly-seed-count").textContent = sampleClassPrevEntries(band).length + " 件";
+    $("monthly-seed-count").textContent = "作成時に確認";
   }
 
   // 対象児が変わったら：保育経過記録/要録の seed 件数を更新し、日誌の年齢帯チップを満年齢で自動追従（手動上書き可）。
     // クラス月案は文書の年齢帯で集計するため、対象児に依存しない。
   let childChangeSeq = 0;
   async function onChildChange(name) {
-    $("record-seed-count").textContent = samplePeriodEntries(name).length + " 件";
-    $("youroku-seed-count").textContent = sampleRecordEntries(name).length + " 件";
+    $("record-seed-count").textContent = "作成時に確認";
+    $("youroku-seed-count").textContent = name ? "確認中…" : "対象児を選択";
     const yearSelect = $("youroku-year");
     const seq = ++childChangeSeq;
     yearSelect.disabled = true;
@@ -1115,15 +1112,15 @@ async function main() {
       yearSelect.innerHTML = '<option value="">対象児を選択してください</option>';
       return;
     }
-    const entries = cfg.records_connected
-      ? await adk.getChildRecordEntries(name)
-      : sampleRecordEntries(name);
+    const entries = cfg.records_connected ? await adk.getChildRecordEntries(name) : [];
     if (seq !== childChangeSeq) return;
     const years = fiscalYearsOf(entries);
     if (!years.length) {
       yearSelect.innerHTML = '<option value="">保育経過記録のある年度がありません</option>';
+      $("youroku-seed-count").textContent = "記録なし";
       return;
     }
+    $("youroku-seed-count").textContent = `${entries.length}件の記録`;
     years.forEach((year) => yearSelect.appendChild(new Option(`${year}年度`, year)));
     yearSelect.value = years[0];
     yearSelect.disabled = false;
@@ -1139,14 +1136,15 @@ async function main() {
     const [y, m] = ym.split("-").map(Number);
     return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
   };
-  // seed の解決：アーカイブ接続時は保存済み日誌（期間内）を使い、空/未接続はサンプルへ降格。
-  // どちらを使ったかを {entries, source} で返し、UI が正直に表示する。
-  async function seedEntries(fromYm, toYm, fallback) {
-    if (cfg.records_connected) {
-      const entries = await adk.getDiaryEntries(monthFirst(fromYm), monthLast(toYm));
-      if (entries.length) return { entries, source: "アーカイブ" };
-    }
-    return { entries: fallback, source: "サンプル" };
+  async function savedDiaryEntries(fromYm, toYm) {
+    if (!cfg.records_connected) return [];
+    return adk.getDiaryEntries(monthFirst(fromYm), monthLast(toYm));
+  }
+
+  function showMissingRecords(area, message) {
+    area.innerHTML = "";
+    banner(area, "info", message);
+    status.setPhase("作成に必要な記録を確認してください", "waiting");
   }
 
   // 日誌は手入力フォーム（AI 生成しない＝ヒアリング 2026-07：日誌は自分の言葉で打つ一次情報の蓄積口）。
@@ -1159,7 +1157,7 @@ async function main() {
     area: $("monthly-flow"),
     button: $("doc-run"),
     stepper: $("monthly-stepper"),
-    steps: ["蓄積の集計", "指針を取り込む", "情報を集める", "下書き", "レビュー", "確定"],
+    steps: ["記録の確認", "書き方の確認", "情報を集める", "下書き", "内容確認", "確定"],
     showDigest: true,
     kind: "class_monthly",
     status,
@@ -1170,7 +1168,7 @@ async function main() {
     area: $("record-flow"),
     button: $("doc-run"),
     stepper: $("record-stepper"),
-    steps: ["期間の集計", "指針を取り込む", "情報を集める", "下書き", "レビュー", "確定"],
+    steps: ["記録の確認", "書き方の確認", "情報を集める", "下書き", "内容確認", "確定"],
     showDigest: true,
     kind: "child_record",
     status,
@@ -1181,7 +1179,7 @@ async function main() {
     area: $("youroku-flow"),
     button: $("doc-run"),
     stepper: $("youroku-stepper"),
-    steps: ["これまでの集計", "情報を集める", "下書き", "レビュー", "確定"],
+    steps: ["記録の確認", "情報を集める", "下書き", "内容確認", "確定"],
     showDigest: true,
     kind: "nursery_record",
     status,
@@ -1212,31 +1210,26 @@ async function main() {
     const month = $("monthly-month").value || "2026-07";
     const ageBandLabel = classAge();
     const ageBand = AGE_BAND_VALUE[ageBandLabel] || "0-2";
-    status.setSubject(ageBandLabel);
-    // seed 3系統＋在籍児名簿（依存モデル 2026-07）＝①クラス児童の保育経過記録すべて ②それまでのクラス月案
-    // ③経過記録に未反映の期間の日誌（境界計算はサーバ側 harness に1つ）④クラスの在籍児名簿
-    // （クラス・園児マスタ＝0–2 個人目標の対象）。未接続/該当なしは③だけ仮名サンプルへ降格
-    // （①②は 0 件＝digest が降格メッセージ・④は空＝「名簿未登録」を正直表示し記録の登場児で作る）。
+    status.setSubject(ageBandLabel, "対象");
+    // 作成に使う保存済み記録と在籍児名簿を取得する。架空の記録は補わない。
     const pm = prevMonth(month);
-    let source = "アーカイブ";
-    let seed3 = {
-      class_diary_entries: [],
-      class_record_entries: [],
-      past_class_plans: [],
-      class_roster: [],
-    };
-    if (cfg.records_connected) seed3 = await adk.getClassMonthlySeed(ageBand, month);
+    if (!cfg.records_connected) {
+      showMissingRecords($("monthly-flow"), "現在、保存した記録を確認できないため作成できません。時間をおいてからもう一度お試しください。");
+      return;
+    }
+    const seed3 = await adk.getClassMonthlySeed(ageBand, month);
     seed3.class_roster ||= [];
-    if (!seed3.class_diary_entries.length && !seed3.class_record_entries.length) {
-      seed3.class_diary_entries = sampleClassPrevEntries(ageBand);
-      source = "サンプル";
+    if (!seed3.class_diary_entries.length && !seed3.class_record_entries.length && !seed3.past_class_plans.length) {
+      showMissingRecords($("monthly-flow"), "月案の作成に使える記録がありません。先にクラスの日誌または保育経過記録を保存してください。");
+      $("monthly-seed-count").textContent = "記録なし";
+      return;
     }
     const rosterNote = seed3.class_roster.length
       ? `在籍児 ${seed3.class_roster.length}名（名簿）`
       : "名簿未登録（記録の登場児で作成）";
     $("monthly-seed-count").textContent =
       `経過記録 ${seed3.class_record_entries.length}・月案 ${seed3.past_class_plans.length}・` +
-      `日誌 ${seed3.class_diary_entries.length} 件（${source}）・${rosterNote}`;
+      `日誌 ${seed3.class_diary_entries.length}件・${rosterNote}`;
     // 前月日誌で評価・反省が未記入のものを検出して記入導線を出す（生成はブロックしない＝並行）。
     checkPrevMonthEvaluations(pm, ageBand);
     const seed = { doc_type: "クラス月案", ...seed3 };
@@ -1300,14 +1293,20 @@ async function main() {
     }
     const ageBand = ageBandOf(child);
     status.setSubject(child);
-    // L3 seed＝期間の日誌。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
-    const { entries, source } = await seedEntries(start, end, samplePeriodEntries(child));
-    // 前回までの保育経過記録（自己履歴・作成対象の期は除外＝依存モデル 2026-07）。未接続/初回は 0 件降格。
-    const prevRecords = cfg.records_connected
-      ? await adk.getChildRecordEntries(child, period)
-      : [];
+    if (!cfg.records_connected) {
+      showMissingRecords($("record-flow"), "現在、保存した日誌を確認できないため作成できません。時間をおいてからもう一度お試しください。");
+      return;
+    }
+    const [start, end] = period.split("〜");
+    const entries = await savedDiaryEntries(start, end);
+    if (!entries.length) {
+      showMissingRecords($("record-flow"), "この期間の日誌がありません。先に対象期間の日誌を保存してください。");
+      $("record-seed-count").textContent = "日誌なし";
+      return;
+    }
+    const prevRecords = await adk.getChildRecordEntries(child, period);
     $("record-seed-count").textContent =
-      `日誌 ${entries.length} 件（${source}）・前回までの経過記録 ${prevRecords.length} 件`;
+      `日誌 ${entries.length}件・前回までの経過記録 ${prevRecords.length}件`;
     const seed = { doc_type: "保育経過記録", period_entries: entries, prev_record_entries: prevRecords };
     recordFlow.run(
       seed,
@@ -1326,18 +1325,17 @@ async function main() {
       return;
     }
     status.setSubject(child);
-    // L4 seed＝最終年度の保育経過記録。アーカイブに保存済みがあればそれを使う（無ければサンプルに降格）。
-    let entries = null;
-    let source = "サンプル";
-    if (cfg.records_connected) {
-      const archived = await adk.getChildRecordEntries(child);
-      if (archived.length) {
-        entries = archived;
-        source = "アーカイブ";
-      }
+    if (!cfg.records_connected) {
+      showMissingRecords($("youroku-flow"), "現在、保存した保育経過記録を確認できないため作成できません。時間をおいてからもう一度お試しください。");
+      return;
     }
-    if (!entries) entries = sampleRecordEntries(child);
-    $("youroku-seed-count").textContent = `${entries.length} 件（${source}）`;
+    const entries = await adk.getChildRecordEntries(child);
+    if (!entries.length) {
+      showMissingRecords($("youroku-flow"), "保育要録の作成に使える保育経過記録がありません。先に保育経過記録を確定してください。");
+      $("youroku-seed-count").textContent = "記録なし";
+      return;
+    }
+    $("youroku-seed-count").textContent = `${entries.length}件の記録`;
     const seed = { doc_type: "保育要録", record_entries: entries };
     yourokuFlow.run(
       seed,
@@ -1381,6 +1379,11 @@ async function main() {
     const needsChild = t.needsChild !== false;
     $("doc-child-label").classList.toggle("hidden", !needsChild);
     $("doc-children").classList.toggle("hidden", !needsChild);
+    if (needsChild) updateChildEmptyNote();
+    else {
+      $("doc-child-empty").hidden = true;
+      $("doc-child-empty").classList.add("hidden");
+    }
     const dd = $("doc-desc");
     dd.textContent = t.desc;
     dd.classList.remove("is-soon-note"); // ready 選択で soon 案内をクリア
@@ -1406,7 +1409,7 @@ async function main() {
   docKind.select("diary"); // 既定チップを点灯
   switchDocType("diary"); // 初期表示（既定＝保育日誌）
   onChildChange(docChild()); // 初期の seed 件数・年齢帯を対象児に合わせる
-  onClassAgeChange(classAge()); // クラス月案の前月サンプル件数を初期表示（クラス＝年齢帯）
+  onClassAgeChange(classAge()); // クラス月案の参照記録は作成時に確認する
 
   // ── 指針を育てる ──
   sampleChips($("policy-samples"), POLICY_SAMPLES, (s) => ($("policy-memo").value = s));
@@ -1432,7 +1435,7 @@ async function main() {
   function onPolicyTargetChange(key) {
     const t = POLICY_TARGET_OF[key];
     const badge = $("policy-scope-badge");
-    badge.textContent = t.docTypes ? "この書類に効く指針のみ" : "";
+    badge.textContent = t.docTypes ? "選んだ書類のルール" : "";
     badge.classList.toggle("hidden", !t.docTypes);
     policy.setFilter(t.docTypes);
   }
