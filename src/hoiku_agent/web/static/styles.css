@@ -785,7 +785,7 @@ select.de-input{appearance:auto;min-height:38px}
 .fs-filter-field{position:relative;flex:1 1 260px;max-width:320px;display:flex;align-items:center}
 .fs-filter-ic{position:absolute;left:11px;color:var(--muted);display:flex;pointer-events:none}
 .fs-filter-ic .ic{width:15px;height:15px}
-.fs-filter-input{width:100%;padding-left:34px}
+.fs-filter-field .fs-filter-input{width:100%;padding-left:34px}
 .fs-filter-hint{font-size:var(--fs-caption);color:var(--muted)}
 .fs-tree{min-width:0;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
   padding:var(--sp-2);max-height:66vh;overflow:auto}
