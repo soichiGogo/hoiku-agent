@@ -599,7 +599,7 @@ function childCombo(container, names, { onPick, labelId, onAddChild } = {}) {
   input.setAttribute("aria-autocomplete", "list");
   input.setAttribute("aria-expanded", "false");
   input.setAttribute("aria-controls", listId);
-  input.placeholder = "名前を入力（先頭一致で候補・Tabで補完）";
+  input.placeholder = "名前を入力";
   if (labelId) input.setAttribute("aria-labelledby", labelId);
   const list = el("ul", "combo-list");
   list.id = listId;
