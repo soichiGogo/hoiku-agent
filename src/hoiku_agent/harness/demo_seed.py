@@ -29,7 +29,11 @@ DEFAULT_ACTOR = "初期データ"
 
 
 def validate_all() -> list[str]:
-    """全 seed 書類を finalize_entry に通して型成立を確認する（DB 不要・creds 不要）。違反一覧を返す。"""
+    """全 seed 書類を finalize_entry に通して型成立を確認する（DB 不要・creds 不要）。違反一覧を返す。
+
+    `data.is_incomplete`（＝あえて評価未記入で保存する直近日誌＝記入導線デモ）の型不成立は
+    想定内なので除外する。parse_error（構造の破綻）と、想定外の型不成立だけを違反として返す。
+    """
     failures: list[str] = []
     for kind, entries in data.JOBS:
         for entry in entries:
@@ -37,6 +41,9 @@ def validate_all() -> list[str]:
             label = data.entry_label(kind, entry)
             if fd.parse_error:
                 failures.append(f"[parse] {label}: {fd.parse_error}")
+                continue
+            if data.is_incomplete(kind, entry):
+                continue  # 意図した未記入（記入導線デモ）は違反にしない
             for p in fd.problems:
                 failures.append(f"[type] {label}: {p}")
     return failures
@@ -103,8 +110,10 @@ def seed_workspace(
             if key in existing:
                 continue
             fd = finalize_entry(entry, kind=kind)
-            if not fd.ok:
+            incomplete = data.is_incomplete(kind, entry)
+            if fd.parse_error or (fd.problems and not incomplete):
                 # データ部のバグ＝validate_all（テスト常設）で先に落ちる想定。ここでは正直に報告だけ。
+                # is_incomplete（評価未記入の直近日誌＝記入導線デモ）の型不成立は想定内で保存を通す。
                 errors.append(
                     f"finalize {data.entry_label(kind, entry)}: {fd.parse_error or fd.problems}"
                 )
@@ -123,7 +132,8 @@ def seed_workspace(
                 errors.append(f"save {data.entry_label(kind, entry)}: {res}")
                 continue
             result["documents"] += 1
-            if approve and key not in data.UNAPPROVED:
+            # 承認は型成立（fd.ok）かつ UNAPPROVED 外のときだけ＝未記入日誌は自動的に finalized 止まり。
+            if approve and fd.ok and key not in data.UNAPPROVED:
                 ares = record_store.approve_document(
                     kind, normalized, actor=actor, workspace_id=workspace_id, now=now
                 )

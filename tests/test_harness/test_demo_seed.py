@@ -43,15 +43,83 @@ def test_unapproved_keys_exist_in_data() -> None:
     assert data.UNAPPROVED <= keys
 
 
+# ──────────────────────────── データ整合（生年月日・登場・平日・実名ガード） ────────────────────────────
+
+_FICTIONAL = set(name for name, _ in data.ROSTER) | {data.GRADUATE}
+
+
+def test_only_fictional_children() -> None:
+    """登場児は名簿10人＋卒園児の閉集合のみ（実名・未知名の混入ガード＝§14）。"""
+    seen: set[str] = set()
+    for _, entries in data.JOBS:
+        for e in entries:
+            for note in e.get("individual_notes", []):
+                seen.add(note["child_id"])
+            for att in e.get("attendance", []):
+                seen.add(att["child_id"])
+            for g in e.get("individual_goals", []):
+                seen.add(g["child_id"])
+            if e.get("child_id"):
+                seen.add(e["child_id"])
+    assert seen <= _FICTIONAL, f"名簿外の児が混入: {seen - _FICTIONAL}"
+
+
+def test_age_months_match_birthdate() -> None:
+    """全書類の月齢表記が生年月日から再計算した値と一致する（手書きずれのガード）。"""
+    from datetime import date
+
+    def check(child: str, on: date, shown: str) -> None:
+        assert data.age_months_on(child, on) == shown, f"{child} {on}: {shown}"
+
+    for e in data.DIARIES:
+        on = date.fromisoformat(e["date"])
+        for note in e["individual_notes"]:
+            check(note["child_id"], on, note["age_months"])
+
+
+def test_diaries_are_weekdays_only() -> None:
+    """日誌は平日のみ（土日祝に日誌がない＝毎日書くものの現実に合わせる）。"""
+    from datetime import date
+
+    for e in data.DIARIES:
+        d = date.fromisoformat(e["date"])
+        assert d.weekday() < 5, f"土日に日誌: {e['date']}"
+        assert d not in data.HOLIDAYS, f"祝日に日誌: {e['date']}"
+
+
+def test_every_child_appears_in_diaries_each_month() -> None:
+    """名簿の全員が毎月、日誌の個別記録に登場する（誰を選んでも物語が見える）。"""
+    from collections import defaultdict
+
+    seen: dict[str, set[str]] = defaultdict(set)  # child -> {"YYYY-MM"}
+    for e in data.DIARIES:
+        month = e["date"][:7]
+        for note in e["individual_notes"]:
+            seen[note["child_id"]].add(month)
+    months = {"2026-04", "2026-05", "2026-06", "2026-07"}
+    for name, _ in data.ROSTER:
+        assert months <= seen[name], f"{name} が登場しない月: {months - seen[name]}"
+
+
+def test_hiyoko_individual_goals_cover_all_members() -> None:
+    """ひよこ組（0-2）のクラス月案は在籍5人全員の個人目標を持つ（§18）。"""
+    for plan in data.CLASS_MONTHLY_PLANS:
+        if plan["age_band"] != "0-2":
+            continue
+        ids = {g["child_id"] for g in plan.get("individual_goals", [])}
+        assert set(data.HIYOKO) == ids, f"{plan['month']}: {ids}"
+
+
 def test_seed_workspace_populates_roster_classes_documents(db) -> None:
     result = demo_seed.seed_workspace(None, now=_NOW)
     assert result["status"] == "ok"
     assert result["children"] == len(data.ROSTER)
     assert result["classes"] == len(data.CLASSES)
     assert result["documents"] == _TOTAL_DOCS
-    assert result["approved"] == _TOTAL_DOCS - len(data.UNAPPROVED)
+    # 承認は「型成立かつ UNAPPROVED 外」だけ＝未記入の直近日誌（is_incomplete）は自動的に finalized。
+    assert result["approved"] == _approved_expected()
 
-    # クラス2つ＋年齢帯どおりの割当（はると/つむぎ=2021生→あおぞら、めい=2024-04生→ひよこ）
+    # クラス2つ＋年齢帯どおりの割当（はると/つむぎ=年長→あおぞら、めい=1歳児→ひよこ）
     classes = {c["name"]: c for c in rs.list_classes()}
     assert set(classes) == {"ひよこ組", "あおぞら組"}
     aozora = {c["display_name"] for c in rs.list_children_in_class(classes["あおぞら組"]["id"])}
@@ -60,12 +128,37 @@ def test_seed_workspace_populates_roster_classes_documents(db) -> None:
     assert "めいちゃん" in hiyoko
     assert len(aozora) + len(hiyoko) == len(data.ROSTER)  # 全員がどちらかに所属
 
-    # UNAPPROVED だけ finalized 止まり・残りは approved
+    # 状態は approved か finalized の2値（finalized は UNAPPROVED か is_incomplete のいずれか）。
     docs = [d for kind, _ in data.JOBS for d in rs.list_documents(kind, limit=5000)]
     assert len(docs) == _TOTAL_DOCS
-    by_key = {(d["doc_type"], d["child"], d["target"]): d["status"] for d in docs}
-    for key, status in by_key.items():
-        assert status == ("finalized" if key in data.UNAPPROVED else "approved"), key
+    assert {d["status"] for d in docs} == {"approved", "finalized"}
+
+
+def _approved_expected() -> int:
+    """承認されるべき件数＝型成立かつ UNAPPROVED 外の書類数（未記入日誌・未承認指定を除く）。"""
+    from hoiku_agent.harness.finalize import finalize_entry
+
+    n = 0
+    for kind, entries in data.JOBS:
+        for e in entries:
+            key = (kind, data.child_of(kind, e), data.target_of(kind, e))
+            if key in data.UNAPPROVED:
+                continue
+            if finalize_entry(e, kind=kind).ok:
+                n += 1
+    return n
+
+
+def test_incomplete_diaries_saved_but_unapproved(db) -> None:
+    """評価未記入の直近日誌（記入導線デモ）は保存されるが finalized 止まり＝承認されない。"""
+    from datetime import date
+
+    demo_seed.seed_workspace(None, now=_NOW)
+    meta = rs.list_diary_meta(date(2026, 7, 1), date(2026, 7, 10))
+    incomplete = [m for m in meta if not m["evaluation_complete"]]
+    # 2026-07-09/07-10 × 両クラス＝4件が「評価未記入」として検出できる（記入導線のデモ）
+    assert len(incomplete) == 4
+    assert all(m["status"] == "finalized" for m in incomplete)
 
 
 def test_seed_workspace_idempotent(db) -> None:
@@ -118,13 +211,13 @@ def test_reset_workspace_restores_seed(db) -> None:
     workspace_id = str(uuid.uuid4())
     demo_seed.seed_workspace(workspace_id, now=_NOW)
     rs.upsert_child("テスト追加くん", workspace_id=workspace_id, now=_NOW)
-    assert len(rs.list_children(workspace_id=workspace_id)) == len(data.ROSTER) + 1
+    assert len(rs.list_children(workspace_id=workspace_id)) == len(data.SEEDED_CHILDREN) + 1
 
     result = demo_seed.reset_workspace(workspace_id, now=_NOW)
     assert result["status"] == "ok" and result["purged"] is True
     names = {c["display_name"] for c in rs.list_children(workspace_id=workspace_id)}
-    assert "テスト追加くん" not in names
-    assert len(names) == len(data.ROSTER)
+    assert "テスト追加くん" not in names  # 保育士の追加は消える
+    assert names == set(data.SEEDED_CHILDREN)  # 名簿10人＋卒園児（要録の登場児）に戻る
     docs = [
         d
         for kind, _ in data.JOBS

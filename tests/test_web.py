@@ -712,13 +712,13 @@ def test_first_signin_triggers_seed_once(records_db, monkeypatch, _stub_auto_see
 
 
 def test_first_signin_seeds_default_data(records_db, monkeypatch, real_seed) -> None:
-    """初回サインインで名簿30人・クラス2・確定書類チェーンが実際に入る（全タブが初見で埋まる）。"""
+    """初回サインインで名簿・クラス2・確定書類チェーンが実際に入る（全タブが初見で埋まる）。"""
     from hoiku_agent.harness import demo_seed_data as seed_data
 
     c = _client()
     _sign_in_with_google(c, monkeypatch)
-    children = c.get("/api/children").json()["children"]
-    assert len(children) == len(seed_data.ROSTER)
+    names = {ch["display_name"] for ch in c.get("/api/children").json()["children"]}
+    assert set(seed_data.SEEDED_CHILDREN) <= names  # 名簿10人＋卒園児が登録される
     classes = c.get("/api/classes").json()["classes"]
     assert {cls["name"] for cls in classes} == {"ひよこ組", "あおぞら組"}
     docs = c.get("/api/records").json()["documents"]
@@ -739,12 +739,14 @@ def test_account_reset_restores_seed(records_db, monkeypatch, real_seed) -> None
         json={"given_name": "たろう", "family_name": "テスト", "gender": "male"},
     )
     assert r.json().get("status") in ("created", "exists")
-    assert len(c.get("/api/children").json()["children"]) == len(seed_data.ROSTER) + 1
+    seeded = len(seed_data.SEEDED_CHILDREN)
+    assert len(c.get("/api/children").json()["children"]) == seeded + 1
 
     reset = c.post("/api/account/reset").json()
     assert reset["status"] == "ok" and reset.get("purged") is True
-    children = c.get("/api/children").json()["children"]
-    assert len(children) == len(seed_data.ROSTER)  # 追加した児は消え、seed に戻る
+    names = {ch["display_name"] for ch in c.get("/api/children").json()["children"]}
+    assert "たろうくん" not in names  # 追加した児は消える
+    assert set(seed_data.SEEDED_CHILDREN) == names  # seed（名簿＋卒園児）に戻る
     # session は生きている（初期化はログアウトしない）＝サインイン必須 API がそのまま通る
     assert c.post("/api/account/reset").json()["status"] == "ok"
 
