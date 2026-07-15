@@ -184,6 +184,19 @@ def test_finalize_class_monthly_success_path():
     assert result.ok
 
 
+def test_finalize_class_monthly_defaults_omitted_class_name_to_blank():
+    """author が AI 非生成の class_name を省略しても、空欄のまま復元・確定できる。"""
+    payload = json.loads(_plan().model_dump_json())
+    payload.pop("class_name")
+    draft = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+
+    result = finalize_class_monthly_document(draft)
+
+    assert result.ok
+    assert result.entry is not None
+    assert result.entry.class_name == ""
+
+
 def test_finalize_class_monthly_parse_error_when_no_json():
     result = finalize_class_monthly_document("情報不足で作成できませんでした。")
     assert result.parse_error
