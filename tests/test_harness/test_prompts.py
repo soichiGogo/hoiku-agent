@@ -21,7 +21,4 @@ def test_class_monthly_upload_still_extracts_class_name_from_source():
         "class_monthly", age_band="0-2", target="2026-07"
     )
 
-    assert (
-        '"class_name": "クラス名（原本にあれば。例: ひよこ組。無ければ空文字）"'
-        in instruction
-    )
+    assert '"class_name": "クラス名（原本にあれば。例: ひよこ組。無ければ空文字）"' in instruction
