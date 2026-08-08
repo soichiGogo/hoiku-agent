@@ -26,9 +26,11 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
+    BaseDocTemplate,
+    Frame,
     KeepTogether,
+    PageTemplate,
     Paragraph,
-    SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
@@ -827,10 +829,11 @@ def render_pdf(
     if not isinstance(entry, dict):
         raise ValueError("entry は dict である必要があります")
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(
+    # 保育経過記録（年間マトリクス）・クラス月案（月間指導計画）は園フォームが A4 横なので横で描く。他は A4 縦。
+    pagesize = landscape(A4) if kind in _LANDSCAPE_KINDS else A4
+    doc = BaseDocTemplate(
         buf,
-        # 保育経過記録（年間マトリクス）・クラス月案（月間指導計画）は園フォームが A4 横なので横で描く。他は A4 縦。
-        pagesize=landscape(A4) if kind in _LANDSCAPE_KINDS else A4,
+        pagesize=pagesize,
         leftMargin=_MARGIN,
         rightMargin=_MARGIN,
         topMargin=_MARGIN,
@@ -843,6 +846,22 @@ def render_pdf(
             "nursery_record": "保育所児童保育要録",
         }[kind],
     )
+    # Frame は内側パディング 0 で組む（SimpleDocTemplate の既定 Frame は内側 6pt パディングを持ち、
+    # 本文幅いっぱい（_CONTENT_W/_L_CONTENT_W）の表が使用可能幅を 12pt 超過して hAlign により置き場が
+    # 6pt 変わる。さらに reportlab の行内分割＝splitInRow は継続断片に hAlign を引き継がず既定 CENTER に
+    # 戻るため、ページ跨ぎで表の断片が 6pt 横にずれ罫線が段差になる。全幅＝マージン間ぴったりにして
+    # LEFT/CENTER の差を消し、断片のずれを構造的に防ぐ）。
+    frame = Frame(
+        _MARGIN,
+        _MARGIN,
+        pagesize[0] - 2 * _MARGIN,
+        pagesize[1] - 2 * _MARGIN,
+        leftPadding=0,
+        rightPadding=0,
+        topPadding=0,
+        bottomPadding=0,
+    )
+    doc.addPageTemplates([PageTemplate(id="page", frames=[frame], pagesize=pagesize)])
     if kind == "child_record":
         story = _child_record_story(entry, past_entries, official_name)
     elif kind == "nursery_record":
