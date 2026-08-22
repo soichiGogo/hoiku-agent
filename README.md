@@ -4,15 +4,17 @@
 
 ### 保育士の勘所を吸収し、書類づくりを育て続ける保育書類作成支援 AI エージェント。
 
+🏆 **[DevOps × AI Agent Hackathon 2026](https://cloud.google.com/blog/ja/products/ai-machine-learning/devops-ai-agent-hackathon-2026?hl=ja) 優秀賞 受賞作品**
 
+<sub>主催: [ファインディ株式会社](https://findy.co.jp/4127/) ／ 協賛: Google Cloud（2026-08-19 決勝・Google 渋谷オフィス）</sub>
+
+[![Award](https://img.shields.io/badge/DevOps_%C3%97_AI_Agent_Hackathon_2026-%E5%84%AA%E7%A7%80%E8%B3%9E-E6B422)](https://cloud.google.com/blog/ja/products/ai-machine-learning/devops-ai-agent-hackathon-2026?hl=ja)
 [![CI](https://github.com/soichiGogo/hoiku-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/soichiGogo/hoiku-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-2F855A.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Google ADK](https://img.shields.io/badge/Agent-Google%20ADK-4285F4?logo=google&logoColor=white)
 ![Gemini](https://img.shields.io/badge/LLM-Gemini%20on%20Vertex%20AI-886FBF)
 ![Cloud Run](https://img.shields.io/badge/Deploy-Cloud%20Run-4285F4?logo=googlecloud&logoColor=white)
-
-DevOps × AI Agent Hackathon 2026 提出プロダクト
 
 [課題と価値](#課題と価値) · [なぜエージェントか](#なぜエージェントか) · [システム構成](#システム構成) · [技術的な工夫](#技術的な工夫) · [つくるまわすとどける](#つくるまわすとどける) · [ローカルで試す](#クイックスタート)
 
@@ -91,6 +93,8 @@ HOIKUAGENT は、定型の手順を AI に任せるためのものではあり�
 | **可観測性** | 構造化 JSON ログ＋ Cloud Trace で、エージェント・LLM・ツール呼び出しの軌跡を 1 リクエスト単位で追跡できる |
 
 ## つくる・まわす・とどける
+
+ハッカソンのテーマ「つくる・まわす・とどける」それぞれに、動くコードと CI で確かめられる形で応えています。
 
 | 軸 | プロダクトでの実装 | 確かめられること |
 | --- | --- | --- |
