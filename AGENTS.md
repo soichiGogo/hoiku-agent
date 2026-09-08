@@ -20,78 +20,9 @@
   派生成果物とする**。画像パーツは `docs/diagram-assets/` に分離し、製品アイコンは公式素材、生成 AI は文字・ロゴ・
   矢印を含まない固有イラストだけに使う。責務境界やデータフローを変えたら仕様・draw.io・PNG を同じ変更内で同期する。
 
-# 開発コマンド（推測しないこと）
+# 開発コマンド
 
-- 依存: `uv sync`（uv 推奨。`pip install -e ".[dev]"` でも可）
-- ローカル実行: `adk run src/hoiku_agent`（CLI 対話）/ `adk web src`（開発 UI。agents dir＝`src/`・`/dev-ui/`）。
-  **保育士向け配布 UI は `uvicorn server:app` → `http://localhost:8000/app/`**（日誌/月案/回す を1枚で・`web/`＝層A
-  presentation。生成は ADK ネイティブ REST を直接駆動し自前 Runner は組まない＝§9。配布リンクは `.env` の
-  Google Sign-In と LLM 利用枠で LLM を回す口を保護＝コスト/濫用対策。規約は `src/hoiku_agent/web/CLAUDE.md`）。
-  本番/ローカル共通の入口は repo root の `server.py`（`get_fast_api_app`）＝`uvicorn server:app`。Memory Bank を
-  使うときは `.env` に `AGENT_ENGINE_ID` を入れて `uvicorn server:app`（`config.memory_service_uri` が URI 化。
-  未設定は InMemory 降格＝§9）。Memory Bank 本体は `uv run python scripts/provision_memory_bank.py --create` で
-  作成・設定する（**生成モデル必須＋日本語/子の姿カスタマイズ**＝実機検証で確定。手順は `docs/ライブ実行手順.md`）。
-  RAG corpus（静的ナレッジ）は `uv run python scripts/provision_rag_corpus.py --create` で作成・取り込み（ソースは
-  `knowledge/保育所保育指針/`＝gitignore 済み。**新規 GCP は RagManagedDb を serverless へ REST 切替必須・埋め込みは
-  日本語向け `text-multilingual-embedding-002`**＝実機検証で確定。`RAG_CORPUS` を `.env` に設定。手順は `docs/ライブ実行手順.md`）。
-- テスト: `pytest`（`testpaths=tests`, `pythonpath=["src","."]`＝root の `server.py` も import 可・pyproject 済み）。harness の決定ロジックは
-  `tests/test_harness/` で LLM 非依存に回る。結合（決定論E2E）は `tests/test_e2e/`＝`FakeLlm` 注入で
-  日誌/月案パイプラインを creds 不要・LLM 非依存に通す（`/e2e` skill。pytest は dev extra ＝
-  `uv run --extra dev pytest`）。eval ゲートの判定式は `tests/test_eval_gate.py`（LLM 非依存）/ ケース集合は
-  `tests/test_eval_cases.py`。品質回帰の実採点は `RUN_LIVE_EVAL=1 uv run --extra eval pytest tests/test_eval.py`
-  （層B・明示しない通常pytestではskip・要 `--extra eval` ＝
-  `google-adk[eval]` ＋ LLM 資格情報）。**evalset JSON（`eval/cases/*.evalset.json`）に `ruff format` を当てない**（Python 扱いで壊れる）。
-- lint: `ruff check .` / `ruff format .`（line-length=100, target=py311。`.` 指定は .py のみ整形）
-- 認証/設定: `cp .env.example .env` → 記入 → `gcloud auth application-default login`
-- 書類アーカイブ（任意・Phase 1）: `.env` に `DATABASE_URL`（Cloud SQL / ローカル Postgres）→
-  `uv run alembic upgrade head`（スキーマ適用＝`migrations/`）。未設定は降格＝永続化なし・seed はサンプル
-  （手順・Cloud SQL 作成は `docs/ライブ実行手順.md`）。
-- 月案（doc_type=月案・L2 還流）は前月日誌を seed して回す専用入口 `uv run python scripts/run_monthly.py
-  --child-id はるとくん --month 2026-07`（要 LLM 資格情報）。日誌は `adk web src`（doc_type 既定＝保育日誌）。
-- クラス月案（doc_type=クラス月案・園の実様式＝月間指導計画・§18）は seed 3系統＋在籍児名簿（クラス児童の保育経過記録すべて＋
-  それまでのクラス月案すべて＋経過記録に未反映の期間の日誌＋クラスの在籍児名簿〔class_roster＝0–2 個人目標の対象〕＝`record_store.class_monthly_seed_inputs` で合成・依存
-  モデル 2026-07）で回す専用入口 `uv run python scripts/run_class_monthly.py --age-band 0-2 --month 2026-07`
-  （要 LLM 資格情報）。個別月案が1児単位なのに対しクラス全体（＝年齢帯）単位で、区分×領域グリッド
-  （養護2本柱＋教育5領域）＋0–2 の個人目標を書く。
-- 保育経過記録（doc_type=保育経過記録・L3 還流＝期間日誌＋前回までの自己履歴の集積、対象期間は年度4期・各3か月固定）は専用入口 `uv run python
-  scripts/run_child_record.py --child-id はるとくん --period 2026-04〜2026-06`（要 LLM 資格情報。期間日誌＋
-  前回までの保育経過記録すべて〔作成対象の期は除外〕を seed）。
-- 保育要録（doc_type=保育要録・L4 還流＝それまでの保育経過記録すべての集積・年長のみ・日誌は足さない）は専用入口
-  `uv run python scripts/run_youroku.py --child-id はるとくん --fiscal-year 2026`（要 LLM 資格情報。
-  それまでの保育経過記録すべて〔全期〕を seed。アーカイブ接続時は `list_child_record_entries` から取得・未接続はサンプル降格）。
-- 配信（層A）: `Dockerfile`＝`uvicorn server:app`（Cloud Run・scale-to-zero・**非root/PID1 exec 形式で SIGTERM
-  グレースフル**）。デプロイ＝`.github/workflows/deploy.yml`（WIF・**MUST ハードニング配線**＝`--max-instances`（`MAX_INSTANCES`
-  var・既定4）/`--service-account`（`RUNTIME_SA` var＝最小権限・未設定は既定 SA 降格＋警告）/`DATABASE_URL` は
-  Secret Manager 優先（`DATABASE_URL_SECRET` var・無ければ GH secret 平文降格）/**認証ポリシー再現**（`--no-iap`＋
-  `--allow-unauthenticated` で案内画面を公開し、`GOOGLE_OAUTH_CLIENT_ID` var＋`SESSION_SECRET` secret を必須注入＝
-  アプリ内 Google Sign-In session が `/app/`・API を fail-closed 保護）/
-  **env 保全**（`--set-env-vars` は全置換ゆえ `MODEL_LOCATION` を明示管理し再デプロイで落とさない）/
-  **DB migration 自動適用**（`CLOUDSQL_INSTANCE` var 設定時、deploy の**前**に Cloud SQL Auth Proxy 経由で `alembic upgrade head`
-  を当てコードとスキーマを同じ deploy で前進させる＝migration drift の再発防止。additive/expand 前提・失敗時は deploy 中止。
-  前提＝`DEPLOY_SA` に `roles/cloudsql.client`＋DB URL secret への `roles/secretmanager.secretAccessor`。手動 `alembic upgrade head`
-  は初回セットアップ／破壊的変更時の fallback）。GCP 側の一度きり設定は `docs/ライブ実行手順.md`「本番運用ハードニング」。
-  **dev は WIF 有効化済み＝main push で自動デプロイ**）/ eval ゲートCI＝`.github/workflows/eval-gate.yml`
-  （関連PR/週次/手動・専用 `EVAL_SA`＝`eval-runner`・strict fail-closed・要 WIF+creds）。
-- インフラ（IaC・基盤）: `infra/`＝**Terraform でプラットフォーム基盤を宣言化**（API 有効化/SA・IAM/WIF・Cloud SQL・
-  Secret の器・DNS・Cloud Run ドメインマッピング・Artifact Registry）。**Cloud Run サービス本体（image/env/revision）は
-  `deploy.yml` が所有＝Terraform は import/所有しない**（`gcloud run deploy` と衝突させない境界）。CI＝
-  `.github/workflows/terraform.yml`（PR=plan / main=apply を Environment `infra-prod` の**手動承認**でゲート・WIF で
-  専用 `tf-admin` SA を借用）。**スコープ外（理由つき・`infra/README.md`）**＝請求予算（billing 権限を CI に渡さない）/
-  IAP 有効化・メンバー（直接 IAP のまま）/ Cloud SQL ユーザー・パスワード / Secret の値 / RAG corpus・Memory Bank
-  （TF 非対応＝`scripts/provision_*.py` が正）。初回のみローカル owner で bootstrap（state バケット＋`terraform apply`）
-  ＝手順は `infra/README.md`（`docs/ライブ実行手順.md` は詳細/ fallback）。
-- 可観測性: `src/hoiku_agent/logging_config.py`＝Cloud Run 向け構造化 JSON ログ（stdout 1行 JSON・severity・
-  `X-Cloud-Trace-Context` 相関）。`server.py` 入口で `configure_logging()`＋`install_trace_middleware()`。
-  Cloud Logging クライアントは手組みしない（マネージド昇格に委ねる）。ローカルは `K_SERVICE` 無しでテキスト降格（`LOG_FORMAT`/`LOG_LEVEL`）。
-  **スパン＝ADK ネイティブの `trace_to_cloud`**（`server.py` が `settings.trace_to_cloud`＝env `TRACE_TO_CLOUD` を中継・
-  自前 OTel 手組みしない）：agent/LLM/ツール呼び出しの軌跡を Cloud Trace へ（deploy.yml が本番 `TRACE_TO_CLOUD=true` を注入・
-  実行SAに `roles/cloudtrace.agent`）。既定 false＝ローカル/CI は送らない降格。
-- 二階（改善エージェント）は **root_agent とは別エントリ・手動起動**（v0）。専用スクリプト
-  `uv run python scripts/run_improver.py --diff "…" [--feedback "…"]` で起こす（要 LLM 資格情報）。
-  document_pipeline には組み込まない。
-- **ADK 探索の事実**: agents dir＝`src/`、agent package＝`hoiku_agent/`、`root_agent` は `agent.py` のみで
-  トップレベル化、`__init__.py` の `from . import agent` を壊さない。`adk web` は `src/` を指して起動する
-  （リポジトリ root で叩くと dropdown に出ない）。
+開発・検証・環境構築の前に [エージェント開発手順.md](エージェント開発手順.md) を必ず読む。
 
 # アーキ＝3責務（実装で混ぜてはいけない線。詳細は各層の AGENTS.md）
 
